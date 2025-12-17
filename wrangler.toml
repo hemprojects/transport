@@ -1,9 +1,10 @@
 name = "transport-tracker"
 main = "src/worker.js"
-compatibility_date = "2024-01-01"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat"]
 
-[site]
-bucket = "./public"
+[assets]
+directory = "./public"
 
 [[d1_databases]]
 binding = "DB"
