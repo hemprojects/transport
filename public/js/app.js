@@ -91,16 +91,20 @@
 
         getToday() {
     const now = new Date();
-    const offset = now.getTimezoneOffset();
-    const localDate = new Date(now.getTime() - (offset * 60 * 1000));
-    return localDate.toISOString().split('T')[0];
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
 },
 
         addDays(dateStr, days) {
-            const date = new Date(dateStr + 'T00:00:00');
-            date.setDate(date.getDate() + days);
-            return date.toISOString().split('T')[0];
-        },
+    const date = new Date(dateStr + 'T12:00:00');
+    date.setDate(date.getDate() + days);
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+},
 
         isToday(dateStr) {
             return dateStr === this.getToday();
@@ -1740,13 +1744,18 @@
         },
 
         updateDateButtons() {
-            const today = Utils.getToday();
-            Utils.$$('.date-quick-btn').forEach(btn => {
-                const offset = parseInt(btn.dataset.offset);
-                const btnDate = Utils.addDays(today, offset);
-                btn.classList.toggle('active', btnDate === state.currentDate);
-            });
-        },
+    const today = Utils.getToday();
+    Utils.$$('.date-quick-btn').forEach(btn => {
+        const offset = parseInt(btn.dataset.offset);
+        const btnDate = Utils.addDays(today, offset);
+        // Porównaj daty jako stringi
+        const isActive = btnDate === state.currentDate;
+        btn.classList.toggle('active', isActive);
+    });
+    
+    // Debug - możesz usunąć po testach
+    console.log('Today:', today, 'Current:', state.currentDate);
+},
 
         renderTasks() {
             const tasksList = Utils.$('#admin-tasks-list');
@@ -1960,12 +1969,12 @@
 
         // DATE NAVIGATION
         changeDate(days) {
-            state.currentDate = Utils.addDays(state.currentDate, days);
-            Utils.$('#admin-date-picker').value = state.currentDate;
-            state.currentFilter = 'all';
-            this.updateFilterButtons();
-            this.loadTasks();
-        },
+    state.currentDate = Utils.addDays(state.currentDate, days);
+    Utils.$('#admin-date-picker').value = state.currentDate;
+    state.currentFilter = 'all';
+    this.updateFilterButtons();
+    this.loadTasks();
+},
 
         setDateByOffset(offset) {
             const today = Utils.getToday();
@@ -2437,8 +2446,8 @@
             Utils.$('#add-task-empty-btn')?.addEventListener('click', () => TaskForm.open());
 
             // Date navigation
-            Utils.$('#prev-day-btn')?.addEventListener('click', () => this.changeDate(-1));
-            Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
+Utils.$('#prev-day-btn')?.addEventListener('click', () => this.changeDate(-1));
+Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
             Utils.$('#admin-date-picker')?.addEventListener('change', (e) => this.setDate(e.target.value));
 
             // Quick date buttons
