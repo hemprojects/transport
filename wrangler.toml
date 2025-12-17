@@ -8,4 +8,4 @@ bucket = "./public"
 [[d1_databases]]
 binding = "DB"
 database_name = "transport-tracker-db"
-database_id = "TWOJE_DATABASE_ID"
+database_id = "0448180d-71ca-4286-b0c7-f4ec26ac317e"
