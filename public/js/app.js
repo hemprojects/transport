@@ -11,7 +11,7 @@
     // =============================================
     const CONFIG = {
         API_URL: '/api',
-        NOTIFICATION_CHECK_INTERVAL: 30000,
+        NOTIFICATION_CHECK_INTERVAL: 20000,
         TOAST_DURATION: 4000,
         DATE_FORMAT: 'pl-PL',
         STORAGE_KEYS: {
@@ -90,8 +90,11 @@
         },
 
         getToday() {
-            return new Date().toISOString().split('T')[0];
-        },
+    const now = new Date();
+    const offset = now.getTimezoneOffset();
+    const localDate = new Date(now.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+},
 
         addDays(dateStr, days) {
             const date = new Date(dateStr + 'T00:00:00');
@@ -534,16 +537,14 @@
     // =============================================
     const Theme = {
         init() {
-            const saved = localStorage.getItem(CONFIG.STORAGE_KEYS.THEME);
-            if (saved) {
-                this.set(saved);
-            } else {
-                // Check system preference
-                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                    this.set('dark');
-                }
-            }
-        },
+    const saved = localStorage.getItem(CONFIG.STORAGE_KEYS.THEME);
+    if (saved) {
+        this.set(saved);
+    } else {
+        // Default to light - ignore system preference
+        this.set('light');
+    }
+},
 
         set(theme) {
             state.theme = theme;
@@ -623,15 +624,17 @@
         },
 
         startPolling() {
-            this.load();
-            state.notificationInterval = setInterval(() => {
-                this.load();
-                // Also refresh tasks for driver
-                if (state.currentUser?.role === 'driver') {
-                    DriverPanel.loadTasks(true); // silent refresh
-                }
-            }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
-        },
+    this.load();
+    state.notificationInterval = setInterval(() => {
+        this.load();
+        // Auto refresh tasks for both driver and admin
+        if (state.currentUser?.role === 'driver') {
+            DriverPanel.loadTasks(true);
+        } else if (state.currentUser?.role === 'admin') {
+            AdminPanel.loadTasks(true);
+        }
+    }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
+},
 
         stopPolling() {
             if (state.notificationInterval) {
@@ -1174,42 +1177,63 @@
         },
 
         async startTask(taskId) {
-            Modal.confirm(
-                'Rozpocząć zadanie?',
-                'Czy chcesz rozpocząć wykonywanie tego zadania?',
-                async () => {
-                    try {
-                        await API.updateTaskStatus(taskId, 'in_progress', state.currentUser.id);
-                        Toast.success('Zadanie rozpoczęte!');
-                        await this.loadTasks();
-                        // Auto-filter to show in progress
-                        this.setFilter('in_progress');
-                    } catch (error) {
-                        Toast.error('Nie udało się rozpocząć zadania');
-                    }
-                },
-                'Rozpocznij',
-                false
-            );
+    Modal.confirm(
+        'Rozpocząć zadanie?',
+        'Czy chcesz rozpocząć wykonywanie tego zadania?',
+        async () => {
+            // Natychmiast aktualizuj UI
+            const task = state.tasks.find(t => t.id == taskId);
+            if (task) {
+                task.status = 'in_progress';
+                task.assigned_to = state.currentUser.id;
+                task.assigned_name = state.currentUser.name;
+            }
+            this.sortTasks();
+            this.updateStats();
+            this.setFilter('in_progress');
+            Toast.success('Zadanie rozpoczęte!');
+
+            // Wyślij do serwera w tle
+            try {
+                await API.updateTaskStatus(taskId, 'in_progress', state.currentUser.id);
+            } catch (error) {
+                // Cofnij zmiany jeśli błąd
+                Toast.error('Błąd synchronizacji - odświeżam...');
+                await this.loadTasks();
+            }
         },
+        'Rozpocznij',
+        false
+    );
+},
 
         async completeTask(taskId) {
-            Modal.confirm(
-                'Zakończyć zadanie?',
-                'Czy na pewno chcesz oznaczyć zadanie jako wykonane?',
-                async () => {
-                    try {
-                        await API.updateTaskStatus(taskId, 'completed', state.currentUser.id);
-                        Toast.success('Zadanie zakończone! 🎉');
-                        await this.loadTasks();
-                    } catch (error) {
-                        Toast.error('Nie udało się zakończyć zadania');
-                    }
-                },
-                'Zakończ',
-                false
-            );
+    Modal.confirm(
+        'Zakończyć zadanie?',
+        'Czy na pewno chcesz oznaczyć zadanie jako wykonane?',
+        async () => {
+            // Natychmiast aktualizuj UI
+            const task = state.tasks.find(t => t.id == taskId);
+            if (task) {
+                task.status = 'completed';
+            }
+            this.sortTasks();
+            this.updateStats();
+            this.renderTasks();
+            Toast.success('Zadanie zakończone! 🎉');
+
+            // Wyślij do serwera w tle
+            try {
+                await API.updateTaskStatus(taskId, 'completed', state.currentUser.id);
+            } catch (error) {
+                Toast.error('Błąd synchronizacji - odświeżam...');
+                await this.loadTasks();
+            }
         },
+        'Zakończ',
+        false
+    );
+},
 
         openJoinModal(taskId) {
             const task = state.tasks.find(t => t.id == taskId);
@@ -1220,16 +1244,21 @@
         },
 
         async joinTask() {
-            const taskId = Utils.$('#join-task-id').value;
-            try {
-                await API.joinTask(taskId, state.currentUser.id);
-                Modal.close('modal-join-task');
-                Toast.success('Dołączyłeś do zadania!');
-                await this.loadTasks();
-            } catch (error) {
-                Toast.error('Nie udało się dołączyć');
-            }
-        },
+    const taskId = Utils.$('#join-task-id').value;
+    
+    // Natychmiast zamknij modal i pokaż sukces
+    Modal.close('modal-join-task');
+    Toast.success('Dołączyłeś do zadania!');
+    
+    // Sync w tle
+    try {
+        await API.joinTask(taskId, state.currentUser.id);
+        await this.loadTasks(true);
+    } catch (error) {
+        Toast.error('Błąd synchronizacji');
+        await this.loadTasks();
+    }
+},
 
         openLogModal(taskId) {
             Utils.$('#log-task-id').value = taskId;
@@ -1244,47 +1273,50 @@
         },
 
         async handleLogSubmit(e) {
-            e.preventDefault();
+    e.preventDefault();
 
-            const taskId = Utils.$('#log-task-id').value;
-            const logType = document.querySelector('input[name="log-type"]:checked').value;
+    const taskId = Utils.$('#log-task-id').value;
+    const logType = document.querySelector('input[name="log-type"]:checked').value;
 
-            const logData = {
-                userId: state.currentUser.id,
-                logType
-            };
+    const logData = {
+        userId: state.currentUser.id,
+        logType
+    };
 
-            if (logType === 'note') {
-                logData.message = Utils.$('#log-message').value.trim();
-                if (!logData.message) {
-                    Toast.warning('Wpisz treść uwagi');
-                    return;
-                }
-            } else if (logType === 'delay') {
-                logData.delayReason = Utils.$('#delay-reason').value;
-                logData.delayMinutes = parseInt(Utils.$('#delay-minutes').value) || 0;
-                logData.message = Utils.$('#delay-details').value.trim();
-                
-                if (!logData.delayReason) {
-                    Toast.warning('Wybierz powód przestoju');
-                    return;
-                }
-            } else if (logType === 'problem') {
-                logData.message = Utils.$('#problem-message').value.trim();
-                if (!logData.message) {
-                    Toast.warning('Opisz problem');
-                    return;
-                }
-            }
+    if (logType === 'note') {
+        logData.message = Utils.$('#log-message').value.trim();
+        if (!logData.message) {
+            Toast.warning('Wpisz treść uwagi');
+            return;
+        }
+    } else if (logType === 'delay') {
+        logData.delayReason = Utils.$('#delay-reason').value;
+        logData.delayMinutes = parseInt(Utils.$('#delay-minutes').value) || 0;
+        logData.message = Utils.$('#delay-details').value.trim();
+        
+        if (!logData.delayReason) {
+            Toast.warning('Wybierz powód przestoju');
+            return;
+        }
+    } else if (logType === 'problem') {
+        logData.message = Utils.$('#problem-message').value.trim();
+        if (!logData.message) {
+            Toast.warning('Opisz problem');
+            return;
+        }
+    }
 
-            try {
-                await API.createTaskLog(taskId, logData);
-                Modal.close('modal-task-log');
-                Toast.success('Zapisano!');
-            } catch (error) {
-                Toast.error('Nie udało się zapisać');
-            }
-        },
+    // Natychmiast zamknij i pokaż sukces
+    Modal.close('modal-task-log');
+    Toast.success('Zapisano!');
+
+    // Sync w tle
+    try {
+        await API.createTaskLog(taskId, logData);
+    } catch (error) {
+        Toast.error('Błąd synchronizacji');
+    }
+},
 
         async openTaskDetails(taskId) {
             try {
@@ -1619,30 +1651,31 @@
         },
 
         async handleSubmit(e) {
-            e.preventDefault();
+    e.preventDefault();
 
-            const data = this.getFormData();
-            
-            if (!this.validate(data)) return;
+    const data = this.getFormData();
+    
+    if (!this.validate(data)) return;
 
-            const taskId = Utils.$('#task-id').value;
+    const taskId = Utils.$('#task-id').value;
 
-            try {
-                if (taskId) {
-                    await API.updateTask(taskId, data);
-                    Toast.success('Zadanie zaktualizowane!');
-                } else {
-                    await API.createTask(data);
-                    Toast.success('Zadanie dodane!');
-                }
+    // Natychmiast zamknij i pokaż sukces
+    Modal.close('modal-task');
+    Toast.success(taskId ? 'Zadanie zaktualizowane!' : 'Zadanie dodane!');
 
-                Modal.close('modal-task');
-                AdminPanel.loadTasks();
-
-            } catch (error) {
-                Toast.error('Nie udało się zapisać zadania');
-            }
-        },
+    // Sync w tle
+    try {
+        if (taskId) {
+            await API.updateTask(taskId, data);
+        } else {
+            await API.createTask(data);
+        }
+        await AdminPanel.loadTasks();
+    } catch (error) {
+        Toast.error('Błąd synchronizacji');
+        await AdminPanel.loadTasks();
+    }
+},
 
         initEventListeners() {
             Utils.$$('input[name="task-type"]').forEach(radio => {
@@ -1658,17 +1691,17 @@
     // 14. ADMIN PANEL
     // =============================================
     const AdminPanel = {
-        async loadTasks() {
-            try {
-                state.tasks = await API.getTasks({ date: state.currentDate });
+        async loadTasks(silent = false) {
+    try {
+        state.tasks = await API.getTasks({ date: state.currentDate });
                 this.sortTasks();
                 this.updateStats();
                 this.updateDateDisplay();
                 this.renderTasks();
-            } catch (error) {
-                Toast.error('Nie udało się załadować zadań');
-                console.error(error);
-            }
+                } catch (error) {
+        if (!silent) Toast.error('Nie udało się załadować zadań');
+        console.error(error);
+    }
         },
 
         sortTasks() {
@@ -1867,22 +1900,28 @@
         },
 
         async deleteTask(taskId) {
-            const task = state.tasks.find(t => t.id == taskId);
-            
-            Modal.confirm(
-                'Usunąć zadanie?',
-                `Czy na pewno chcesz usunąć "${task?.description || 'to zadanie'}"?`,
-                async () => {
-                    try {
-                        await API.deleteTask(taskId);
-                        Toast.success('Zadanie usunięte');
-                        this.loadTasks();
-                    } catch (error) {
-                        Toast.error('Nie udało się usunąć');
-                    }
-                }
-            );
-        },
+    const task = state.tasks.find(t => t.id == taskId);
+    
+    Modal.confirm(
+        'Usunąć zadanie?',
+        `Czy na pewno chcesz usunąć "${task?.description || 'to zadanie'}"?`,
+        async () => {
+            // Natychmiast usuń z UI
+            state.tasks = state.tasks.filter(t => t.id != taskId);
+            this.updateStats();
+            this.renderTasks();
+            Toast.success('Zadanie usunięte');
+
+            // Sync w tle
+            try {
+                await API.deleteTask(taskId);
+            } catch (error) {
+                Toast.error('Błąd synchronizacji');
+                await this.loadTasks();
+            }
+        }
+    );
+},
 
         async openTaskDetails(taskId) {
             try {
@@ -1900,20 +1939,24 @@
         },
 
         async changePriority(taskId, newPriority) {
-            try {
-                const task = state.tasks.find(t => t.id == taskId);
-                if (!task) return;
+    const task = state.tasks.find(t => t.id == taskId);
+    if (!task) return;
 
-                await API.updateTask(taskId, { ...task, priority: newPriority });
+    // Natychmiast aktualizuj UI
+    task.priority = newPriority;
+    this.sortTasks();
+    this.renderTasks();
+    Modal.close('modal-priority');
+    Toast.success('Priorytet zmieniony');
 
-                Modal.close('modal-priority');
-                Toast.success('Priorytet zmieniony');
-                this.loadTasks();
-
-            } catch (error) {
-                Toast.error('Nie udało się zmienić priorytetu');
-            }
-        },
+    // Sync w tle
+    try {
+        await API.updateTask(taskId, { ...task, priority: newPriority });
+    } catch (error) {
+        Toast.error('Błąd synchronizacji');
+        await this.loadTasks();
+    }
+},
 
         // DATE NAVIGATION
         changeDate(days) {
@@ -2156,56 +2199,62 @@
         },
 
         async handleUserSubmit(e) {
-            e.preventDefault();
+    e.preventDefault();
 
-            const userId = Utils.$('#user-id').value;
-            const name = Utils.$('#user-name').value.trim();
-            const pin = Utils.$('#user-pin').value.trim();
-            const role = document.querySelector('input[name="user-role"]:checked').value;
+    const userId = Utils.$('#user-id').value;
+    const name = Utils.$('#user-name').value.trim();
+    const pin = Utils.$('#user-pin').value.trim();
+    const role = document.querySelector('input[name="user-role"]:checked').value;
 
-            if (!name) { Toast.warning('Wpisz imię'); return; }
-            if (!userId && !pin) { Toast.warning('Wpisz PIN'); return; }
-            if (pin && (pin.length < 4 || pin.length > 6)) { Toast.warning('PIN musi mieć 4-6 cyfr'); return; }
+    if (!name) { Toast.warning('Wpisz imię'); return; }
+    if (!userId && !pin) { Toast.warning('Wpisz PIN'); return; }
+    if (pin && (pin.length < 4 || pin.length > 6)) { Toast.warning('PIN musi mieć 4-6 cyfr'); return; }
 
-            try {
-                if (userId) {
-                    await API.updateUser(userId, { name, pin: pin || undefined, role });
-                    Toast.success('Użytkownik zaktualizowany');
-                } else {
-                    await API.createUser({ name, pin, role });
-                    Toast.success('Użytkownik dodany');
-                }
+    // Natychmiast zamknij i pokaż sukces
+    Modal.close('modal-user');
+    Toast.success(userId ? 'Użytkownik zaktualizowany' : 'Użytkownik dodany');
 
-                Modal.close('modal-user');
-                this.loadUsers();
-
-            } catch (error) {
-                Toast.error('Nie udało się zapisać');
-            }
-        },
+    // Sync w tle
+    try {
+        if (userId) {
+            await API.updateUser(userId, { name, pin: pin || undefined, role });
+        } else {
+            await API.createUser({ name, pin, role });
+        }
+        await this.loadUsers();
+    } catch (error) {
+        Toast.error('Błąd synchronizacji');
+        await this.loadUsers();
+    }
+},
 
         async deleteUser(userId) {
-            const user = state.users.find(u => u.id == userId);
-            
-            if (user.id === state.currentUser.id) {
-                Toast.warning('Nie możesz usunąć siebie');
-                return;
-            }
+    const user = state.users.find(u => u.id == userId);
+    
+    if (user.id === state.currentUser.id) {
+        Toast.warning('Nie możesz usunąć siebie');
+        return;
+    }
 
-            Modal.confirm(
-                'Usunąć użytkownika?',
-                `Czy na pewno chcesz usunąć "${user?.name}"?`,
-                async () => {
-                    try {
-                        await API.deleteUser(userId);
-                        Toast.success('Użytkownik usunięty');
-                        this.loadUsers();
-                    } catch (error) {
-                        Toast.error('Nie udało się usunąć');
-                    }
-                }
-            );
-        },
+    Modal.confirm(
+        'Usunąć użytkownika?',
+        `Czy na pewno chcesz usunąć "${user?.name}"?`,
+        async () => {
+            // Natychmiast usuń z UI
+            state.users = state.users.filter(u => u.id != userId);
+            this.renderUsers();
+            Toast.success('Użytkownik usunięty');
+
+            // Sync w tle
+            try {
+                await API.deleteUser(userId);
+            } catch (error) {
+                Toast.error('Błąd synchronizacji');
+                await this.loadUsers();
+            }
+        }
+    );
+},
 
         // LOCATIONS
         async loadLocations() {
@@ -2256,40 +2305,50 @@
         },
 
         async handleLocationSubmit(e) {
-            e.preventDefault();
+    e.preventDefault();
 
-            const name = Utils.$('#location-name').value.trim();
-            const type = document.querySelector('input[name="location-type"]:checked').value;
+    const name = Utils.$('#location-name').value.trim();
+    const type = document.querySelector('input[name="location-type"]:checked').value;
 
-            if (!name) { Toast.warning('Wpisz nazwę'); return; }
+    if (!name) { Toast.warning('Wpisz nazwę'); return; }
 
-            try {
-                await API.createLocation({ name, type });
-                Toast.success(type === 'department' ? 'Dział dodany' : 'Lokalizacja dodana');
-                Modal.close('modal-location');
-                this.loadLocations();
-            } catch (error) {
-                Toast.error('Nie udało się dodać');
-            }
-        },
+    // Natychmiast zamknij i pokaż sukces
+    Modal.close('modal-location');
+    Toast.success(type === 'department' ? 'Dział dodany' : 'Lokalizacja dodana');
+
+    // Sync w tle
+    try {
+        await API.createLocation({ name, type });
+        await this.loadLocations();
+    } catch (error) {
+        Toast.error('Błąd synchronizacji');
+        await this.loadLocations();
+    }
+},
 
         async deleteLocation(locationId) {
-            const loc = [...state.locations, ...state.departments].find(l => l.id == locationId);
-            
-            Modal.confirm(
-                'Usunąć?',
-                `Czy na pewno chcesz usunąć "${loc?.name}"?`,
-                async () => {
-                    try {
-                        await API.deleteLocation(locationId);
-                        Toast.success('Usunięto');
-                        this.loadLocations();
-                    } catch (error) {
-                        Toast.error('Nie udało się usunąć');
-                    }
-                }
-            );
-        },
+    const loc = [...state.locations, ...state.departments].find(l => l.id == locationId);
+    
+    Modal.confirm(
+        'Usunąć?',
+        `Czy na pewno chcesz usunąć "${loc?.name}"?`,
+        async () => {
+            // Natychmiast usuń z UI
+            state.locations = state.locations.filter(l => l.id != locationId);
+            state.departments = state.departments.filter(l => l.id != locationId);
+            this.renderLocations();
+            Toast.success('Usunięto');
+
+            // Sync w tle
+            try {
+                await API.deleteLocation(locationId);
+            } catch (error) {
+                Toast.error('Błąd synchronizacji');
+                await this.loadLocations();
+            }
+        }
+    );
+},
 
         // REPORTS
         async loadReports() {

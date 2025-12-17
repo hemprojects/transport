@@ -6,7 +6,15 @@
 /* =============================================
    1. CSS VARIABLES & ROOT
    ============================================= */
+/* Wyłącz systemowy dark mode - używamy własnego */
 :root {
+    color-scheme: light;
+}
+
+[data-theme="dark"] {
+    color-scheme: dark;
+}
+   :root {
     /* Primary Colors */
     --primary: #007AFF;
     --primary-dark: #0056CC;
