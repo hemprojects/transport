@@ -1,993 +1,783 @@
 <!DOCTYPE html>
 <html lang="pl">
-  <head>
-    <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-    />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
-    />
-    <meta name="theme-color" content="#007AFF" />
-    <meta
-      name="description"
-      content="TransportTracker - System zarządzania transportem wewnętrznym"
-    />
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="theme-color" content="#007AFF">
+    <meta name="description" content="Transport Tracker - System zarządzania transportem wewnętrznym">
     <title>Transport Tracker</title>
-    <link rel="stylesheet" href="css/style.css" />
-    <link
-      rel="icon"
-      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>"
-    />
-    <link
-      rel="apple-touch-icon"
-      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>"
-    />
-  </head>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>">
+</head>
 
-  <body>
+<body>
     <div id="app">
-      <!-- ========== EKRAN ŁADOWANIA ========== -->
-      <div id="screen-loading" class="screen active">
-        <div class="loading-container">
-          <div class="loading-icon">🚛</div>
-          <div class="loading-title">Transport Tracker</div>
-          <div class="loading-subtitle">System zarządzania transportem w naszej firmie</div>
-          <div class="loading-spinner"></div>
-        </div>
-      </div>
 
-      <!-- ========== EKRAN LOGOWANIA ========== -->
-      <div id="screen-login" class="screen">
-        <div class="login-wrapper">
-          <div class="login-box">
-            <div class="login-header">
-              <div class="login-icon">🚛</div>
-              <h1>Transport Tracker</h1>
-              <p>Zaloguj się aby kontynuować</p>
+        <!-- ========== EKRAN ŁADOWANIA ========== -->
+        <div id="screen-loading" class="screen active">
+            <div class="loading-container">
+                <div class="loading-icon">🚛</div>
+                <div class="loading-title">Transport Tracker</div>
+                <div class="loading-subtitle">System zarządzania transportem</div>
+                <div class="loading-spinner"></div>
             </div>
+        </div>
 
-            <form id="login-form" class="login-form">
-              <div class="form-group">
-                <label for="login-user">Wybierz użytkownika</label>
-                <select id="login-user" required>
-                  <option value="">Ładowanie...</option>
-                </select>
-              </div>
+        <!-- ========== EKRAN LOGOWANIA ========== -->
+        <div id="screen-login" class="screen">
+            <div class="login-wrapper">
+                <div class="login-box">
+                    <div class="login-header">
+                        <div class="login-icon">🚛</div>
+                        <h1>Transport Tracker</h1>
+                        <p>Zaloguj się aby kontynuować</p>
+                    </div>
 
-              <div class="form-group">
-                <label for="login-pin">PIN</label>
-                <div class="pin-input-wrapper">
-                  <input
-                    type="password"
-                    id="login-pin"
-                    inputmode="numeric"
-                    pattern="[0-9]*"
-                    maxlength="6"
-                    placeholder="••••"
-                    required
-                    autocomplete="off"
-                  />
-                  <button
-                    type="button"
-                    id="toggle-pin"
-                    class="btn-icon-small"
-                    title="Pokaż/ukryj PIN"
-                  >
-                    <span class="eye-icon">👁️</span>
-                  </button>
+                    <form id="login-form" class="login-form">
+                        <div class="form-group">
+                            <label for="login-user">Wybierz użytkownika</label>
+                            <select id="login-user" required>
+                                <option value="">Ładowanie...</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="login-pin">PIN</label>
+                            <div class="pin-input-wrapper">
+                                <input type="password" id="login-pin" inputmode="numeric" pattern="[0-9]*" maxlength="6"
+                                    placeholder="••••" required autocomplete="off">
+                                <button type="button" id="toggle-pin" class="btn-icon-small" title="Pokaż/ukryj PIN">
+                                    <span class="eye-icon">👁️</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary btn-block" id="login-submit-btn">
+                            <span class="btn-text">Zaloguj się</span>
+                            <span class="btn-loader hidden"></span>
+                        </button>
+
+                        <div id="login-error" class="alert alert-error hidden"></div>
+                    </form>
                 </div>
-              </div>
-
-              <button
-                type="submit"
-                class="btn btn-primary btn-block"
-                id="login-submit-btn"
-              >
-                <span class="btn-text">Zaloguj się</span>
-                <span class="btn-loader hidden"></span>
-              </button>
-
-              <div id="login-error" class="alert alert-error hidden"></div>
-            </form>
-          </div>
-          <div class="login-footer">
-            <p>© 2025 Transport Tracker by Creatiiivo</p>
-          </div>
-        </div>
-      </div>
-
-      <!-- ========== PANEL KIEROWCY ========== -->
-      <div id="screen-driver" class="screen">
-        <header class="header">
-          <div class="header-left">
-            <span class="header-logo">🚛</span>
-            <span class="header-title">Transport Tracker</span>
-          </div>
-          <div class="header-right">
-            <!-- Dzwoneczek powiadomień -->
-            <button
-              id="driver-notifications-btn"
-              class="btn-icon notification-bell"
-              title="Powiadomienia"
-            >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-              <span
-                id="driver-notification-badge"
-                class="notification-badge hidden"
-                >0</span
-              >
-            </button>
-            <span id="driver-user-name" class="user-badge"></span>
-            <button id="driver-logout-btn" class="btn-icon" title="Wyloguj">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                <polyline points="16 17 21 12 16 7"></polyline>
-                <line x1="21" y1="12" x2="9" y2="12"></line>
-              </svg>
-            </button>
-          </div>
-        </header>
-
-        <div class="main-content">
-          <div class="date-display">
-            <span class="date-icon">📅</span>
-            <span id="driver-date-text"></span>
-          </div>
-
-          <!-- Statystyki -->
-          <div class="stats-row">
-            <div class="stat-box stat-pending" data-filter="pending">
-              <span class="stat-number" id="driver-stat-pending">0</span>
-              <span class="stat-label">Oczekuje</span>
-            </div>
-            <div class="stat-box stat-progress" data-filter="in_progress">
-              <span class="stat-number" id="driver-stat-progress">0</span>
-              <span class="stat-label">W trakcie</span>
-            </div>
-            <div class="stat-box stat-done" data-filter="completed">
-              <span class="stat-number" id="driver-stat-done">0</span>
-              <span class="stat-label">Zrobione</span>
-            </div>
-          </div>
-
-          <!-- Filtry -->
-          <div class="filters-row">
-            <button class="filter-btn active" data-filter="all">
-              Wszystkie
-            </button>
-            <button class="filter-btn" data-filter="pending">Oczekujące</button>
-            <button class="filter-btn" data-filter="in_progress">
-              W trakcie
-            </button>
-            <button class="filter-btn" data-filter="completed">Zrobione</button>
-          </div>
-
-          <!-- Lista zadań -->
-          <div class="tasks-container">
-            <div class="tasks-list" id="driver-tasks-list">
-              <!-- Zadania ładowane przez JS -->
-            </div>
-            <div id="driver-tasks-empty" class="empty-state hidden">
-              <div class="empty-icon">📋</div>
-              <div class="empty-text">Brak zadań do wyświetlenia</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ========== PANEL ADMINA ========== -->
-      <div id="screen-admin" class="screen">
-        <header class="header">
-          <div class="header-left">
-            <span class="header-logo">🚛</span>
-            <span class="header-title">TransportTracker</span>
-          </div>
-          <div class="header-right">
-            <!-- Dzwoneczek powiadomień -->
-            <button
-              id="admin-notifications-btn"
-              class="btn-icon notification-bell"
-              title="Powiadomienia"
-            >
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
-                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
-              </svg>
-              <span
-                id="admin-notification-badge"
-                class="notification-badge hidden"
-                >0</span
-              >
-            </button>
-            <span id="admin-user-name" class="user-badge admin-badge"></span>
-            <button id="admin-logout-btn" class="btn-icon" title="Wyloguj">
-              <svg
-                width="24"
-                height="24"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                <polyline points="16 17 21 12 16 7"></polyline>
-                <line x1="21" y1="12" x2="9" y2="12"></line>
-              </svg>
-            </button>
-          </div>
-        </header>
-
-        <!-- Zakładki -->
-        <div class="tabs">
-          <button class="tab-btn active" data-tab="tasks">📋 Zadania</button>
-          <button class="tab-btn" data-tab="users">👥 Użytkownicy</button>
-          <button class="tab-btn" data-tab="locations">📍 Lokalizacje</button>
-        </div>
-
-        <!-- TAB: Zadania -->
-        <div class="tab-content active" id="tab-tasks">
-          <div class="main-content">
-            <!-- Wybór daty -->
-            <div class="date-picker-row">
-              <button id="prev-day-btn" class="btn-icon btn-nav">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <polyline points="15 18 9 12 15 6"></polyline>
-                </svg>
-              </button>
-              <div class="date-picker-wrapper">
-                <input type="date" id="admin-date-picker" />
-                <span id="admin-date-display" class="date-display-text"></span>
-              </div>
-              <button id="next-day-btn" class="btn-icon btn-nav">
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <polyline points="9 18 15 12 9 6"></polyline>
-                </svg>
-              </button>
-              <button id="today-btn" class="btn btn-small btn-outline">
-                Dziś
-              </button>
-            </div>
-
-            <!-- Statystyki -->
-            <div class="stats-row">
-              <div class="stat-box stat-pending">
-                <span class="stat-number" id="admin-stat-pending">0</span>
-                <span class="stat-label">Oczekuje</span>
-              </div>
-              <div class="stat-box stat-progress">
-                <span class="stat-number" id="admin-stat-progress">0</span>
-                <span class="stat-label">W trakcie</span>
-              </div>
-              <div class="stat-box stat-done">
-                <span class="stat-number" id="admin-stat-done">0</span>
-                <span class="stat-label">Zrobione</span>
-              </div>
-            </div>
-
-            <!-- Przycisk dodawania -->
-            <button id="add-task-btn" class="btn btn-primary btn-block btn-add">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              <span>Dodaj nowe zadanie</span>
-            </button>
-
-            <!-- Tryb edycji kolejności -->
-            <div class="reorder-controls">
-              <button
-                id="toggle-reorder-btn"
-                class="btn btn-secondary btn-block"
-              >
-                <svg
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                >
-                  <line x1="3" y1="6" x2="21" y2="6"></line>
-                  <line x1="3" y1="12" x2="21" y2="12"></line>
-                  <line x1="3" y1="18" x2="21" y2="18"></line>
-                </svg>
-                <span>Zmień kolejność zadań</span>
-              </button>
-              <div id="reorder-info" class="reorder-info hidden">
-                <span>🔄 Przeciągnij zadania aby zmienić kolejność</span>
-                <button id="save-reorder-btn" class="btn btn-success btn-small">
-                  Zapisz kolejność
-                </button>
-                <button
-                  id="cancel-reorder-btn"
-                  class="btn btn-secondary btn-small"
-                >
-                  Anuluj
-                </button>
-              </div>
-            </div>
-
-            <!-- Lista zadań -->
-            <div class="tasks-container">
-              <div class="tasks-list" id="admin-tasks-list">
-                <!-- Zadania ładowane przez JS -->
-              </div>
-              <div id="admin-tasks-empty" class="empty-state hidden">
-                <div class="empty-icon">📋</div>
-                <div class="empty-text">Brak zadań na wybrany dzień</div>
-                <button class="btn btn-primary" id="add-task-empty-btn">
-                  Dodaj pierwsze zadanie
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB: Użytkownicy -->
-        <div class="tab-content" id="tab-users">
-          <div class="main-content">
-            <button id="add-user-btn" class="btn btn-primary btn-block btn-add">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              <span>Dodaj użytkownika</span>
-            </button>
-            <div class="users-list" id="users-list">
-              <!-- Użytkownicy ładowani przez JS -->
-            </div>
-            <div id="users-empty" class="empty-state hidden">
-              <div class="empty-icon">👥</div>
-              <div class="empty-text">Brak użytkowników</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- TAB: Lokalizacje -->
-        <div class="tab-content" id="tab-locations">
-          <div class="main-content">
-            <button
-              id="add-location-btn"
-              class="btn btn-primary btn-block btn-add"
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <line x1="12" y1="5" x2="12" y2="19"></line>
-                <line x1="5" y1="12" x2="19" y2="12"></line>
-              </svg>
-              <span>Dodaj lokalizację</span>
-            </button>
-
-            <div class="locations-section">
-              <h3 class="section-title">📍 Lokalizacje</h3>
-              <div class="locations-list" id="locations-list">
-                <!-- Lokalizacje ładowane przez JS -->
-              </div>
-            </div>
-
-            <div class="locations-section">
-              <h3 class="section-title">🏢 Działy</h3>
-              <div class="locations-list" id="departments-list">
-                <!-- Działy ładowane przez JS -->
-              </div>
-            </div>
-
-            <div id="locations-empty" class="empty-state hidden">
-              <div class="empty-icon">📍</div>
-              <div class="empty-text">Brak lokalizacji</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ========== MODAL: Dodaj/Edytuj Zadanie ========== -->
-      <div id="modal-task" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-container modal-large">
-          <div class="modal-header">
-            <h2 id="modal-task-title">Nowe zadanie</h2>
-            <button class="modal-close" data-close="modal-task">×</button>
-          </div>
-          <form id="task-form" class="modal-body">
-            <input type="hidden" id="task-id" />
-
-            <!-- Typ zadania -->
-            <div class="form-group">
-              <label>Typ zadania *</label>
-              <div class="task-type-group">
-                <label class="task-type-option" data-type="unloading">
-                  <input type="radio" name="task-type" value="unloading" />
-                  <div class="task-type-card">
-                    <span class="task-type-icon">📥</span>
-                    <span class="task-type-name">Rozładunek</span>
-                  </div>
-                </label>
-                <label class="task-type-option" data-type="transport">
-                  <input
-                    type="radio"
-                    name="task-type"
-                    value="transport"
-                    checked
-                  />
-                  <div class="task-type-card">
-                    <span class="task-type-icon">🚛</span>
-                    <span class="task-type-name">Przewożenie</span>
-                  </div>
-                </label>
-                <label class="task-type-option" data-type="loading">
-                  <input type="radio" name="task-type" value="loading" />
-                  <div class="task-type-card">
-                    <span class="task-type-icon">📤</span>
-                    <span class="task-type-name">Załadunek</span>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <!-- Pola dynamiczne w zależności od typu -->
-
-            <!-- Dla ROZŁADUNKU -->
-            <div id="fields-unloading" class="task-fields hidden">
-              <div class="form-group">
-                <label for="unloading-material">Nazwa/opis rozładunku *</label>
-                <input
-                  type="text"
-                  id="unloading-material"
-                  placeholder="np. Paleta cementu 50 worków"
-                />
-              </div>
-              <div class="form-group">
-                <label for="unloading-department">Na jaki dział *</label>
-                <select id="unloading-department">
-                  <option value="">Wybierz dział...</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- Dla PRZEWOŻENIA -->
-            <div id="fields-transport" class="task-fields">
-              <div class="form-group">
-                <label for="transport-material">Materiał/ładunek *</label>
-                <input
-                  type="text"
-                  id="transport-material"
-                  placeholder="np. Paleta cegieł"
-                />
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label for="transport-from">Skąd *</label>
-                  <input
-                    type="text"
-                    id="transport-from"
-                    list="datalist-locations"
-                    placeholder="Lokalizacja"
-                  />
+                <div class="login-footer">
+                    <p>© 2025 Transport Tracker by Creatiiivo</p>
                 </div>
-                <div class="form-group">
-                  <label for="transport-to">Dokąd *</label>
-                  <input
-                    type="text"
-                    id="transport-to"
-                    list="datalist-locations"
-                    placeholder="Lokalizacja"
-                  />
+            </div>
+        </div>
+
+        <!-- ========== PANEL KIEROWCY ========== -->
+        <div id="screen-driver" class="screen">
+            <header class="header">
+                <div class="header-left">
+                    <span class="header-logo">🚛</span>
+                    <span class="header-title">Transport Tracker</span>
                 </div>
-              </div>
-            </div>
+                <div class="header-right">
+                    <button id="driver-theme-btn" class="btn-icon theme-toggle" title="Zmień motyw">
+                        🌙
+                    </button>
+                    <button id="driver-notifications-btn" class="btn-icon notification-bell" title="Powiadomienia">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        <span id="driver-notification-badge" class="notification-badge hidden">0</span>
+                    </button>
+                    <span id="driver-user-name" class="user-badge"></span>
+                    <button id="driver-logout-btn" class="btn-icon" title="Wyloguj">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg>
+                    </button>
+                </div>
+            </header>
 
-            <!-- Dla ZAŁADUNKU -->
-            <div id="fields-loading" class="task-fields hidden">
-              <div class="form-group">
-                <label for="loading-material">Rodzaj materiału *</label>
-                <input
-                  type="text"
-                  id="loading-material"
-                  placeholder="np. Paleta z produktami"
-                />
-              </div>
-              <div class="form-group">
-                <label for="loading-department">Na jakim dziale *</label>
-                <select id="loading-department">
-                  <option value="">Wybierz dział...</option>
-                </select>
-              </div>
-            </div>
+            <div class="main-content">
+                <div class="date-display">
+                    <span class="date-icon">📅</span>
+                    <span id="driver-date-text"></span>
+                </div>
 
-            <!-- Datalisty -->
-            <datalist id="datalist-locations"></datalist>
+                <!-- Statystyki -->
+                <div class="stats-row">
+                    <div class="stat-box stat-pending">
+                        <span class="stat-number" id="driver-stat-pending">0</span>
+                        <span class="stat-label">Oczekuje</span>
+                    </div>
+                    <div class="stat-box stat-progress">
+                        <span class="stat-number" id="driver-stat-progress">0</span>
+                        <span class="stat-label">W trakcie</span>
+                    </div>
+                    <div class="stat-box stat-done">
+                        <span class="stat-number" id="driver-stat-done">0</span>
+                        <span class="stat-label">Zrobione</span>
+                    </div>
+                </div>
 
-            <!-- Data i godzina -->
-            <div class="form-row">
-              <div class="form-group">
-                <label for="task-date">Data *</label>
-                <input type="date" id="task-date" required />
-              </div>
-              <div class="form-group">
-                <label for="task-time">Godzina (opcjonalnie)</label>
-                <input type="time" id="task-time" />
-              </div>
-            </div>
+                <!-- Filtry -->
+                <div class="filters-row">
+                    <button class="filter-btn active" data-filter="all">Wszystkie</button>
+                    <button class="filter-btn" data-filter="pending">Oczekujące</button>
+                    <button class="filter-btn" data-filter="in_progress">W trakcie</button>
+                    <button class="filter-btn" data-filter="completed">Zrobione</button>
+                </div>
 
-            <!-- Priorytet -->
-            <div class="form-group">
-              <label>Priorytet</label>
-              <div class="priority-group">
-                <label class="priority-option priority-high">
-                  <input type="radio" name="task-priority" value="high" />
-                  <span>🔴 Pilne</span>
-                </label>
-                <label class="priority-option priority-normal">
-                  <input
-                    type="radio"
-                    name="task-priority"
-                    value="normal"
-                    checked
-                  />
-                  <span>🟡 Normalne</span>
-                </label>
-                <label class="priority-option priority-low">
-                  <input type="radio" name="task-priority" value="low" />
-                  <span>🟢 Niski</span>
-                </label>
-              </div>
+                <!-- Lista zadań -->
+                <div class="tasks-container">
+                    <div class="tasks-list" id="driver-tasks-list">
+                        <!-- Zadania ładowane przez JS -->
+                    </div>
+                    <div id="driver-tasks-empty" class="empty-state hidden">
+                        <div class="empty-icon">📋</div>
+                        <div class="empty-text">Brak zadań do wyświetlenia</div>
+                    </div>
+                </div>
             </div>
-
-            <!-- Przypisz do kierowcy -->
-            <div class="form-group">
-              <label for="task-assigned"
-                >Przypisz do kierowcy (opcjonalnie)</label
-              >
-              <select id="task-assigned">
-                <option value="">Dowolny kierowca</option>
-              </select>
-            </div>
-
-            <!-- Notatki -->
-            <div class="form-group">
-              <label for="task-notes">Uwagi dla kierowcy</label>
-              <textarea
-                id="task-notes"
-                rows="2"
-                placeholder="Dodatkowe informacje..."
-              ></textarea>
-            </div>
-
-            <div class="modal-footer">
-              <button
-                type="button"
-                class="btn btn-secondary"
-                data-close="modal-task"
-              >
-                Anuluj
-              </button>
-              <button type="submit" class="btn btn-primary">
-                <span class="btn-text">Zapisz zadanie</span>
-                <span class="btn-loader hidden"></span>
-              </button>
-            </div>
-          </form>
         </div>
-      </div>
 
-      <!-- ========== MODAL: Szczegóły Zadania (dla kierowcy) ========== -->
-      <div id="modal-task-detail" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-container modal-large">
-          <div class="modal-header">
-            <h2>Szczegóły zadania</h2>
-            <button class="modal-close" data-close="modal-task-detail">
-              ×
-            </button>
-          </div>
-          <div id="task-detail-content" class="modal-body">
-            <!-- Zawartość ładowana przez JS -->
-          </div>
+        <!-- ========== PANEL ADMINA ========== -->
+        <div id="screen-admin" class="screen">
+            <header class="header">
+                <div class="header-left">
+                    <span class="header-logo">🚛</span>
+                    <span class="header-title">Transport Tracker</span>
+                </div>
+                <div class="header-right">
+                    <button id="admin-theme-btn" class="btn-icon theme-toggle" title="Zmień motyw">
+                        🌙
+                    </button>
+                    <button id="admin-notifications-btn" class="btn-icon notification-bell" title="Powiadomienia">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                            <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                        </svg>
+                        <span id="admin-notification-badge" class="notification-badge hidden">0</span>
+                    </button>
+                    <span id="admin-user-name" class="user-badge admin-badge"></span>
+                    <button id="admin-logout-btn" class="btn-icon" title="Wyloguj">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                            <polyline points="16 17 21 12 16 7"></polyline>
+                            <line x1="21" y1="12" x2="9" y2="12"></line>
+                        </svg>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Zakładki -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="tasks">📋 Zadania</button>
+                <button class="tab-btn" data-tab="reports">📊 Raporty</button>
+                <button class="tab-btn" data-tab="users">👥 Użytkownicy</button>
+                <button class="tab-btn" data-tab="locations">📍 Lokalizacje</button>
+            </div>
+
+            <!-- TAB: Zadania -->
+            <div class="tab-content active" id="tab-tasks">
+                <div class="main-content">
+                    <!-- Wybór daty - NOWY DESIGN -->
+                    <div class="date-picker-section">
+                        <div class="date-picker-row">
+                            <button id="prev-day-btn" class="btn-nav">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="15 18 9 12 15 6"></polyline>
+                                </svg>
+                            </button>
+                            <div class="date-picker-wrapper">
+                                <input type="date" id="admin-date-picker">
+                            </div>
+                            <button id="next-day-btn" class="btn-nav">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <polyline points="9 18 15 12 9 6"></polyline>
+                                </svg>
+                            </button>
+                        </div>
+                        <div class="date-quick-buttons">
+                            <button class="date-quick-btn" data-offset="-1">Wczoraj</button>
+                            <button class="date-quick-btn active" data-offset="0">Dziś</button>
+                            <button class="date-quick-btn" data-offset="1">Jutro</button>
+                            <button class="date-quick-btn" data-offset="2">Pojutrze</button>
+                        </div>
+                        <div id="admin-date-display" class="date-display-text"></div>
+                    </div>
+
+                    <!-- Statystyki -->
+                    <div class="stats-row">
+                        <div class="stat-box stat-pending">
+                            <span class="stat-number" id="admin-stat-pending">0</span>
+                            <span class="stat-label">Oczekuje</span>
+                        </div>
+                        <div class="stat-box stat-progress">
+                            <span class="stat-number" id="admin-stat-progress">0</span>
+                            <span class="stat-label">W trakcie</span>
+                        </div>
+                        <div class="stat-box stat-done">
+                            <span class="stat-number" id="admin-stat-done">0</span>
+                            <span class="stat-label">Zrobione</span>
+                        </div>
+                    </div>
+
+                    <!-- Filtry dla admina -->
+                    <div class="filters-row" id="admin-filters">
+                        <button class="filter-btn active" data-filter="all">Wszystkie</button>
+                        <button class="filter-btn" data-filter="pending">Oczekujące</button>
+                        <button class="filter-btn" data-filter="in_progress">W trakcie</button>
+                        <button class="filter-btn" data-filter="completed">Zrobione</button>
+                    </div>
+
+                    <!-- Przycisk dodawania -->
+                    <button id="add-task-btn" class="btn btn-primary btn-block btn-add">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <span>Dodaj nowe zadanie</span>
+                    </button>
+
+                    <!-- Tryb edycji kolejności -->
+                    <div class="reorder-controls">
+                        <button id="toggle-reorder-btn" class="btn btn-secondary btn-block">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="3" y1="6" x2="21" y2="6"></line>
+                                <line x1="3" y1="12" x2="21" y2="12"></line>
+                                <line x1="3" y1="18" x2="21" y2="18"></line>
+                            </svg>
+                            <span>Zmień kolejność</span>
+                        </button>
+                        <div id="reorder-info" class="reorder-info hidden">
+                            <span>🔄 Przeciągnij zadania (zakończone są ukryte, w trakcie na górze)</span>
+                            <button id="save-reorder-btn" class="btn btn-success btn-small">Zapisz</button>
+                            <button id="cancel-reorder-btn" class="btn btn-secondary btn-small">Anuluj</button>
+                        </div>
+                    </div>
+
+                    <!-- Lista zadań -->
+                    <div class="tasks-container">
+                        <div class="tasks-list" id="admin-tasks-list">
+                            <!-- Zadania ładowane przez JS -->
+                        </div>
+                        <div id="admin-tasks-empty" class="empty-state hidden">
+                            <div class="empty-icon">📋</div>
+                            <div class="empty-text">Brak zadań na wybrany dzień</div>
+                            <button class="btn btn-primary" id="add-task-empty-btn">Dodaj pierwsze zadanie</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Raporty - NOWE -->
+            <div class="tab-content" id="tab-reports">
+                <div class="main-content">
+                    <div class="report-card">
+                        <div class="report-header">
+                            <h3 class="report-title">📊 Statystyki kierowców</h3>
+                            <div class="form-group" style="margin:0; min-width: 140px;">
+                                <select id="report-period">
+                                    <option value="today">Dziś</option>
+                                    <option value="week" selected>Ten tydzień</option>
+                                    <option value="month">Ten miesiąc</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div id="report-stats" class="report-stats">
+                            <!-- Ładowane przez JS -->
+                        </div>
+                        <div id="report-drivers-list">
+                            <!-- Ładowane przez JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Użytkownicy -->
+            <div class="tab-content" id="tab-users">
+                <div class="main-content">
+                    <button id="add-user-btn" class="btn btn-primary btn-block btn-add">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <span>Dodaj użytkownika</span>
+                    </button>
+                    <div class="users-list" id="users-list">
+                        <!-- Użytkownicy ładowani przez JS -->
+                    </div>
+                    <div id="users-empty" class="empty-state hidden">
+                        <div class="empty-icon">👥</div>
+                        <div class="empty-text">Brak użytkowników</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB: Lokalizacje -->
+            <div class="tab-content" id="tab-locations">
+                <div class="main-content">
+                    <button id="add-location-btn" class="btn btn-primary btn-block btn-add">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        <span>Dodaj lokalizację</span>
+                    </button>
+                    
+                    <div class="locations-section">
+                        <h3 class="section-title">📍 Lokalizacje</h3>
+                        <div class="locations-list" id="locations-list">
+                            <!-- Lokalizacje ładowane przez JS -->
+                        </div>
+                    </div>
+                    
+                    <div class="locations-section">
+                        <h3 class="section-title">🏢 Działy</h3>
+                        <div class="locations-list" id="departments-list">
+                            <!-- Działy ładowane przez JS -->
+                        </div>
+                    </div>
+                    
+                    <div id="locations-empty" class="empty-state hidden">
+                        <div class="empty-icon">📍</div>
+                        <div class="empty-text">Brak lokalizacji</div>
+                    </div>
+                </div>
+            </div>
         </div>
-      </div>
+                <!-- ========== MODAL: Dodaj/Edytuj Zadanie ========== -->
+        <div id="modal-task" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-large">
+                <div class="modal-header">
+                    <h2 id="modal-task-title">Nowe zadanie</h2>
+                    <button class="modal-close" data-close="modal-task">×</button>
+                </div>
+                <form id="task-form" class="modal-body">
+                    <input type="hidden" id="task-id">
 
-      <!-- ========== MODAL: Dodaj uwagę/przestój (dla kierowcy) ========== -->
-      <div id="modal-task-log" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-container">
-          <div class="modal-header">
-            <h2 id="modal-log-title">Dodaj uwagę</h2>
-            <button class="modal-close" data-close="modal-task-log">×</button>
-          </div>
-          <form id="task-log-form" class="modal-body">
-            <input type="hidden" id="log-task-id" />
+                    <!-- Typ zadania -->
+                    <div class="form-group">
+                        <label>Typ zadania</label>
+                        <div class="task-type-group">
+                            <label class="task-type-option" data-type="unloading">
+                                <input type="radio" name="task-type" value="unloading">
+                                <div class="task-type-card">
+                                    <span class="task-type-icon">📥</span>
+                                    <span class="task-type-name">Rozładunek</span>
+                                </div>
+                            </label>
+                            <label class="task-type-option" data-type="transport">
+                                <input type="radio" name="task-type" value="transport" checked>
+                                <div class="task-type-card">
+                                    <span class="task-type-icon">🚛</span>
+                                    <span class="task-type-name">Przewożenie</span>
+                                </div>
+                            </label>
+                            <label class="task-type-option" data-type="loading">
+                                <input type="radio" name="task-type" value="loading">
+                                <div class="task-type-card">
+                                    <span class="task-type-icon">📤</span>
+                                    <span class="task-type-name">Załadunek</span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
 
-            <!-- Typ logu -->
-            <div class="form-group">
-              <label>Typ zgłoszenia</label>
-              <div class="log-type-group">
-                <label class="log-type-option">
-                  <input type="radio" name="log-type" value="note" checked />
-                  <span class="log-type-card">
-                    <span class="log-type-icon">📝</span>
-                    <span>Uwaga</span>
-                  </span>
-                </label>
-                <label class="log-type-option">
-                  <input type="radio" name="log-type" value="delay" />
-                  <span class="log-type-card">
-                    <span class="log-type-icon">⏱️</span>
-                    <span>Przestój</span>
-                  </span>
-                </label>
-                <label class="log-type-option">
-                  <input type="radio" name="log-type" value="problem" />
-                  <span class="log-type-card">
-                    <span class="log-type-icon">⚠️</span>
-                    <span>Problem</span>
-                  </span>
-                </label>
-              </div>
+                    <!-- Pola dla ROZŁADUNKU -->
+                    <div id="fields-unloading" class="task-fields hidden">
+                        <div class="form-group">
+                            <label for="unloading-material">Nazwa/opis rozładunku *</label>
+                            <input type="text" id="unloading-material" placeholder="np. Paleta cementu 50 worków">
+                        </div>
+                        <div class="form-group">
+                            <label for="unloading-department">Na jaki dział *</label>
+                            <select id="unloading-department">
+                                <option value="">Wybierz dział...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Pola dla PRZEWOŻENIA -->
+                    <div id="fields-transport" class="task-fields">
+                        <div class="form-group">
+                            <label for="transport-material">Materiał/ładunek *</label>
+                            <input type="text" id="transport-material" placeholder="np. Paleta cegieł">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="transport-from">Skąd *</label>
+                                <input type="text" id="transport-from" list="datalist-locations" placeholder="Wybierz lub wpisz">
+                            </div>
+                            <div class="form-group">
+                                <label for="transport-to">Dokąd *</label>
+                                <input type="text" id="transport-to" list="datalist-locations" placeholder="Wybierz lub wpisz">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pola dla ZAŁADUNKU -->
+                    <div id="fields-loading" class="task-fields hidden">
+                        <div class="form-group">
+                            <label for="loading-material">Rodzaj materiału *</label>
+                            <input type="text" id="loading-material" placeholder="np. Paleta z produktami">
+                        </div>
+                        <div class="form-group">
+                            <label for="loading-department">Na jakim dziale *</label>
+                            <select id="loading-department">
+                                <option value="">Wybierz dział...</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Datalist lokalizacji -->
+                    <datalist id="datalist-locations"></datalist>
+
+                    <!-- Data i godzina -->
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="task-date">Data *</label>
+                            <input type="date" id="task-date" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="task-time">Godzina</label>
+                            <input type="time" id="task-time">
+                        </div>
+                    </div>
+
+                    <!-- Priorytet -->
+                    <div class="form-group">
+                        <label>Priorytet</label>
+                        <div class="priority-group">
+                            <label class="priority-option priority-high">
+                                <input type="radio" name="task-priority" value="high">
+                                <span>🔴 Pilne</span>
+                            </label>
+                            <label class="priority-option priority-normal">
+                                <input type="radio" name="task-priority" value="normal" checked>
+                                <span>🟡 Normalne</span>
+                            </label>
+                            <label class="priority-option priority-low">
+                                <input type="radio" name="task-priority" value="low">
+                                <span>🟢 Niski</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Przypisz do kierowcy -->
+                    <div class="form-group">
+                        <label for="task-assigned">Przypisz do kierowcy</label>
+                        <select id="task-assigned">
+                            <option value="">Dowolny kierowca</option>
+                        </select>
+                    </div>
+
+                    <!-- Notatki -->
+                    <div class="form-group">
+                        <label for="task-notes">Uwagi dla kierowcy</label>
+                        <textarea id="task-notes" rows="2" placeholder="Dodatkowe informacje..."></textarea>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-close="modal-task">Anuluj</button>
+                        <button type="submit" class="btn btn-primary">Zapisz</button>
+                    </div>
+                </form>
             </div>
-
-            <!-- Pola dla uwagi -->
-            <div id="log-fields-note" class="log-fields">
-              <div class="form-group">
-                <label for="log-message">Treść uwagi *</label>
-                <textarea
-                  id="log-message"
-                  rows="3"
-                  placeholder="Opisz sytuację..."
-                ></textarea>
-              </div>
-            </div>
-
-            <!-- Pola dla przestoju -->
-            <div id="log-fields-delay" class="log-fields hidden">
-              <div class="form-group">
-                <label for="delay-reason">Powód przestoju *</label>
-                <select id="delay-reason">
-                  <option value="">Wybierz powód...</option>
-                  <option value="no_access">Brak dojazdu</option>
-                  <option value="waiting">
-                    Oczekiwanie na załadunek/rozładunek
-                  </option>
-                  <option value="traffic">Korki / utrudnienia</option>
-                  <option value="equipment">Problem z sprzętem</option>
-                  <option value="weather">Warunki pogodowe</option>
-                  <option value="break">Przerwa</option>
-                  <option value="other">Inny powód</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label for="delay-minutes">Czas przestoju (minuty)</label>
-                <input
-                  type="number"
-                  id="delay-minutes"
-                  min="1"
-                  max="480"
-                  placeholder="np. 30"
-                />
-              </div>
-              <div class="form-group">
-                <label for="delay-details">Dodatkowe informacje</label>
-                <textarea
-                  id="delay-details"
-                  rows="2"
-                  placeholder="Szczegóły..."
-                ></textarea>
-              </div>
-            </div>
-
-            <!-- Pola dla problemu -->
-            <div id="log-fields-problem" class="log-fields hidden">
-              <div class="form-group">
-                <label for="problem-message">Opis problemu *</label>
-                <textarea
-                  id="problem-message"
-                  rows="3"
-                  placeholder="Opisz problem..."
-                ></textarea>
-              </div>
-            </div>
-
-            <div class="modal-footer">
-              <button
-                type="button"
-                class="btn btn-secondary"
-                data-close="modal-task-log"
-              >
-                Anuluj
-              </button>
-              <button type="submit" class="btn btn-primary">Wyślij</button>
-            </div>
-          </form>
         </div>
-      </div>
 
-      <!-- ========== MODAL: Edycja priorytetu (szybka) ========== -->
-      <div id="modal-priority" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-container modal-small">
-          <div class="modal-header">
-            <h2>Zmień priorytet</h2>
-            <button class="modal-close" data-close="modal-priority">×</button>
-          </div>
-          <div class="modal-body">
-            <input type="hidden" id="priority-task-id" />
-            <div class="priority-select-group">
-              <button
-                class="priority-select-btn priority-high"
-                data-priority="high"
-              >
-                🔴 Pilne
-              </button>
-              <button
-                class="priority-select-btn priority-normal"
-                data-priority="normal"
-              >
-                🟡 Normalne
-              </button>
-              <button
-                class="priority-select-btn priority-low"
-                data-priority="low"
-              >
-                🟢 Niski
-              </button>
+        <!-- ========== MODAL: Szczegóły Zadania ========== -->
+        <div id="modal-task-detail" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-large">
+                <div class="modal-header">
+                    <h2>Szczegóły zadania</h2>
+                    <button class="modal-close" data-close="modal-task-detail">×</button>
+                </div>
+                <div id="task-detail-content" class="modal-body">
+                    <!-- Zawartość ładowana przez JS -->
+                </div>
             </div>
-          </div>
         </div>
-      </div>
 
-      <!-- ========== MODAL: Dodaj Użytkownika ========== -->
-      <div id="modal-user" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-container modal-small">
-          <div class="modal-header">
-            <h2 id="modal-user-title">Nowy użytkownik</h2>
-            <button class="modal-close" data-close="modal-user">×</button>
-          </div>
-          <form id="user-form" class="modal-body">
-            <input type="hidden" id="user-id" />
+        <!-- ========== MODAL: Dodaj uwagę/przestój ========== -->
+        <div id="modal-task-log" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container">
+                <div class="modal-header">
+                    <h2 id="modal-log-title">Dodaj uwagę</h2>
+                    <button class="modal-close" data-close="modal-task-log">×</button>
+                </div>
+                <form id="task-log-form" class="modal-body">
+                    <input type="hidden" id="log-task-id">
+                    
+                    <!-- Typ logu -->
+                    <div class="form-group">
+                        <label>Typ zgłoszenia</label>
+                        <div class="log-type-group">
+                            <label class="log-type-option">
+                                <input type="radio" name="log-type" value="note" checked>
+                                <span class="log-type-card">
+                                    <span class="log-type-icon">📝</span>
+                                    <span>Uwaga</span>
+                                </span>
+                            </label>
+                            <label class="log-type-option">
+                                <input type="radio" name="log-type" value="delay">
+                                <span class="log-type-card">
+                                    <span class="log-type-icon">⏱️</span>
+                                    <span>Przestój</span>
+                                </span>
+                            </label>
+                            <label class="log-type-option">
+                                <input type="radio" name="log-type" value="problem">
+                                <span class="log-type-card">
+                                    <span class="log-type-icon">⚠️</span>
+                                    <span>Problem</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
 
-            <div class="form-group">
-              <label for="user-name">Imię i nazwisko *</label>
-              <input
-                type="text"
-                id="user-name"
-                required
-                placeholder="np. Jan Kowalski"
-              />
+                    <!-- Pola dla uwagi -->
+                    <div id="log-fields-note" class="log-fields">
+                        <div class="form-group">
+                            <label for="log-message">Treść uwagi *</label>
+                            <textarea id="log-message" rows="3" placeholder="Opisz sytuację..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Pola dla przestoju -->
+                    <div id="log-fields-delay" class="log-fields hidden">
+                        <div class="form-group">
+                            <label for="delay-reason">Powód przestoju *</label>
+                            <select id="delay-reason">
+                                <option value="">Wybierz powód...</option>
+                                <option value="no_access">Brak dojazdu</option>
+                                <option value="waiting">Oczekiwanie na załadunek/rozładunek</option>
+                                <option value="traffic">Korki / utrudnienia</option>
+                                <option value="equipment">Problem z sprzętem</option>
+                                <option value="weather">Warunki pogodowe</option>
+                                <option value="break">Przerwa</option>
+                                <option value="other">Inny powód</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="delay-minutes">Czas przestoju (minuty)</label>
+                            <input type="number" id="delay-minutes" min="1" max="480" placeholder="np. 30">
+                        </div>
+                        <div class="form-group">
+                            <label for="delay-details">Dodatkowe informacje</label>
+                            <textarea id="delay-details" rows="2" placeholder="Szczegóły..."></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Pola dla problemu -->
+                    <div id="log-fields-problem" class="log-fields hidden">
+                        <div class="form-group">
+                            <label for="problem-message">Opis problemu *</label>
+                            <textarea id="problem-message" rows="3" placeholder="Opisz problem..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-close="modal-task-log">Anuluj</button>
+                        <button type="submit" class="btn btn-primary">Wyślij</button>
+                    </div>
+                </form>
             </div>
-
-            <div class="form-group">
-              <label for="user-pin">PIN (4-6 cyfr) *</label>
-              <input
-                type="text"
-                id="user-pin"
-                pattern="[0-9]{4,6}"
-                maxlength="6"
-                placeholder="np. 1234"
-                inputmode="numeric"
-              />
-              <small class="form-hint" id="pin-hint"
-                >Zostaw puste, aby nie zmieniać PIN-u</small
-              >
-            </div>
-
-            <div class="form-group">
-              <label>Rola *</label>
-              <div class="role-group">
-                <label class="role-option">
-                  <input type="radio" name="user-role" value="driver" checked />
-                  <span class="role-card">
-                    <span class="role-icon">🚗</span>
-                    <span>Kierowca</span>
-                  </span>
-                </label>
-                <label class="role-option">
-                  <input type="radio" name="user-role" value="admin" />
-                  <span class="role-card">
-                    <span class="role-icon">👔</span>
-                    <span>Kierownik</span>
-                  </span>
-                </label>
-              </div>
-            </div>
-
-            <div class="modal-footer">
-              <button
-                type="button"
-                class="btn btn-secondary"
-                data-close="modal-user"
-              >
-                Anuluj
-              </button>
-              <button type="submit" class="btn btn-primary">Zapisz</button>
-            </div>
-          </form>
         </div>
-      </div>
 
-      <!-- ========== MODAL: Dodaj Lokalizację/Dział ========== -->
-      <div id="modal-location" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-container modal-small">
-          <div class="modal-header">
-            <h2>Nowa lokalizacja</h2>
-            <button class="modal-close" data-close="modal-location">×</button>
-          </div>
-          <form id="location-form" class="modal-body">
-            <div class="form-group">
-              <label for="location-name">Nazwa *</label>
-              <input
-                type="text"
-                id="location-name"
-                required
-                placeholder="np. Hala D"
-              />
+        <!-- ========== MODAL: Zmień priorytet ========== -->
+        <div id="modal-priority" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2>Zmień priorytet</h2>
+                    <button class="modal-close" data-close="modal-priority">×</button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="priority-task-id">
+                    <div class="priority-select-group">
+                        <button type="button" class="priority-select-btn priority-high" data-priority="high">
+                            🔴 Pilne
+                        </button>
+                        <button type="button" class="priority-select-btn priority-normal" data-priority="normal">
+                            🟡 Normalne
+                        </button>
+                        <button type="button" class="priority-select-btn priority-low" data-priority="low">
+                            🟢 Niski
+                        </button>
+                    </div>
+                </div>
             </div>
-
-            <div class="form-group">
-              <label>Typ</label>
-              <div class="location-type-group">
-                <label class="location-type-option">
-                  <input
-                    type="radio"
-                    name="location-type"
-                    value="location"
-                    checked
-                  />
-                  <span>📍 Lokalizacja</span>
-                </label>
-                <label class="location-type-option">
-                  <input type="radio" name="location-type" value="department" />
-                  <span>🏢 Dział</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="modal-footer">
-              <button
-                type="button"
-                class="btn btn-secondary"
-                data-close="modal-location"
-              >
-                Anuluj
-              </button>
-              <button type="submit" class="btn btn-primary">Dodaj</button>
-            </div>
-          </form>
         </div>
-      </div>
 
-      <!-- ========== MODAL: Powiadomienia ========== -->
-      <div id="modal-notifications" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-container">
-          <div class="modal-header">
-            <h2>🔔 Powiadomienia</h2>
-            <button class="modal-close" data-close="modal-notifications">
-              ×
-            </button>
-          </div>
-          <div class="modal-body notifications-body">
-            <div class="notifications-actions">
-              <button
-                id="mark-all-read-btn"
-                class="btn btn-small btn-secondary"
-              >
-                Oznacz wszystkie jako przeczytane
-              </button>
+        <!-- ========== MODAL: Dodaj Użytkownika ========== -->
+        <div id="modal-user" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2 id="modal-user-title">Nowy użytkownik</h2>
+                    <button class="modal-close" data-close="modal-user">×</button>
+                </div>
+                <form id="user-form" class="modal-body">
+                    <input type="hidden" id="user-id">
+                    
+                    <div class="form-group">
+                        <label for="user-name">Imię i nazwisko *</label>
+                        <input type="text" id="user-name" required placeholder="np. Jan Kowalski">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="user-pin">PIN (4-6 cyfr) *</label>
+                        <input type="text" id="user-pin" pattern="[0-9]{4,6}" maxlength="6"
+                            placeholder="np. 1234" inputmode="numeric">
+                        <small class="form-hint" id="pin-hint">Zostaw puste aby nie zmieniać PIN-u</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Rola *</label>
+                        <div class="role-group">
+                            <label class="role-option">
+                                <input type="radio" name="user-role" value="driver" checked>
+                                <span class="role-card">
+                                    <span class="role-icon">🚗</span>
+                                    <span>Kierowca</span>
+                                </span>
+                            </label>
+                            <label class="role-option">
+                                <input type="radio" name="user-role" value="admin">
+                                <span class="role-card">
+                                    <span class="role-icon">👔</span>
+                                    <span>Kierownik</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-close="modal-user">Anuluj</button>
+                        <button type="submit" class="btn btn-primary">Zapisz</button>
+                    </div>
+                </form>
             </div>
-            <div id="notifications-list" class="notifications-list">
-              <!-- Powiadomienia ładowane przez JS -->
-            </div>
-            <div id="notifications-empty" class="empty-state hidden">
-              <div class="empty-icon">🔔</div>
-              <div class="empty-text">Brak powiadomień</div>
-            </div>
-          </div>
         </div>
-      </div>
 
-      <!-- ========== MODAL: Potwierdzenie ========== -->
-      <div id="modal-confirm" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-container modal-small">
-          <div class="modal-header">
-            <h2 id="confirm-title">Potwierdzenie</h2>
-            <button class="modal-close" data-close="modal-confirm">×</button>
-          </div>
-          <div class="modal-body">
-            <p id="confirm-message">Czy na pewno chcesz wykonać tę akcję?</p>
-            <div class="modal-footer">
-              <button
-                type="button"
-                class="btn btn-secondary"
-                data-close="modal-confirm"
-              >
-                Anuluj
-              </button>
-              <button
-                type="button"
-                id="confirm-action-btn"
-                class="btn btn-danger"
-              >
-                Potwierdź
-              </button>
+        <!-- ========== MODAL: Dodaj Lokalizację ========== -->
+        <div id="modal-location" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2>Nowa lokalizacja</h2>
+                    <button class="modal-close" data-close="modal-location">×</button>
+                </div>
+                <form id="location-form" class="modal-body">
+                    <div class="form-group">
+                        <label for="location-name">Nazwa *</label>
+                        <input type="text" id="location-name" required placeholder="np. Hala D">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Typ</label>
+                        <div class="location-type-group">
+                            <label class="location-type-option">
+                                <input type="radio" name="location-type" value="location" checked>
+                                <span>📍 Lokalizacja</span>
+                            </label>
+                            <label class="location-type-option">
+                                <input type="radio" name="location-type" value="department">
+                                <span>🏢 Dział</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-close="modal-location">Anuluj</button>
+                        <button type="submit" class="btn btn-primary">Dodaj</button>
+                    </div>
+                </form>
             </div>
-          </div>
         </div>
-      </div>
 
-      <!-- ========== TOAST CONTAINER ========== -->
-      <div id="toast-container"></div>
+        <!-- ========== MODAL: Powiadomienia ========== -->
+        <div id="modal-notifications" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container">
+                <div class="modal-header">
+                    <h2>🔔 Powiadomienia</h2>
+                    <button class="modal-close" data-close="modal-notifications">×</button>
+                </div>
+                <div class="modal-body notifications-body">
+                    <div class="notifications-actions">
+                        <button id="mark-all-read-btn" class="btn btn-small btn-secondary">
+                            Oznacz jako przeczytane
+                        </button>
+                    </div>
+                    <div id="notifications-list" class="notifications-list">
+                        <!-- Powiadomienia ładowane przez JS -->
+                    </div>
+                    <div id="notifications-empty" class="empty-state hidden">
+                        <div class="empty-icon">🔔</div>
+                        <div class="empty-text">Brak powiadomień</div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
-      <!-- ========== PULL TO REFRESH INDICATOR ========== -->
-      <div id="pull-to-refresh" class="pull-to-refresh hidden">
-        <div class="pull-spinner"></div>
-        <span>Odśwież</span>
-      </div>
+        <!-- ========== MODAL: Potwierdzenie ========== -->
+        <div id="modal-confirm" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2 id="confirm-title">Potwierdzenie</h2>
+                    <button class="modal-close" data-close="modal-confirm">×</button>
+                </div>
+                <div class="modal-body">
+                    <p id="confirm-message">Czy na pewno chcesz wykonać tę akcję?</p>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-close="modal-confirm">Anuluj</button>
+                        <button type="button" id="confirm-action-btn" class="btn btn-danger">Potwierdź</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== MODAL: Dołącz do zadania ========== -->
+        <div id="modal-join-task" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2>Dołącz do zadania</h2>
+                    <button class="modal-close" data-close="modal-join-task">×</button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="join-task-id">
+                    <p id="join-task-message">Czy chcesz dołączyć do tego zadania i pomagać przy jego realizacji?</p>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-close="modal-join-task">Anuluj</button>
+                        <button type="button" id="join-task-confirm-btn" class="btn btn-primary">Dołącz</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== TOAST CONTAINER ========== -->
+        <div id="toast-container"></div>
+
+        <!-- ========== PULL TO REFRESH ========== -->
+        <div id="pull-to-refresh" class="pull-to-refresh hidden">
+            <div class="pull-spinner"></div>
+            <span>Odśwież</span>
+        </div>
+
     </div>
 
     <script src="js/app.js"></script>
-  </body>
+</body>
+
 </html>

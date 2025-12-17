@@ -1,5 +1,6 @@
 // =============================================
 // TransportTracker - Cloudflare Worker API
+// Wersja 2.0
 // =============================================
 
 export default {
@@ -7,7 +8,6 @@ export default {
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // CORS headers
         const corsHeaders = {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
@@ -15,20 +15,15 @@ export default {
             'Content-Type': 'application/json'
         };
 
-        // Handle CORS preflight
         if (request.method === 'OPTIONS') {
             return new Response(null, { headers: corsHeaders });
         }
 
         try {
-            // Routing API
             if (path.startsWith('/api/')) {
                 return await handleAPI(request, env, path, corsHeaders);
             }
-
-            // Serve static files
             return env.ASSETS.fetch(request);
-
         } catch (error) {
             console.error('Worker error:', error);
             return new Response(
@@ -40,12 +35,12 @@ export default {
 };
 
 // =============================================
-// API Router
+// API ROUTER
 // =============================================
 async function handleAPI(request, env, path, corsHeaders) {
     const method = request.method;
 
-    // === AUTH ===
+    // AUTH
     if (path === '/api/users' && method === 'GET') {
         return await getUsers(env, corsHeaders);
     }
@@ -53,7 +48,7 @@ async function handleAPI(request, env, path, corsHeaders) {
         return await login(request, env, corsHeaders);
     }
 
-    // === USERS ===
+    // USERS
     if (path === '/api/users' && method === 'POST') {
         return await createUser(request, env, corsHeaders);
     }
@@ -66,7 +61,7 @@ async function handleAPI(request, env, path, corsHeaders) {
         return await updateUser(id, request, env, corsHeaders);
     }
 
-    // === LOCATIONS ===
+    // LOCATIONS
     if (path === '/api/locations' && method === 'GET') {
         return await getLocations(env, corsHeaders);
     }
@@ -78,7 +73,7 @@ async function handleAPI(request, env, path, corsHeaders) {
         return await deleteLocation(id, env, corsHeaders);
     }
 
-    // === TASKS ===
+    // TASKS
     if (path === '/api/tasks' && method === 'GET') {
         const url = new URL(request.url);
         return await getTasks(url.searchParams, env, corsHeaders);
@@ -102,11 +97,15 @@ async function handleAPI(request, env, path, corsHeaders) {
         const id = path.split('/')[3];
         return await updateTaskStatus(id, request, env, corsHeaders);
     }
+    if (path.match(/^\/api\/tasks\/\d+\/join$/) && method === 'POST') {
+        const id = path.split('/')[3];
+        return await joinTask(id, request, env, corsHeaders);
+    }
     if (path === '/api/tasks/reorder' && method === 'POST') {
         return await reorderTasks(request, env, corsHeaders);
     }
 
-    // === TASK LOGS ===
+    // TASK LOGS
     if (path.match(/^\/api\/tasks\/\d+\/logs$/) && method === 'GET') {
         const taskId = path.split('/')[3];
         return await getTaskLogs(taskId, env, corsHeaders);
@@ -116,7 +115,7 @@ async function handleAPI(request, env, path, corsHeaders) {
         return await createTaskLog(taskId, request, env, corsHeaders);
     }
 
-    // === NOTIFICATIONS ===
+    // NOTIFICATIONS
     if (path.match(/^\/api\/notifications\/\d+$/) && method === 'GET') {
         const userId = path.split('/').pop();
         return await getNotifications(userId, env, corsHeaders);
@@ -130,6 +129,13 @@ async function handleAPI(request, env, path, corsHeaders) {
         return await markAllNotificationsRead(userId, env, corsHeaders);
     }
 
+    // REPORTS
+    if (path === '/api/reports' && method === 'GET') {
+        const url = new URL(request.url);
+        const period = url.searchParams.get('period') || 'week';
+        return await getReports(period, env, corsHeaders);
+    }
+
     return new Response(
         JSON.stringify({ error: 'Not Found' }),
         { status: 404, headers: corsHeaders }
@@ -137,17 +143,14 @@ async function handleAPI(request, env, path, corsHeaders) {
 }
 
 // =============================================
-// AUTH Functions
+// AUTH
 // =============================================
 async function getUsers(env, corsHeaders) {
     const result = await env.DB.prepare(
         'SELECT id, name, role FROM users WHERE active = 1 ORDER BY role DESC, name'
     ).all();
     
-    return new Response(
-        JSON.stringify(result.results),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify(result.results), { headers: corsHeaders });
 }
 
 async function login(request, env, corsHeaders) {
@@ -164,14 +167,11 @@ async function login(request, env, corsHeaders) {
         );
     }
     
-    return new Response(
-        JSON.stringify({ user }),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify({ user }), { headers: corsHeaders });
 }
 
 // =============================================
-// USER Functions
+// USERS
 // =============================================
 async function createUser(request, env, corsHeaders) {
     const { name, pin, role } = await request.json();
@@ -209,35 +209,23 @@ async function updateUser(id, request, env, corsHeaders) {
     
     await env.DB.prepare(query).bind(...params).run();
     
-    return new Response(
-        JSON.stringify({ success: true }),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 async function deleteUser(id, env, corsHeaders) {
-    await env.DB.prepare(
-        'UPDATE users SET active = 0 WHERE id = ?'
-    ).bind(id).run();
-    
-    return new Response(
-        JSON.stringify({ success: true }),
-        { headers: corsHeaders }
-    );
+    await env.DB.prepare('UPDATE users SET active = 0 WHERE id = ?').bind(id).run();
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 // =============================================
-// LOCATION Functions
+// LOCATIONS
 // =============================================
 async function getLocations(env, corsHeaders) {
     const result = await env.DB.prepare(
         'SELECT * FROM locations WHERE active = 1 ORDER BY type, name'
     ).all();
     
-    return new Response(
-        JSON.stringify(result.results),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify(result.results), { headers: corsHeaders });
 }
 
 async function createLocation(request, env, corsHeaders) {
@@ -261,18 +249,12 @@ async function createLocation(request, env, corsHeaders) {
 }
 
 async function deleteLocation(id, env, corsHeaders) {
-    await env.DB.prepare(
-        'UPDATE locations SET active = 0 WHERE id = ?'
-    ).bind(id).run();
-    
-    return new Response(
-        JSON.stringify({ success: true }),
-        { headers: corsHeaders }
-    );
+    await env.DB.prepare('UPDATE locations SET active = 0 WHERE id = ?').bind(id).run();
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 // =============================================
-// TASK Functions
+// TASKS
 // =============================================
 async function getTasks(params, env, corsHeaders) {
     const date = params.get('date');
@@ -298,19 +280,23 @@ async function getTasks(params, env, corsHeaders) {
         bindings.push(status);
     }
     
-    if (userId) {
-        query += ' AND (t.assigned_to = ? OR t.assigned_to IS NULL)';
-        bindings.push(userId);
-    }
-    
-    query += ' ORDER BY t.sort_order ASC, CASE t.priority WHEN "high" THEN 1 WHEN "normal" THEN 2 WHEN "low" THEN 3 END, t.scheduled_time ASC';
+    query += ` ORDER BY 
+        CASE t.status 
+            WHEN 'in_progress' THEN 1 
+            WHEN 'pending' THEN 2 
+            WHEN 'completed' THEN 3 
+        END,
+        CASE t.priority 
+            WHEN 'high' THEN 1 
+            WHEN 'normal' THEN 2 
+            WHEN 'low' THEN 3 
+        END,
+        t.sort_order ASC,
+        t.scheduled_time ASC`;
     
     const result = await env.DB.prepare(query).bind(...bindings).all();
     
-    return new Response(
-        JSON.stringify(result.results),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify(result.results), { headers: corsHeaders });
 }
 
 async function getTask(id, env, corsHeaders) {
@@ -329,7 +315,6 @@ async function getTask(id, env, corsHeaders) {
         );
     }
     
-    // Get logs
     const logs = await env.DB.prepare(`
         SELECT tl.*, u.name as user_name
         FROM task_logs tl
@@ -340,16 +325,22 @@ async function getTask(id, env, corsHeaders) {
     
     task.logs = logs.results;
     
-    return new Response(
-        JSON.stringify(task),
-        { headers: corsHeaders }
-    );
+    // Get additional drivers
+    const drivers = await env.DB.prepare(`
+        SELECT u.id, u.name 
+        FROM task_drivers td
+        JOIN users u ON td.user_id = u.id
+        WHERE td.task_id = ?
+    `).bind(id).all();
+    
+    task.additional_drivers = drivers.results;
+    
+    return new Response(JSON.stringify(task), { headers: corsHeaders });
 }
 
 async function createTask(request, env, corsHeaders) {
     const data = await request.json();
     
-    // Get max sort_order for this date
     const maxOrder = await env.DB.prepare(
         'SELECT MAX(sort_order) as max FROM tasks WHERE scheduled_date = ?'
     ).bind(data.scheduled_date).first();
@@ -378,38 +369,26 @@ async function createTask(request, env, corsHeaders) {
         data.assigned_to || null
     ).run();
     
-    // Create notification for assigned driver
-    if (data.assigned_to) {
-        await env.DB.prepare(`
-            INSERT INTO notifications (user_id, type, title, message, task_id)
-            VALUES (?, 'new_task', 'Nowe zadanie', ?, ?)
-        `).bind(
-            data.assigned_to,
-            `Przydzielono Ci nowe zadanie: ${data.description}`,
-            result.meta.last_row_id
-        ).run();
-    }
+    const taskId = result.meta.last_row_id;
     
-    // Notify all drivers about new task
+    // Notify all drivers
     const drivers = await env.DB.prepare(
         'SELECT id FROM users WHERE role = "driver" AND active = 1'
     ).all();
     
     for (const driver of drivers.results) {
-        if (driver.id !== data.assigned_to) {
-            await env.DB.prepare(`
-                INSERT INTO notifications (user_id, type, title, message, task_id)
-                VALUES (?, 'new_task', 'Nowe zadanie', ?, ?)
-            `).bind(
-                driver.id,
-                `Dodano nowe zadanie: ${data.description}`,
-                result.meta.last_row_id
-            ).run();
-        }
+        await env.DB.prepare(`
+            INSERT INTO notifications (user_id, type, title, message, task_id)
+            VALUES (?, 'new_task', 'Nowe zadanie', ?, ?)
+        `).bind(
+            driver.id,
+            `Dodano: ${data.description}`,
+            taskId
+        ).run();
     }
     
     return new Response(
-        JSON.stringify({ id: result.meta.last_row_id, success: true }),
+        JSON.stringify({ id: taskId, success: true }),
         { headers: corsHeaders }
     );
 }
@@ -446,12 +425,20 @@ async function updateTask(id, request, env, corsHeaders) {
         id
     ).run();
     
-    return new Response(
-        JSON.stringify({ success: true }),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
+async function deleteTask(id, env, corsHeaders) {
+    await env.DB.prepare('DELETE FROM task_logs WHERE task_id = ?').bind(id).run();
+    await env.DB.prepare('DELETE FROM task_drivers WHERE task_id = ?').bind(id).run();
+    await env.DB.prepare('DELETE FROM notifications WHERE task_id = ?').bind(id).run();
+    await env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(id).run();
+    
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+}
+// =============================================
+// TASK STATUS & JOIN
+// =============================================
 async function updateTaskStatus(id, request, env, corsHeaders) {
     const { status, userId } = await request.json();
     
@@ -471,12 +458,18 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     await env.DB.prepare(updateQuery).bind(...bindings).run();
     
     // Log status change
+    const statusLabels = {
+        'in_progress': 'Rozpoczęto',
+        'completed': 'Zakończono',
+        'pending': 'Oczekuje'
+    };
+    
     await env.DB.prepare(`
         INSERT INTO task_logs (task_id, user_id, log_type, message)
         VALUES (?, ?, 'status_change', ?)
-    `).bind(id, userId, `Status zmieniony na: ${status}`).run();
+    `).bind(id, userId, statusLabels[status] || status).run();
     
-    // Notify admins about status change
+    // Notify admins
     const task = await env.DB.prepare('SELECT description FROM tasks WHERE id = ?').bind(id).first();
     const admins = await env.DB.prepare(
         'SELECT id FROM users WHERE role = "admin" AND active = 1'
@@ -491,24 +484,60 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
             VALUES (?, 'status_change', 'Zmiana statusu', ?, ?)
         `).bind(
             admin.id,
-            `Zadanie "${task.description}" zostało ${statusText}`,
+            `"${task.description}" - ${statusText}`,
             id
         ).run();
     }
     
-    return new Response(
-        JSON.stringify({ success: true }),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
-async function deleteTask(id, env, corsHeaders) {
-    await env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(id).run();
+async function joinTask(id, request, env, corsHeaders) {
+    const { userId } = await request.json();
     
-    return new Response(
-        JSON.stringify({ success: true }),
-        { headers: corsHeaders }
-    );
+    // Check if already joined
+    const existing = await env.DB.prepare(
+        'SELECT id FROM task_drivers WHERE task_id = ? AND user_id = ?'
+    ).bind(id, userId).first();
+    
+    if (existing) {
+        return new Response(
+            JSON.stringify({ error: 'Już dołączyłeś do tego zadania' }),
+            { status: 400, headers: corsHeaders }
+        );
+    }
+    
+    // Add to task_drivers
+    await env.DB.prepare(
+        'INSERT INTO task_drivers (task_id, user_id) VALUES (?, ?)'
+    ).bind(id, userId).run();
+    
+    // Get user name
+    const user = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first();
+    
+    // Log join
+    await env.DB.prepare(`
+        INSERT INTO task_logs (task_id, user_id, log_type, message)
+        VALUES (?, ?, 'status_change', ?)
+    `).bind(id, userId, `${user.name} dołączył do zadania`).run();
+    
+    // Notify task owner
+    const task = await env.DB.prepare(
+        'SELECT assigned_to, description FROM tasks WHERE id = ?'
+    ).bind(id).first();
+    
+    if (task.assigned_to && task.assigned_to !== userId) {
+        await env.DB.prepare(`
+            INSERT INTO notifications (user_id, type, title, message, task_id)
+            VALUES (?, 'joined', 'Ktoś dołączył', ?, ?)
+        `).bind(
+            task.assigned_to,
+            `${user.name} dołączył do "${task.description}"`,
+            id
+        ).run();
+    }
+    
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 async function reorderTasks(request, env, corsHeaders) {
@@ -520,14 +549,11 @@ async function reorderTasks(request, env, corsHeaders) {
         ).bind(i + 1, tasks[i]).run();
     }
     
-    return new Response(
-        JSON.stringify({ success: true }),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 // =============================================
-// TASK LOG Functions
+// TASK LOGS
 // =============================================
 async function getTaskLogs(taskId, env, corsHeaders) {
     const result = await env.DB.prepare(`
@@ -538,16 +564,13 @@ async function getTaskLogs(taskId, env, corsHeaders) {
         ORDER BY tl.created_at DESC
     `).bind(taskId).all();
     
-    return new Response(
-        JSON.stringify(result.results),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify(result.results), { headers: corsHeaders });
 }
 
 async function createTaskLog(taskId, request, env, corsHeaders) {
     const { userId, logType, message, delayReason, delayMinutes } = await request.json();
     
-    const result = await env.DB.prepare(`
+    await env.DB.prepare(`
         INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes)
         VALUES (?, ?, ?, ?, ?, ?)
     `).bind(
@@ -562,34 +585,39 @@ async function createTaskLog(taskId, request, env, corsHeaders) {
     // Notify admins about delay/problem
     if (logType === 'delay' || logType === 'problem') {
         const task = await env.DB.prepare('SELECT description FROM tasks WHERE id = ?').bind(taskId).first();
+        const user = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first();
         const admins = await env.DB.prepare(
             'SELECT id FROM users WHERE role = "admin" AND active = 1'
         ).all();
         
-        const title = logType === 'delay' ? 'Przestój zgłoszony' : 'Problem zgłoszony';
+        const title = logType === 'delay' ? '⏱️ Przestój' : '⚠️ Problem';
+        const delayLabels = {
+            'no_access': 'Brak dojazdu',
+            'waiting': 'Oczekiwanie',
+            'traffic': 'Korki',
+            'equipment': 'Problem ze sprzętem',
+            'weather': 'Pogoda',
+            'break': 'Przerwa',
+            'other': 'Inny'
+        };
+        
+        const msgText = logType === 'delay' 
+            ? `${user.name}: ${delayLabels[delayReason] || delayReason} (${delayMinutes || 0} min)`
+            : `${user.name}: ${message}`;
         
         for (const admin of admins.results) {
             await env.DB.prepare(`
                 INSERT INTO notifications (user_id, type, title, message, task_id)
                 VALUES (?, ?, ?, ?, ?)
-            `).bind(
-                admin.id,
-                logType,
-                title,
-                `${task.description}: ${message || delayReason}`,
-                taskId
-            ).run();
+            `).bind(admin.id, logType, title, msgText, taskId).run();
         }
     }
     
-    return new Response(
-        JSON.stringify({ id: result.meta.last_row_id, success: true }),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 // =============================================
-// NOTIFICATION Functions
+// NOTIFICATIONS
 // =============================================
 async function getNotifications(userId, env, corsHeaders) {
     const result = await env.DB.prepare(`
@@ -618,10 +646,7 @@ async function markNotificationRead(notifId, env, corsHeaders) {
         'UPDATE notifications SET is_read = 1 WHERE id = ?'
     ).bind(notifId).run();
     
-    return new Response(
-        JSON.stringify({ success: true }),
-        { headers: corsHeaders }
-    );
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 async function markAllNotificationsRead(userId, env, corsHeaders) {
@@ -629,8 +654,116 @@ async function markAllNotificationsRead(userId, env, corsHeaders) {
         'UPDATE notifications SET is_read = 1 WHERE user_id = ?'
     ).bind(userId).run();
     
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+}
+
+// =============================================
+// REPORTS
+// =============================================
+async function getReports(period, env, corsHeaders) {
+    let dateCondition = '';
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (period === 'today') {
+        dateCondition = `AND t.scheduled_date = '${today}'`;
+    } else if (period === 'week') {
+        const weekAgo = new Date();
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const weekAgoStr = weekAgo.toISOString().split('T')[0];
+        dateCondition = `AND t.scheduled_date >= '${weekAgoStr}'`;
+    } else if (period === 'month') {
+        const monthAgo = new Date();
+        monthAgo.setDate(monthAgo.getDate() - 30);
+        const monthAgoStr = monthAgo.toISOString().split('T')[0];
+        dateCondition = `AND t.scheduled_date >= '${monthAgoStr}'`;
+    }
+    
+    // Summary stats
+    const summary = await env.DB.prepare(`
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
+        FROM tasks t
+        WHERE 1=1 ${dateCondition}
+    `).first();
+    
+    // Calculate average time for completed tasks
+    const avgTimeResult = await env.DB.prepare(`
+        SELECT AVG(
+            (julianday(completed_at) - julianday(started_at)) * 24 * 60
+        ) as avg_minutes
+        FROM tasks t
+        WHERE status = 'completed' 
+        AND started_at IS NOT NULL 
+        AND completed_at IS NOT NULL
+        ${dateCondition}
+    `).first();
+    
+    let avgTime = '-';
+    if (avgTimeResult && avgTimeResult.avg_minutes) {
+        const mins = Math.round(avgTimeResult.avg_minutes);
+        if (mins < 60) {
+            avgTime = `${mins} min`;
+        } else {
+            const hours = Math.floor(mins / 60);
+            const remainingMins = mins % 60;
+            avgTime = `${hours}h ${remainingMins}m`;
+        }
+    }
+    
+    // Per driver stats
+    const driversResult = await env.DB.prepare(`
+        SELECT 
+            u.id,
+            u.name,
+            COUNT(t.id) as total,
+            SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed,
+            AVG(
+                CASE WHEN t.status = 'completed' AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
+                THEN (julianday(t.completed_at) - julianday(t.started_at)) * 24 * 60
+                ELSE NULL END
+            ) as avg_minutes
+        FROM users u
+        LEFT JOIN tasks t ON t.assigned_to = u.id ${dateCondition.replace('AND', 'AND')}
+        WHERE u.role = 'driver' AND u.active = 1
+        GROUP BY u.id, u.name
+        ORDER BY completed DESC, u.name
+    `).all();
+    
+    const drivers = driversResult.results.map(d => {
+        let driverAvgTime = '-';
+        if (d.avg_minutes) {
+            const mins = Math.round(d.avg_minutes);
+            if (mins < 60) {
+                driverAvgTime = `${mins} min`;
+            } else {
+                const hours = Math.floor(mins / 60);
+                const remainingMins = mins % 60;
+                driverAvgTime = `${hours}h ${remainingMins}m`;
+            }
+        }
+        return {
+            id: d.id,
+            name: d.name,
+            total: d.total || 0,
+            completed: d.completed || 0,
+            avgTime: driverAvgTime
+        };
+    });
+    
     return new Response(
-        JSON.stringify({ success: true }),
+        JSON.stringify({
+            summary: {
+                total: summary.total || 0,
+                completed: summary.completed || 0,
+                in_progress: summary.in_progress || 0,
+                pending: summary.pending || 0,
+                avgTime
+            },
+            drivers
+        }),
         { headers: corsHeaders }
     );
 }
