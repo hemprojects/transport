@@ -1058,7 +1058,7 @@ async load() {
             }
         },
 
-        initAdminPanel() {
+                initAdminPanel() {
             Utils.$('#admin-user-name').textContent = state.currentUser.name;
             state.currentDate = Utils.getToday();
             Utils.$('#admin-date-picker').value = state.currentDate;
@@ -1069,6 +1069,10 @@ async load() {
             AdminPanel.loadUsers();
             AdminPanel.loadLocations();
             AdminPanel.updateDateButtons();
+            
+            // --- DODAJ TO: ---
+            // Załaduj domyślny raport (week)
+            AdminPanel.loadReports('week'); 
             
             Notifications.startPolling();
         },
@@ -2859,10 +2863,9 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
                 this.loadReports(period);
             };
 
-            if (reportType) {
+                        if (reportType) {
                 reportType.addEventListener('change', updateReport);
-                // Inicjalne załadowanie
-                updateReport();
+                // NIE wywołujemy tu updateReport() - zrobimy to po zalogowaniu
             }
             
             monthPicker?.addEventListener('change', updateReport);
