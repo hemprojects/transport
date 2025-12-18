@@ -866,20 +866,27 @@ async load() {
     // 11. AUTH
     // =============================================
     const Auth = {
-                async init() {
+                    async init() {
             const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
+            
             if (savedUser) {
                 try {
-                    state.currentUser = JSON.parse(savedUser);
+                    const parsed = JSON.parse(savedUser);
                     
-                    // WAŻNE: Sprawdź czy mamy token!
-                    if (!state.currentUser.token) throw new Error('Brak tokena');
+                    // Sprawdź czy dane są poprawne
+                    if (!parsed || !parsed.token || !parsed.id) {
+                        throw new Error('Uszkodzone dane sesji');
+                    }
+
+                    // Przywróć stan
+                    state.currentUser = parsed;
                     
+                    // Przejdź dalej
                     await this.onLoginSuccess();
+                    
                 } catch (e) {
-                    console.error('Session restore failed:', e);
-                    localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
-                    await this.showLoginScreen();
+                    console.error('Session error:', e);
+                    this.logout(true); // Wymuś wylogowanie i czyszczenie
                 }
             } else {
                 await this.showLoginScreen();
@@ -1077,10 +1084,11 @@ async load() {
             Notifications.startPolling();
         },
 
-                logout(force = false) {
+                    logout(force = false) {
             const performLogout = () => {
                 state.currentUser = null;
                 state.tasks = [];
+                state.notifications = [];
                 localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
                 Notifications.stopPolling();
                 this.showLoginScreen();
@@ -1088,12 +1096,9 @@ async load() {
 
             if (force) {
                 performLogout();
-                Toast.info('Sesja wygasła');
+                // Opcjonalnie: Toast.info('Sesja wygasła');
             } else {
-                Modal.confirm('Wylogowanie', 'Czy na pewno?', () => {
-                    performLogout();
-                    Toast.info('Wylogowano');
-                }, 'Wyloguj', false);
+                Modal.confirm('Wylogowanie', 'Czy na pewno?', performLogout, 'Wyloguj', false);
             }
         },
 
