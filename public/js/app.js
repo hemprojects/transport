@@ -233,12 +233,15 @@
     // =============================================
     // 4. API
     // =============================================
-    const API = {
+        const API = {
         async request(endpoint, options = {}) {
             const url = `${CONFIG.API_URL}${endpoint}`;
+            const token = state.currentUser?.token;
+            
             const config = {
                 headers: {
                     'Content-Type': 'application/json',
+                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
                     ...options.headers
                 },
                 ...options
@@ -250,6 +253,13 @@
 
             try {
                 const response = await fetch(url, config);
+                
+                // Obsługa wylogowania (401)
+                if (response.status === 401) {
+                    Auth.logout(true); // true = bez potwierdzenia (force logout)
+                    throw new Error('Sesja wygasła');
+                }
+
                 const data = await response.json();
 
                 if (!response.ok) {
@@ -363,10 +373,10 @@
             });
         },
 
-        async reorderTasks(taskIds) {
+                async reorderTasks(taskIds, reason, userId) {
             return await this.request('/tasks/reorder', {
                 method: 'POST',
-                body: { tasks: taskIds }
+                body: { tasks: taskIds, reason, userId }
             });
         },
 
@@ -877,8 +887,10 @@
 
             try {
                 const response = await API.login(userId, pin);
-                state.currentUser = response.user;
-                localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(response.user));
+                
+                // Zapisz usera I TOKEN
+                state.currentUser = { ...response.user, token: response.token };
+                localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(state.currentUser));
                 
                 Toast.success(`Witaj, ${response.user.name}!`);
                 await this.onLoginSuccess();
@@ -1003,25 +1015,24 @@
             Notifications.startPolling();
         },
 
-        logout() {
-            Modal.confirm(
-                'Wylogowanie',
-                'Czy na pewno chcesz się wylogować?',
-                () => {
-                    state.currentUser = null;
-                    state.tasks = [];
-                    state.notifications = [];
-                    state.currentFilter = 'all';
-                    
-                    localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
-                    Notifications.stopPolling();
-                    
+                logout(force = false) {
+            const performLogout = () => {
+                state.currentUser = null;
+                state.tasks = [];
+                localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
+                Notifications.stopPolling();
+                this.showLoginScreen();
+            };
+
+            if (force) {
+                performLogout();
+                Toast.info('Sesja wygasła');
+            } else {
+                Modal.confirm('Wylogowanie', 'Czy na pewno?', () => {
+                    performLogout();
                     Toast.info('Wylogowano');
-                    this.showLoginScreen();
-                },
-                'Wyloguj',
-                false
-            );
+                }, 'Wyloguj', false);
+            }
         },
 
         initEventListeners() {
@@ -2154,12 +2165,48 @@
             this.loadTasks();
         },
 
-        async saveReorder() {
+                async saveReorder() {
+            // Jeśli główny admin - zapisz od razu
+            if (state.currentUser.id === 1) {
+                this.submitReorder();
+                return;
+            }
+
+            // Inni muszą podać powód
+            Utils.$('#reorder-reason').value = '';
+            Modal.open('modal-reorder-reason');
+            
+            // Obsługa przycisków modala
+            const confirmBtn = Utils.$('#confirm-reorder-reason');
+            const cancelBtn = Utils.$('#cancel-reorder-reason');
+            
+            // Usuń stare listenery (klonowanie)
+            const newConfirm = confirmBtn.cloneNode(true);
+            const newCancel = cancelBtn.cloneNode(true);
+            confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
+            cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+
+            newConfirm.addEventListener('click', () => {
+                const reason = Utils.$('#reorder-reason').value.trim();
+                if (!reason) {
+                    Toast.warning('Musisz podać powód');
+                    return;
+                }
+                Modal.close('modal-reorder-reason');
+                this.submitReorder(reason);
+            });
+
+            newCancel.addEventListener('click', () => {
+                Modal.close('modal-reorder-reason');
+            });
+        },
+
+        async submitReorder(reason = null) {
             try {
                 const taskCards = Utils.$$('#admin-tasks-list .task-card:not(.status-completed):not(.status-in_progress)');
                 const newOrder = Array.from(taskCards).map(card => parseInt(card.dataset.id));
 
-                await API.reorderTasks(newOrder);
+                await API.reorderTasks(newOrder, reason, state.currentUser.id);
                 
                 state.isReorderMode = false;
                 Utils.$('#admin-tasks-list').classList.remove('reorder-mode');

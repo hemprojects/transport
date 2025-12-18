@@ -818,6 +818,24 @@
             </div>
         </div>
 
+                <!-- ========== MODAL: Powód zmiany kolejności ========== -->
+        <div id="modal-reorder-reason" class="modal hidden">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2>Zmiana kolejności</h2>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted" style="margin-bottom:15px">Podaj powód zmiany kolejności zadań:</p>
+                    <textarea id="reorder-reason" class="form-control" rows="3" placeholder="np. Awaria wózka, Pilne zamówienie..."></textarea>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" id="cancel-reorder-reason">Anuluj</button>
+                        <button type="button" class="btn btn-primary" id="confirm-reorder-reason">Zapisz</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- ========== TOAST CONTAINER ========== -->
         <div id="toast-container"></div>
 
