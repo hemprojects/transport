@@ -613,16 +613,64 @@
     // 9. NOTIFICATIONS
     // =============================================
     const Notifications = {
+        // Dodaj tę funkcję:
+        async requestPermission() {
+            if (!("Notification" in window)) return;
+            
+            if (Notification.permission === "granted") {
+                return true;
+            }
+            
+            if (Notification.permission !== "denied") {
+                const permission = await Notification.requestPermission();
+                return permission === "granted";
+            }
+            return false;
+        },
+
+        // Zaktualizuj funkcję load():
         async load() {
             if (!state.currentUser) return;
 
             try {
                 const response = await API.getNotifications(state.currentUser.id);
+                
+                // Sprawdź czy są nowe nieprzeczytane powiadomienia
+                // i czy ich liczba wzrosła od ostatniego sprawdzenia
+                if (response.unreadCount > state.unreadNotifications) {
+                    // Mamy nowe powiadomienie!
+                    const latest = response.notifications[0];
+                    if (latest && !latest.is_read) {
+                        this.showSystemNotification(latest.title, latest.message);
+                    }
+                }
+
                 state.notifications = response.notifications || [];
                 state.unreadNotifications = response.unreadCount || 0;
                 this.updateBadge();
             } catch (error) {
                 console.error('Failed to load notifications:', error);
+            }
+        },
+
+        // Dodaj funkcję wyświetlania:
+        showSystemNotification(title, body) {
+            if (!("Notification" in window)) return;
+            
+            if (Notification.permission === "granted") {
+                // Jeśli jest Service Worker (dla Androida lepiej)
+                if (navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.ready.then(registration => {
+                        registration.showNotification(title, {
+                            body: body,
+                            icon: '/icon.png', // opcjonalnie
+                            vibrate: [200, 100, 200]
+                        });
+                    });
+                } else {
+                    // Zwykłe powiadomienie
+                    new Notification(title, { body: body });
+                }
             }
         },
 
@@ -747,9 +795,15 @@
             Modal.open('modal-notifications');
         },
 
-        initEventListeners() {
-            Utils.$('#driver-notifications-btn')?.addEventListener('click', () => this.open());
-            Utils.$('#admin-notifications-btn')?.addEventListener('click', () => this.open());
+                initEventListeners() {
+            Utils.$('#driver-notifications-btn')?.addEventListener('click', () => {
+                this.open();
+                this.requestPermission(); // To poprosi o zgodę!
+            });
+            Utils.$('#admin-notifications-btn')?.addEventListener('click', () => {
+                this.open();
+                this.requestPermission(); // To też!
+            });
             Utils.$('#mark-all-read-btn')?.addEventListener('click', () => this.markAllRead());
         }
     };
@@ -809,13 +863,18 @@
     // 11. AUTH
     // =============================================
     const Auth = {
-        async init() {
+                async init() {
             const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
             if (savedUser) {
                 try {
                     state.currentUser = JSON.parse(savedUser);
+                    
+                    // WAŻNE: Sprawdź czy mamy token!
+                    if (!state.currentUser.token) throw new Error('Brak tokena');
+                    
                     await this.onLoginSuccess();
                 } catch (e) {
+                    console.error('Session restore failed:', e);
                     localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
                     await this.showLoginScreen();
                 }
