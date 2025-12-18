@@ -179,6 +179,27 @@ body {
     overflow-x: hidden;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    
+    /* --- NOWE LINIE --- */
+    /* Blokada zaznaczania tekstu */
+    -webkit-user-select: none; /* Safari / Chrome */
+    -moz-user-select: none;    /* Firefox */
+    -ms-user-select: none;     /* Edge */
+    user-select: none;         /* Standard */
+    
+    /* Blokada menu kontekstowego przy przytrzymaniu (iOS) */
+    -webkit-touch-callout: none;
+}
+
+/* --- DODAJ TEŻ TO ZARAZ POD BODY --- */
+/* Przywróć zaznaczanie w polach tekstowych, żeby dało się pisać */
+input, textarea, select {
+    -webkit-user-select: text;
+    -moz-user-select: text;
+    -ms-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    cursor: text;
 }
 
 #app {
