@@ -2460,3 +2460,117 @@ textarea:focus-visible {
     outline: 2px solid var(--primary);
     outline-offset: 2px;
 }
+/* =============================================
+   32. ADVANCED REPORTS & TIMELINE
+   ============================================= */
+.report-driver-card {
+    background: var(--bg-secondary);
+    border-radius: var(--border-radius-lg);
+    padding: var(--spacing-md);
+    margin-bottom: var(--spacing-md);
+    border: 1px solid var(--border-color);
+    transition: all var(--transition-fast);
+}
+
+.report-driver-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-md);
+}
+
+.report-driver-info {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.report-driver-kpi {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--primary);
+}
+
+.report-driver-kpi.high { color: var(--success); }
+.report-driver-kpi.medium { color: var(--warning); }
+.report-driver-kpi.low { color: var(--danger); }
+
+/* KPI Grid */
+.kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--spacing-sm);
+    margin-bottom: var(--spacing-md);
+}
+
+.kpi-box {
+    background: var(--bg-tertiary);
+    padding: var(--spacing-sm);
+    border-radius: var(--border-radius-md);
+    text-align: center;
+}
+
+.kpi-value {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+    color: var(--text-primary);
+}
+
+.kpi-label {
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+/* Timeline */
+.timeline-container {
+    position: relative;
+    height: 40px;
+    background: var(--bg-tertiary);
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+    margin-top: var(--spacing-sm);
+}
+
+.timeline-bar {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    transition: all 0.3s ease;
+}
+
+.timeline-bar.work {
+    background: var(--success);
+    opacity: 0.8;
+}
+
+.timeline-bar.delay {
+    background: var(--danger);
+    opacity: 0.8;
+}
+
+/* Timeline Labels (7:00, 11:00, 15:00) */
+.timeline-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-secondary);
+    margin-top: 4px;
+    padding: 0 4px;
+}
+
+/* Tooltip dla timeline */
+.timeline-bar:hover::after {
+    content: attr(data-title);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.8);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    z-index: 10;
+}

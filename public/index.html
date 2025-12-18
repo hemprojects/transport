@@ -280,11 +280,17 @@
                         <div class="report-header">
                             <h3 class="report-title">📊 Statystyki kierowców</h3>
                             <div class="form-group" style="margin:0; min-width: 140px;">
-                                <select id="report-period">
-                                    <option value="today">Dziś</option>
-                                    <option value="week" selected>Ten tydzień</option>
-                                    <option value="month">Ten miesiąc</option>
-                                </select>
+                                <div class="report-controls" style="display:flex; gap:10px; align-items:center;">
+    <select id="report-period-type" style="padding:8px; border-radius:8px; border:1px solid var(--border-color);">
+        <option value="today">Dziś</option>
+        <option value="week" selected>Ostatnie 7 dni</option>
+        <option value="month">Konkretny miesiąc</option>
+        <option value="day">Konkretny dzień</option>
+    </select>
+    
+    <input type="month" id="report-month-picker" class="hidden" style="padding:6px;">
+    <input type="date" id="report-day-picker" class="hidden" style="padding:6px;">
+</div>
                             </div>
                         </div>
                         <div id="report-stats" class="report-stats">
@@ -659,7 +665,22 @@
                             </label>
                         </div>
                     </div>
-
+                    <div id="driver-hours-fields" class="hidden">
+                        <div class="form-group">
+                            <label>Godziny pracy (dla raportów)</label>
+                            <div class="form-row">
+                                <div class="form-group" style="margin-bottom:0">
+                                    <label for="user-work-start" style="font-size:11px">Start</label>
+                                    <input type="time" id="user-work-start" value="07:00">
+                                </div>
+                                <div class="form-group" style="margin-bottom:0">
+                                    <label for="user-work-end" style="font-size:11px">Koniec</label>
+                                    <input type="time" id="user-work-end" value="15:00">
+                                </div>
+                            </div>
+                            <small class="form-hint">Domyślnie 07:00 - 15:00</small>
+                        </div>
+                    </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-close="modal-user">Anuluj</button>
                         <button type="submit" class="btn btn-primary">Zapisz</button>
@@ -763,6 +784,37 @@
                         <button type="button" id="join-task-confirm-btn" class="btn btn-primary">Dołącz</button>
                     </div>
                 </div>
+            </div>
+        </div>
+
+                <!-- ========== MODAL: Zmiana PIN (Wymuszona) ========== -->
+        <div id="modal-change-pin" class="modal hidden" style="z-index: 2000;">
+            <div class="modal-overlay"></div>
+            <div class="modal-container modal-small">
+                <div class="modal-header">
+                    <h2>🔐 Zmień PIN</h2>
+                </div>
+                <form id="change-pin-form" class="modal-body">
+                    <p class="text-muted" style="margin-bottom: 15px;">
+                        To Twoje pierwsze logowanie lub administrator wymusił zmianę. Ustaw nowy PIN.
+                    </p>
+                    
+                    <div class="form-group">
+                        <label for="new-pin">Nowy PIN (4-6 cyfr)</label>
+                        <input type="password" id="new-pin" required pattern="[0-9]{4,6}" maxlength="6" 
+                               inputmode="numeric" placeholder="••••" autocomplete="off">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="confirm-pin">Potwierdź PIN</label>
+                        <input type="password" id="confirm-pin" required pattern="[0-9]{4,6}" maxlength="6" 
+                               inputmode="numeric" placeholder="••••" autocomplete="off">
+                    </div>
+
+                    <div class="modal-footer">
+                        <button type="submit" class="btn btn-primary btn-block">Zapisz i wejdź</button>
+                    </div>
+                </form>
             </div>
         </div>
 

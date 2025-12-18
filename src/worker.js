@@ -157,7 +157,7 @@ async function login(request, env, corsHeaders) {
     const { userId, pin } = await request.json();
     
     const user = await env.DB.prepare(
-        'SELECT id, name, role FROM users WHERE id = ? AND pin = ? AND active = 1'
+        'SELECT id, name, role, force_pin_change FROM users WHERE id = ? AND pin = ? AND active = 1'
     ).bind(userId, pin).first();
     
     if (!user) {
@@ -184,7 +184,7 @@ async function createUser(request, env, corsHeaders) {
     }
     
     const result = await env.DB.prepare(
-        'INSERT INTO users (name, pin, role) VALUES (?, ?, ?)'
+        'INSERT INTO users (name, pin, role, force_pin_change) VALUES (?, ?, ?, 1)'
     ).bind(name, pin, role).run();
     
     return new Response(
@@ -194,17 +194,24 @@ async function createUser(request, env, corsHeaders) {
 }
 
 async function updateUser(id, request, env, corsHeaders) {
-    const { name, pin, role } = await request.json();
+    const { name, pin, role, force_pin_change, work_start, work_end } = await request.json();
     
-    let query = 'UPDATE users SET name = ?, role = ?';
-    let params = [name, role];
+    let query = 'UPDATE users SET ';
+    let params = [];
+    let updates = [];
+
+    if (name) { updates.push('name = ?'); params.push(name); }
+    if (role) { updates.push('role = ?'); params.push(role); }
+    if (pin) { updates.push('pin = ?'); params.push(pin); }
+    if (force_pin_change !== undefined) { updates.push('force_pin_change = ?'); params.push(force_pin_change); }
+    if (work_start) { updates.push('work_start = ?'); params.push(work_start); }
+    if (work_end) { updates.push('work_end = ?'); params.push(work_end); }
     
-    if (pin) {
-        query += ', pin = ?';
-        params.push(pin);
+    if (updates.length === 0) {
+        return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
     }
-    
-    query += ' WHERE id = ?';
+
+    query += updates.join(', ') + ' WHERE id = ?';
     params.push(id);
     
     await env.DB.prepare(query).bind(...params).run();
@@ -238,6 +245,28 @@ async function createLocation(request, env, corsHeaders) {
         );
     }
     
+    // Sprawdź czy już istnieje
+    const existing = await env.DB.prepare(
+        'SELECT id, active FROM locations WHERE name = ?'
+    ).bind(name).first();
+    
+    if (existing) {
+        if (existing.active === 0) {
+            // Reaktywuj usuniętą lokalizację
+            await env.DB.prepare(
+                'UPDATE locations SET active = 1, type = ? WHERE id = ?'
+            ).bind(type, existing.id).run();
+            return new Response(
+                JSON.stringify({ id: existing.id, name, type }),
+                { headers: corsHeaders }
+            );
+        }
+        return new Response(
+            JSON.stringify({ error: 'Lokalizacja o tej nazwie już istnieje' }),
+            { status: 400, headers: corsHeaders }
+        );
+    }
+    
     const result = await env.DB.prepare(
         'INSERT INTO locations (name, type) VALUES (?, ?)'
     ).bind(name, type).run();
@@ -259,10 +288,13 @@ async function deleteLocation(id, env, corsHeaders) {
 async function getTasks(params, env, corsHeaders) {
     const date = params.get('date');
     const status = params.get('status');
-    const userId = params.get('userId');
+    const createdBy = params.get('createdBy');
     
     let query = `
-        SELECT t.*, u.name as assigned_name, c.name as creator_name
+        SELECT t.*, 
+               u.name as assigned_name, 
+               c.name as creator_name,
+               t.created_by as creator_id
         FROM tasks t
         LEFT JOIN users u ON t.assigned_to = u.id
         LEFT JOIN users c ON t.created_by = c.id
@@ -278,6 +310,11 @@ async function getTasks(params, env, corsHeaders) {
     if (status && status !== 'all') {
         query += ' AND t.status = ?';
         bindings.push(status);
+    }
+    
+    if (createdBy) {
+        query += ' AND t.created_by = ?';
+        bindings.push(createdBy);
     }
     
     query += ` ORDER BY 
@@ -301,7 +338,10 @@ async function getTasks(params, env, corsHeaders) {
 
 async function getTask(id, env, corsHeaders) {
     const task = await env.DB.prepare(`
-        SELECT t.*, u.name as assigned_name, c.name as creator_name
+        SELECT t.*, 
+               u.name as assigned_name, 
+               c.name as creator_name,
+               t.created_by as creator_id
         FROM tasks t
         LEFT JOIN users u ON t.assigned_to = u.id
         LEFT JOIN users c ON t.created_by = c.id
@@ -325,7 +365,6 @@ async function getTask(id, env, corsHeaders) {
     
     task.logs = logs.results;
     
-    // Get additional drivers
     const drivers = await env.DB.prepare(`
         SELECT u.id, u.name 
         FROM task_drivers td
@@ -662,108 +701,122 @@ async function markAllNotificationsRead(userId, env, corsHeaders) {
 // =============================================
 async function getReports(period, env, corsHeaders) {
     let dateCondition = '';
-    const today = new Date().toISOString().split('T')[0];
+    let isSingleDay = false;
     
-    if (period === 'today') {
-        dateCondition = `AND t.scheduled_date = '${today}'`;
+    // Obsługa customowych dat
+    if (period.includes('-')) {
+        if (period.length === 7) { // YYYY-MM (Miesiąc)
+            dateCondition = `AND strftime('%Y-%m', t.scheduled_date) = '${period}'`;
+        } else { // YYYY-MM-DD (Dzień)
+            dateCondition = `AND t.scheduled_date = '${period}'`;
+            isSingleDay = true;
+        }
     } else if (period === 'week') {
-        const weekAgo = new Date();
-        weekAgo.setDate(weekAgo.getDate() - 7);
-        const weekAgoStr = weekAgo.toISOString().split('T')[0];
-        dateCondition = `AND t.scheduled_date >= '${weekAgoStr}'`;
-    } else if (period === 'month') {
-        const monthAgo = new Date();
-        monthAgo.setDate(monthAgo.getDate() - 30);
-        const monthAgoStr = monthAgo.toISOString().split('T')[0];
-        dateCondition = `AND t.scheduled_date >= '${monthAgoStr}'`;
+        dateCondition = `AND t.scheduled_date >= date('now', '-7 days')`;
+    } else if (period === 'today') { // Dziś
+        dateCondition = `AND t.scheduled_date = date('now')`;
+        isSingleDay = true;
     }
     
-    // Summary stats
-    const summary = await env.DB.prepare(`
-        SELECT 
-            COUNT(*) as total,
-            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
-            SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) as in_progress,
-            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending
-        FROM tasks t
-        WHERE 1=1 ${dateCondition}
-    `).first();
-    
-    // Calculate average time for completed tasks
-    const avgTimeResult = await env.DB.prepare(`
-        SELECT AVG(
-            (julianday(completed_at) - julianday(started_at)) * 24 * 60
-        ) as avg_minutes
-        FROM tasks t
-        WHERE status = 'completed' 
-        AND started_at IS NOT NULL 
-        AND completed_at IS NOT NULL
-        ${dateCondition}
-    `).first();
-    
-    let avgTime = '-';
-    if (avgTimeResult && avgTimeResult.avg_minutes) {
-        const mins = Math.round(avgTimeResult.avg_minutes);
-        if (mins < 60) {
-            avgTime = `${mins} min`;
-        } else {
-            const hours = Math.floor(mins / 60);
-            const remainingMins = mins % 60;
-            avgTime = `${hours}h ${remainingMins}m`;
-        }
-    }
-    
-    // Per driver stats
-    const driversResult = await env.DB.prepare(`
-        SELECT 
-            u.id,
-            u.name,
-            COUNT(t.id) as total,
-            SUM(CASE WHEN t.status = 'completed' THEN 1 ELSE 0 END) as completed,
-            AVG(
-                CASE WHEN t.status = 'completed' AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
-                THEN (julianday(t.completed_at) - julianday(t.started_at)) * 24 * 60
-                ELSE NULL END
-            ) as avg_minutes
-        FROM users u
-        LEFT JOIN tasks t ON t.assigned_to = u.id ${dateCondition.replace('AND', 'AND')}
-        WHERE u.role = 'driver' AND u.active = 1
-        GROUP BY u.id, u.name
-        ORDER BY completed DESC, u.name
+    const drivers = await env.DB.prepare(`
+        SELECT id, name, work_start, work_end 
+        FROM users WHERE role = 'driver' AND active = 1
     `).all();
-    
-    const drivers = driversResult.results.map(d => {
-        let driverAvgTime = '-';
-        if (d.avg_minutes) {
-            const mins = Math.round(d.avg_minutes);
-            if (mins < 60) {
-                driverAvgTime = `${mins} min`;
-            } else {
-                const hours = Math.floor(mins / 60);
-                const remainingMins = mins % 60;
-                driverAvgTime = `${hours}h ${remainingMins}m`;
-            }
+
+    const driversStats = [];
+
+    for (const driver of drivers.results) {
+        // Pobierz zadania
+        const tasks = await env.DB.prepare(`
+            SELECT t.id, t.description, t.status, t.started_at, t.completed_at, t.scheduled_date
+            FROM tasks t LEFT JOIN task_drivers td ON t.id = td.task_id
+            WHERE (t.assigned_to = ? OR td.user_id = ?) ${dateCondition}
+            AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
+            ORDER BY t.started_at
+        `).bind(driver.id, driver.id).all();
+
+        // Pobierz przestoje
+        const delays = await env.DB.prepare(`
+            SELECT delay_minutes, created_at FROM task_logs tl
+            LEFT JOIN tasks t ON tl.task_id = t.id
+            WHERE tl.user_id = ? AND tl.log_type = 'delay' ${dateCondition}
+        `).bind(driver.id).all();
+
+        let workMinutes = 0;
+        let delayMinutes = 0;
+        
+        // Dane do wykresu
+        let timeline = [];
+        
+        if (isSingleDay) {
+            // Timeline godzinowy (jak teraz)
+            timeline = tasks.results.map(t => ({
+                type: 'work',
+                start: t.started_at,
+                end: t.completed_at,
+                desc: t.description
+            }));
+        } else {
+            // Wykres słupkowy (dni)
+            // Grupuj po dacie
+            const dailyStats = {};
+            
+            tasks.results.forEach(t => {
+                const date = t.scheduled_date;
+                if (!dailyStats[date]) dailyStats[date] = 0;
+                
+                const start = new Date(t.started_at);
+                const end = new Date(t.completed_at);
+                const minutes = (end - start) / 1000 / 60;
+                dailyStats[date] += minutes;
+            });
+
+            // Konwertuj na format dla frontendu
+            timeline = Object.keys(dailyStats).sort().map(date => ({
+                type: 'bar',
+                date: date,
+                minutes: Math.round(dailyStats[date]),
+                percent: Math.min(100, Math.round((dailyStats[date] / 480) * 100)) // % z 8h
+            }));
         }
-        return {
-            id: d.id,
-            name: d.name,
-            total: d.total || 0,
-            completed: d.completed || 0,
-            avgTime: driverAvgTime
-        };
-    });
+
+        // Sumy ogólne
+        tasks.results.forEach(t => {
+            const start = new Date(t.started_at);
+            const end = new Date(t.completed_at);
+            workMinutes += Math.max(0, (end - start) / 1000 / 60);
+        });
+
+        delays.results.forEach(d => delayMinutes += (d.delay_minutes || 0));
+
+        // KPI
+        let targetMinutes = 0;
+        
+        if (isSingleDay) {
+            const [startH, startM] = (driver.work_start || '07:00').split(':');
+            const [endH, endM] = (driver.work_end || '15:00').split(':');
+            targetMinutes = Math.max(0, ((parseInt(endH) * 60 + parseInt(endM)) - (parseInt(startH) * 60 + parseInt(startM))) - 20);
+        } else {
+            // Dla okresu: liczba dni aktywnych * (8h - 20min)
+            // Uproszczenie: KPI liczymy tylko dla dni w których była praca
+            const activeDays = new Set(tasks.results.map(t => t.scheduled_date)).size;
+            targetMinutes = activeDays * (480 - 20); 
+        }
+        
+        const efficiency = targetMinutes > 0 ? Math.min(100, Math.round((workMinutes / targetMinutes) * 100)) : 0;
+
+        driversStats.push({
+            id: driver.id,
+            name: driver.name,
+            tasksCount: tasks.results.length,
+            workTime: Math.round(workMinutes),
+            delayTime: Math.round(delayMinutes),
+            kpi: efficiency,
+            isSingleDay: isSingleDay, // Flaga dla frontendu
+            timeline: timeline
+        });
+    }
     
-    return new Response(
-        JSON.stringify({
-            summary: {
-                total: summary.total || 0,
-                completed: summary.completed || 0,
-                in_progress: summary.in_progress || 0,
-                pending: summary.pending || 0,
-                avgTime
-            },
-            drivers
-        }),
-        { headers: corsHeaders }
-    );
+    driversStats.sort((a, b) => b.kpi - a.kpi);
+    return new Response(JSON.stringify({ drivers: driversStats }), { headers: corsHeaders });
 }

@@ -70,7 +70,11 @@
 
         formatTime(timeStr) {
             if (!timeStr) return '';
-            return timeStr.substring(0, 5);
+            // Jeśli format HH:MM:SS lub HH:MM
+            if (timeStr.includes(':')) {
+                return timeStr.substring(0, 5);
+            }
+            return timeStr;
         },
 
         formatRelativeTime(dateTimeStr) {
@@ -90,21 +94,22 @@
         },
 
         getToday() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const day = String(now.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-},
+            // Pobierz datę lokalną w formacie YYYY-MM-DD
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        },
 
         addDays(dateStr, days) {
-    const date = new Date(dateStr + 'T12:00:00');
-    date.setDate(date.getDate() + days);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-},
+            const date = new Date(dateStr + 'T12:00:00'); // T12:00:00 zapobiega problemom ze strefą
+            date.setDate(date.getDate() + days);
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        },
 
         isToday(dateStr) {
             return dateStr === this.getToday();
@@ -888,8 +893,15 @@
             }
         },
 
-        async onLoginSuccess() {
+                async onLoginSuccess() {
             Utils.$('#login-form')?.reset();
+
+            // Sprawdź czy wymuszona zmiana PIN
+            if (state.currentUser.force_pin_change) {
+                this.showChangePinModal();
+                return;
+            }
+
             await this.loadCommonData();
 
             if (state.currentUser.role === 'admin') {
@@ -897,6 +909,57 @@
             } else {
                 this.initDriverPanel();
             }
+        },
+
+        showChangePinModal() {
+            // Ukryj ekran logowania, ale nie pokazuj jeszcze panelu
+            Screen.show('loading');
+            
+            // Pokaż modal (bez możliwości zamknięcia)
+            const modal = Utils.$('#modal-change-pin');
+            Utils.show(modal);
+            
+            // Obsługa formularza
+            const form = Utils.$('#change-pin-form');
+            form.onsubmit = async (e) => {
+                e.preventDefault();
+                const newPin = Utils.$('#new-pin').value;
+                const confirmPin = Utils.$('#confirm-pin').value;
+
+                if (newPin !== confirmPin) {
+                    Toast.error('PIN-y muszą być identyczne');
+                    return;
+                }
+
+                if (newPin.length < 4 || newPin.length > 6) {
+                    Toast.error('PIN musi mieć 4-6 cyfr');
+                    return;
+                }
+
+                try {
+                    await API.updateUser(state.currentUser.id, { 
+                        pin: newPin,
+                        force_pin_change: 0 
+                    });
+                    
+                    Toast.success('PIN zmieniony pomyślnie!');
+                    Utils.hide(modal);
+                    
+                    // Zaktualizuj stan lokalny
+                    state.currentUser.force_pin_change = 0;
+                    localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(state.currentUser));
+                    
+                    // Kontynuuj logowanie
+                    await this.loadCommonData();
+                    if (state.currentUser.role === 'admin') {
+                        this.initAdminPanel();
+                    } else {
+                        this.initDriverPanel();
+                    }
+                } catch (error) {
+                    Toast.error('Nie udało się zmienić PIN-u');
+                }
+            };
         },
 
         async loadCommonData() {
@@ -1523,8 +1586,20 @@
     const TaskForm = {
         currentTaskId: null,
 
-        open(taskId = null) {
+                async open(taskId = null) {
             this.currentTaskId = taskId;
+
+            // Jeśli edycja - sprawdź uprawnienia
+            if (taskId) {
+                const task = state.tasks.find(t => t.id == taskId);
+                const isMainAdmin = state.currentUser.id === 1; // Zakładamy ID 1 = Główny Admin
+                const isCreator = task && task.creator_id === state.currentUser.id;
+                
+                if (!isMainAdmin && !isCreator) {
+                    Toast.error('Możesz edytować tylko zadania utworzone przez siebie');
+                    return;
+                }
+            }
 
             Utils.$('#modal-task-title').textContent = taskId ? 'Edytuj zadanie' : 'Nowe zadanie';
             Utils.$('#task-form').reset();
@@ -1786,9 +1861,15 @@
             }
         },
 
-        renderTaskCard(task, order) {
+                renderTaskCard(task, order) {
             const isCompleted = task.status === 'completed';
             const isInProgress = task.status === 'in_progress';
+            
+            // Sprawdź czy użytkownik może edytować (admin główny lub twórca)
+            // Zakładamy że ID=1 to główny admin
+            const isMainAdmin = state.currentUser.id === 1; 
+            const isCreator = task.creator_id === state.currentUser.id;
+            const canEdit = isMainAdmin || isCreator;
 
             let taskDescription = '';
             if (task.task_type === 'transport') {
@@ -1821,12 +1902,41 @@
                     <span>${Utils.escapeHtml(task.assigned_name)}</span>
                 </span>
             ` : '';
+            
+            const creatorHtml = task.creator_name ? `
+                <span class="task-meta-item" title="Utworzył">
+                    <span>✏️</span>
+                    <span>${Utils.escapeHtml(task.creator_name)}</span>
+                </span>
+            ` : '';
+
+            // Przyciski akcji - tylko jeśli ma uprawnienia
+            let actionsHtml = '';
+            if (canEdit) {
+                actionsHtml = `
+                    <div class="task-actions">
+                        <button class="task-action-btn" data-action="edit" data-id="${task.id}" title="Edytuj">
+                            ✏️
+                        </button>
+                        <button class="task-action-btn btn-delete" data-action="delete" data-id="${task.id}" title="Usuń">
+                            🗑️
+                        </button>
+                    </div>
+                `;
+            } else {
+                actionsHtml = `
+                    <div class="task-actions">
+                        <span class="text-muted" style="font-size:12px">Brak uprawnień</span>
+                    </div>
+                `;
+            }
 
             return `
                 <div class="task-card priority-${task.priority} status-${task.status}" 
                      data-id="${task.id}" 
-                     draggable="${state.isReorderMode && !isCompleted && !isInProgress}">
+                     draggable="${state.isReorderMode && !isCompleted && !isInProgress && canEdit}">
                     
+                    ${state.isReorderMode && canEdit ? `
                     <div class="task-drag-handle">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <circle cx="9" cy="6" r="2"/>
@@ -1836,7 +1946,7 @@
                             <circle cx="9" cy="18" r="2"/>
                             <circle cx="15" cy="18" r="2"/>
                         </svg>
-                    </div>
+                    </div>` : ''}
                     
                     <div class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(task.status)} ${Utils.getStatusLabel(task.status)}
@@ -1849,8 +1959,9 @@
                                 ${Utils.getTaskTypeIcon(task.task_type)} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
                             <span class="task-priority-badge priority-${task.priority}" 
-                                  data-action="change-priority" data-id="${task.id}" 
-                                  title="Zmień priorytet">
+                                  data-action="${canEdit ? 'change-priority' : ''}" data-id="${task.id}" 
+                                  title="Zmień priorytet" 
+                                  style="${canEdit ? 'cursor:pointer' : 'cursor:default'}">
                                 ${Utils.getPriorityIcon(task.priority)} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
@@ -1873,15 +1984,9 @@
                                 </span>
                             ` : ''}
                             ${assignedHtml}
+                            ${creatorHtml}
                         </div>
-                        <div class="task-actions">
-                            <button class="task-action-btn" data-action="edit" data-id="${task.id}" title="Edytuj">
-                                ✏️
-                            </button>
-                            <button class="task-action-btn btn-delete" data-action="delete" data-id="${task.id}" title="Usuń">
-                                🗑️
-                            </button>
-                        </div>
+                        ${actionsHtml}
                     </div>
                 </div>
             `;
@@ -2188,32 +2293,52 @@
             });
         },
 
-        openUserModal(userId = null) {
-            Utils.$('#modal-user-title').textContent = userId ? 'Edytuj użytkownika' : 'Nowy użytkownik';
+                openUserModal(userId = null) {
+            const isEdit = !!userId;
+            
+            Utils.$('#modal-user-title').textContent = isEdit ? 'Edytuj użytkownika' : 'Nowy użytkownik';
             Utils.$('#user-form').reset();
             Utils.$('#user-id').value = '';
-            Utils.$('#pin-hint').classList.toggle('hidden', !userId);
-            Utils.$('#user-pin').required = !userId;
+            Utils.$('#pin-hint').classList.toggle('hidden', !isEdit);
+            Utils.$('#user-pin').required = !isEdit;
+            
+            // Domyślne godziny
+            Utils.$('#user-work-start').value = '07:00';
+            Utils.$('#user-work-end').value = '15:00';
 
-            if (userId) {
+            // Pokaż/ukryj pola godzin
+            const toggleHours = () => {
+                const role = document.querySelector('input[name="user-role"]:checked').value;
+                Utils.toggle('#driver-hours-fields', role === 'driver');
+            };
+
+            Utils.$$('input[name="user-role"]').forEach(r => r.addEventListener('change', toggleHours));
+
+            if (isEdit) {
                 const user = state.users.find(u => u.id == userId);
                 if (user) {
                     Utils.$('#user-id').value = user.id;
                     Utils.$('#user-name').value = user.name;
                     document.querySelector(`input[name="user-role"][value="${user.role}"]`).checked = true;
+                    if (user.work_start) Utils.$('#user-work-start').value = user.work_start;
+                    if (user.work_end) Utils.$('#user-work-end').value = user.work_end;
                 }
             }
-
+            
+            toggleHours();
             Modal.open('modal-user');
         },
 
         async handleUserSubmit(e) {
-    e.preventDefault();
+            e.preventDefault();
 
-    const userId = Utils.$('#user-id').value;
-    const name = Utils.$('#user-name').value.trim();
-    const pin = Utils.$('#user-pin').value.trim();
-    const role = document.querySelector('input[name="user-role"]:checked').value;
+            const userId = Utils.$('#user-id').value;
+            const name = Utils.$('#user-name').value.trim();
+            const pin = Utils.$('#user-pin').value.trim();
+            const role = document.querySelector('input[name="user-role"]:checked').value;
+            
+            const work_start = role === 'driver' ? Utils.$('#user-work-start').value : null;
+            const work_end = role === 'driver' ? Utils.$('#user-work-end').value : null;
 
     if (!name) { Toast.warning('Wpisz imię'); return; }
     if (!userId && !pin) { Toast.warning('Wpisz PIN'); return; }
@@ -2225,11 +2350,12 @@
 
     // Sync w tle
     try {
-        if (userId) {
-            await API.updateUser(userId, { name, pin: pin || undefined, role });
-        } else {
-            await API.createUser({ name, pin, role });
-        }
+                if (userId) {
+                    await API.updateUser(userId, { name, pin: pin || undefined, role, work_start, work_end });
+                } else {
+                    // Domyślnie wymuś zmianę PIN dla nowych
+                    await API.createUser({ name, pin, role, work_start, work_end, force_pin_change: 1 });
+                }
         await this.loadUsers();
     } catch (error) {
         Toast.error('Błąd synchronizacji');
@@ -2278,9 +2404,16 @@
             }
         },
 
-        renderLocations() {
+                renderLocations() {
             const locationsList = Utils.$('#locations-list');
             const departmentsList = Utils.$('#departments-list');
+            const isMainAdmin = state.currentUser.id === 1; // Tylko główny admin usuwa
+
+            const renderDeleteBtn = (id) => isMainAdmin ? `
+                <div class="location-actions">
+                    <button class="task-action-btn btn-delete" data-action="delete-location" data-id="${id}">🗑️</button>
+                </div>
+            ` : '';
 
             locationsList.innerHTML = state.locations.map(loc => `
                 <div class="location-card" data-id="${loc.id}">
@@ -2289,9 +2422,7 @@
                             <h3>📍 ${Utils.escapeHtml(loc.name)}</h3>
                         </div>
                     </div>
-                    <div class="location-actions">
-                        <button class="task-action-btn btn-delete" data-action="delete-location" data-id="${loc.id}">🗑️</button>
-                    </div>
+                    ${renderDeleteBtn(loc.id)}
                 </div>
             `).join('') || '<p class="text-muted text-center">Brak lokalizacji</p>';
 
@@ -2302,15 +2433,15 @@
                             <h3>🏢 ${Utils.escapeHtml(dept.name)}</h3>
                         </div>
                     </div>
-                    <div class="location-actions">
-                        <button class="task-action-btn btn-delete" data-action="delete-location" data-id="${dept.id}">🗑️</button>
-                    </div>
+                    ${renderDeleteBtn(dept.id)}
                 </div>
             `).join('') || '<p class="text-muted text-center">Brak działów</p>';
 
-            Utils.$$('[data-action="delete-location"]').forEach(btn => {
-                btn.addEventListener('click', () => this.deleteLocation(btn.dataset.id));
-            });
+            if (isMainAdmin) {
+                Utils.$$('[data-action="delete-location"]').forEach(btn => {
+                    btn.addEventListener('click', () => this.deleteLocation(btn.dataset.id));
+                });
+            }
         },
 
         async handleLocationSubmit(e) {
@@ -2359,71 +2490,167 @@
     );
 },
 
-        // REPORTS
-        async loadReports() {
-            const period = Utils.$('#report-period').value;
+                // REPORTS
+        async loadReports(period = 'week') {
             try {
                 const data = await API.getReports(period);
                 this.renderReports(data);
             } catch (error) {
                 console.error('Failed to load reports:', error);
-                Utils.$('#report-stats').innerHTML = '<p class="text-muted">Nie udało się załadować raportów</p>';
+                Utils.$('#report-stats').innerHTML = '<p class="text-muted">Błąd ładowania</p>';
             }
         },
 
         renderReports(data) {
+            const container = Utils.$('#report-drivers-list');
             const statsContainer = Utils.$('#report-stats');
-            const listContainer = Utils.$('#report-drivers-list');
 
-            if (!data || !data.summary) {
-                statsContainer.innerHTML = '<p class="text-muted">Brak danych</p>';
-                listContainer.innerHTML = '';
+            if (!data || !data.drivers) {
+                container.innerHTML = '<p class="text-muted text-center">Brak danych</p>';
                 return;
             }
 
+            // Podsumowanie ogólne
+            const totalTasks = data.drivers.reduce((sum, d) => sum + d.tasksCount, 0);
+            const avgKpi = Math.round(data.drivers.reduce((sum, d) => sum + d.kpi, 0) / (data.drivers.length || 1));
+
             statsContainer.innerHTML = `
                 <div class="report-stat">
-                    <div class="report-stat-value">${data.summary.total || 0}</div>
-                    <div class="report-stat-label">Wszystkie</div>
+                    <div class="report-stat-value">${totalTasks}</div>
+                    <div class="report-stat-label">Zadań</div>
                 </div>
                 <div class="report-stat">
-                    <div class="report-stat-value">${data.summary.completed || 0}</div>
-                    <div class="report-stat-label">Ukończone</div>
+                    <div class="report-stat-value">${avgKpi}%</div>
+                    <div class="report-stat-label">Śr. KPI</div>
                 </div>
                 <div class="report-stat">
-                    <div class="report-stat-value">${data.summary.avgTime || '-'}</div>
-                    <div class="report-stat-label">Śr. czas</div>
+                    <div class="report-stat-value">${data.drivers.length}</div>
+                    <div class="report-stat-label">Kierowców</div>
                 </div>
             `;
 
-            if (data.drivers && data.drivers.length > 0) {
-                listContainer.innerHTML = `
-                    <table class="report-table">
-                        <thead>
-                            <tr>
-                                <th>Kierowca</th>
-                                <th>Ukończone</th>
-                                <th>Śr. czas</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${data.drivers.map(d => `
-                                <tr>
-                                    <td>${Utils.escapeHtml(d.name)}</td>
-                                    <td>${d.completed}</td>
-                                    <td>${d.avgTime || '-'}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+            // Lista kierowców z wykresami
+            container.innerHTML = data.drivers.map(driver => {
+                const kpiColor = driver.kpi >= 80 ? 'high' : driver.kpi >= 50 ? 'medium' : 'low';
+                
+                // Wybierz odpowiedni wykres
+                let chartHtml = '';
+                let labelsHtml = '';
+
+                if (driver.isSingleDay) {
+                    chartHtml = this.generateTimeline(driver.timeline);
+                    labelsHtml = `
+                        <div class="timeline-labels">
+                            <span>07:00</span>
+                            <span>11:00</span>
+                            <span>15:00</span>
+                        </div>
+                    `;
+                } else {
+                    chartHtml = this.generateBarChart(driver.timeline);
+                }
+
+                return `
+                    <div class="report-driver-card">
+                        <div class="report-driver-header">
+                            <div class="report-driver-info">
+                                <div class="user-avatar">🚗</div>
+                                <div>
+                                    <h3>${Utils.escapeHtml(driver.name)}</h3>
+                                    <span class="text-muted" style="font-size:12px">KPI: ${driver.kpi}%</span>
+                                </div>
+                            </div>
+                            <div class="report-driver-kpi ${kpiColor}">${driver.kpi}%</div>
+                        </div>
+
+                        <div class="kpi-grid">
+                            <div class="kpi-box">
+                                <div class="kpi-value">${this.formatDuration(driver.workTime)}</div>
+                                <div class="kpi-label">Praca</div>
+                            </div>
+                            <div class="kpi-box">
+                                <div class="kpi-value" style="color:var(--danger)">${this.formatDuration(driver.delayTime)}</div>
+                                <div class="kpi-label">Przestoje</div>
+                            </div>
+                            <div class="kpi-box">
+                                <div class="kpi-value">${driver.tasksCount}</div>
+                                <div class="kpi-label">Zadań</div>
+                            </div>
+                        </div>
+
+                        <div class="timeline-container ${driver.isSingleDay ? '' : 'bar-chart'}" 
+                             style="${driver.isSingleDay ? '' : 'height:150px; overflow-x:auto; overflow-y:hidden;'}">
+                            ${chartHtml}
+                        </div>
+                        ${labelsHtml}
+                    </div>
                 `;
-            } else {
-                listContainer.innerHTML = '<p class="text-muted text-center">Brak danych o kierowcach</p>';
-            }
+            }).join('');
+        },
+
+        formatDuration(minutes) {
+            if (!minutes) return '0m';
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            return h > 0 ? `${h}h ${m}m` : `${m}m`;
+        },
+
+        generateBarChart(days) {
+            if (!days || days.length === 0) return '<p class="text-center text-muted" style="padding:20px">Brak danych</p>';
+
+            return `
+                <div style="display:flex; gap:10px; height:100%; align-items:flex-end; padding:10px;">
+                    ${days.map(d => `
+                        <div style="flex:1; display:flex; flex-direction:column; align-items:center; min-width:30px;">
+                            <div style="font-size:10px; margin-bottom:4px; font-weight:bold;">${this.formatDuration(d.minutes)}</div>
+                            <div style="width:100%; background:var(--bg-tertiary); height:80px; border-radius:4px; position:relative; overflow:hidden;">
+                                <div style="position:absolute; bottom:0; left:0; right:0; height:${d.percent}%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(d.date)}"></div>
+                            </div>
+                            <div style="font-size:9px; margin-top:4px; color:var(--text-secondary); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${Utils.formatDateShort(d.date)}</div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        },
+
+        generateTimeline(events) {
+            if (!events || events.length === 0) return '';
+            
+            const dayStart = new Date();
+            dayStart.setHours(7, 0, 0, 0);
+            const totalMinutes = 480; 
+
+            return events.map(event => {
+                const start = new Date(event.start);
+                const end = new Date(event.end);
+                
+                const startDiff = (start - dayStart) / 1000 / 60;
+                const duration = (end - start) / 1000 / 60;
+                
+                let left = (startDiff / totalMinutes) * 100;
+                let width = (duration / totalMinutes) * 100;
+                
+                if (left < 0) { width += left; left = 0; }
+                if (left + width > 100) width = 100 - left;
+                if (width <= 0) return '';
+
+                return `
+                    <div class="timeline-bar ${event.type}" 
+                         style="left: ${left}%; width: ${width}%"
+                         data-title="${Utils.escapeHtml(event.desc)} (${Math.round(duration)} min)">
+                    </div>
+                `;
+            }).join('');
         },
 
         // TABS
-        switchTab(tabId) {
+                switchTab(tabId) {
+            // Blokada zakładki użytkownicy dla zwykłych kierowników
+            if (tabId === 'users' && state.currentUser.id !== 1) {
+                Toast.warning('Brak uprawnień do zarządzania użytkownikami');
+                return;
+            }
+
             state.currentTab = tabId;
 
             Utils.$$('.tab-btn').forEach(btn => {
@@ -2489,8 +2716,43 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
             Utils.$('#add-location-btn')?.addEventListener('click', () => Modal.open('modal-location'));
             Utils.$('#location-form')?.addEventListener('submit', (e) => this.handleLocationSubmit(e));
 
-            // Reports
-            Utils.$('#report-period')?.addEventListener('change', () => this.loadReports());
+                       // Reports - NOWA LOGIKA
+            const reportType = Utils.$('#report-period-type');
+            const monthPicker = Utils.$('#report-month-picker');
+            const dayPicker = Utils.$('#report-day-picker');
+
+            // Ustaw domyślne daty
+            if (monthPicker) monthPicker.value = new Date().toISOString().slice(0, 7);
+            if (dayPicker) dayPicker.value = Utils.getToday();
+
+            const updateReport = () => {
+                if (!reportType) return;
+                
+                const type = reportType.value;
+                let period = type;
+                
+                Utils.hide(monthPicker);
+                Utils.hide(dayPicker);
+
+                if (type === 'month') {
+                    Utils.show(monthPicker);
+                    period = monthPicker.value;
+                } else if (type === 'day') {
+                    Utils.show(dayPicker);
+                    period = dayPicker.value;
+                }
+
+                this.loadReports(period);
+            };
+
+            if (reportType) {
+                reportType.addEventListener('change', updateReport);
+                // Inicjalne załadowanie
+                updateReport();
+            }
+            
+            monthPicker?.addEventListener('change', updateReport);
+            dayPicker?.addEventListener('change', updateReport);
         }
     };
 
