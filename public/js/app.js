@@ -629,29 +629,32 @@
         },
 
         // Zaktualizuj funkcję load():
-        async load() {
-            if (!state.currentUser) return;
+async load() {
+    if (!state.currentUser) return;
 
-            try {
-                const response = await API.getNotifications(state.currentUser.id);
-                
-                // Sprawdź czy są nowe nieprzeczytane powiadomienia
-                // i czy ich liczba wzrosła od ostatniego sprawdzenia
-                if (response.unreadCount > state.unreadNotifications) {
-                    // Mamy nowe powiadomienie!
-                    const latest = response.notifications[0];
-                    if (latest && !latest.is_read) {
-                        this.showSystemNotification(latest.title, latest.message);
-                    }
-                }
-
-                state.notifications = response.notifications || [];
-                state.unreadNotifications = response.unreadCount || 0;
-                this.updateBadge();
-            } catch (error) {
-                console.error('Failed to load notifications:', error);
+    try {
+        const response = await API.getNotifications(state.currentUser.id);
+        
+        // --- CZYTAJ TUTAJ ---
+        // Jeśli nie ma nowych powiadomień, to nic nie robimy
+        // Ale musimy zawsze zaktualizować listę!
+        
+        if (response.unreadCount > state.unreadNotifications) {
+            const latest = response.notifications[0];
+            if (latest && !latest.is_read) {
+                // To wywołuje systemowe
+                this.showSystemNotification(latest.title, latest.message);
             }
-        },
+        }
+
+        // To musi się wykonać ZAWSZE:
+        state.notifications = response.notifications || [];
+        state.unreadNotifications = response.unreadCount || 0;
+        this.updateBadge(); // To aktualizuje czerwoną kropkę
+    } catch (error) {
+        console.error('Failed to load notifications:', error);
+    }
+},
 
         // Dodaj funkcję wyświetlania:
         showSystemNotification(title, body) {
