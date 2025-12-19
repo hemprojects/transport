@@ -621,13 +621,21 @@
     // 9. NOTIFICATIONS
     // =============================================
     const Notifications = {
-        async requestPermission() {
+                async requestPermission() {
             if (!("Notification" in window)) return false;
-            if (Notification.permission === "granted") return true;
-            if (Notification.permission !== "denied") {
-                const permission = await Notification.requestPermission();
-                return permission === "granted";
+            
+            let permission = Notification.permission;
+            
+            if (permission !== "granted") {
+                permission = await Notification.requestPermission();
             }
+            
+            if (permission === "granted") {
+                // Dopiero teraz rejestrujemy Pushy!
+                PushyService.init();
+                return true;
+            }
+            
             return false;
         },
 
@@ -2983,8 +2991,7 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
 
         await new Promise(resolve => setTimeout(resolve, 500));
         await Auth.init();
-        PushyService.init(); 
-
+        
         console.log('✅ TransportTracker ready!');
     }
 
