@@ -428,14 +428,18 @@ async function markAllNotificationsRead(uid, env, corsHeaders) {
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
+// =============================================
+// REPORTS (MULTITASKING & DETAILS)
+// =============================================
 async function getReports(period, env, corsHeaders) {
     let dateCondition = '';
     let isSingleDay = false;
     
+    // Obsługa customowych dat
     if (period.includes('-')) {
-        if (period.length === 7) { 
+        if (period.length === 7) { // YYYY-MM
             dateCondition = `AND strftime('%Y-%m', t.scheduled_date) = '${period}'`;
-        } else { 
+        } else { // YYYY-MM-DD
             dateCondition = `AND t.scheduled_date = '${period}'`;
             isSingleDay = true;
         }
@@ -452,7 +456,7 @@ async function getReports(period, env, corsHeaders) {
     `).all();
 
     const driversStats = [];
-    const now = new Date(); // Do zadań w trakcie
+    const now = new Date();
 
     for (const driver of drivers.results) {
         // Pobierz zadania (również te w trakcie!)
@@ -464,7 +468,7 @@ async function getReports(period, env, corsHeaders) {
             ORDER BY t.started_at
         `).bind(driver.id, driver.id).all();
 
-        // Pobierz przestoje z dokładnym czasem
+        // Pobierz przestoje
         const delays = await env.DB.prepare(`
             SELECT tl.delay_minutes, tl.delay_reason, tl.created_at, t.id as task_id 
             FROM task_logs tl
@@ -476,25 +480,18 @@ async function getReports(period, env, corsHeaders) {
         let workMinutes = 0;
         let delayMinutes = 0;
         let timeline = [];
-        let details = []; // Nowa lista szczegółowa
+        let details = [];
 
         // Przetwarzanie zadań
         tasks.results.forEach(t => {
             const start = new Date(t.started_at);
-            // Jeśli w trakcie -> koniec to TERAZ
             const end = t.completed_at ? new Date(t.completed_at) : now;
             const duration = Math.max(0, (end - start) / 1000 / 60);
             
-            // Kolor: niebieski (w trakcie) lub zielony (zakończone)
             const type = t.status === 'in_progress' ? 'work-live' : 'work';
             
             if (isSingleDay) {
-                // Sprawdź czy w tym zadaniu był przestój
-                const taskDelays = delays.results.filter(d => d.task_id === t.id);
-                
-                // Jeśli były przestoje, musimy je "wyciąć" z paska pracy
-                // Uproszczenie: Pokażmy pasek pracy, a na nim czerwone paski przestojów
-                
+                // Dodaj do timeline (oś czasu)
                 timeline.push({
                     type: type,
                     start: t.started_at,
@@ -503,6 +500,7 @@ async function getReports(period, env, corsHeaders) {
                     duration: Math.round(duration)
                 });
 
+                // Dodaj do szczegółów
                 details.push({
                     time: start.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}),
                     desc: t.description,
@@ -510,6 +508,8 @@ async function getReports(period, env, corsHeaders) {
                     type: type
                 });
 
+                // Sprawdź przestoje w tym zadaniu
+                const taskDelays = delays.results.filter(d => d.task_id === t.id);
                 taskDelays.forEach(d => {
                     const delayStart = new Date(d.created_at);
                     const delayEnd = new Date(delayStart.getTime() + d.delay_minutes * 60000);
@@ -530,9 +530,7 @@ async function getReports(period, env, corsHeaders) {
                     });
                 });
             } else {
-                // Logika dla tygodnia/miesiąca (słupki) - bez zmian
-                // (Kod skrócony, ale tu powinna być logika dailyStats z poprzedniej wersji)
-                // Przywracam logikę dailyStats:
+                // Wykres słupkowy
                 const date = t.scheduled_date;
                 const existingBar = timeline.find(x => x.date === date);
                 if (existingBar) {
@@ -560,12 +558,10 @@ async function getReports(period, env, corsHeaders) {
             const [endH, endM] = (driver.work_end || '15:00').split(':');
             targetMinutes = Math.max(0, ((parseInt(endH) * 60 + parseInt(endM)) - (parseInt(startH) * 60 + parseInt(startM))) - 20);
         } else {
-            // Unikalne dni pracy
             const activeDays = new Set(tasks.results.map(t => t.scheduled_date)).size;
             targetMinutes = activeDays * (480 - 20); 
         }
         
-        // Od workMinutes odejmujemy przestoje (bo one były wliczone w czas trwania zadania)
         const realWorkMinutes = Math.max(0, workMinutes - delayMinutes);
         const efficiency = targetMinutes > 0 ? Math.min(100, Math.round((realWorkMinutes / targetMinutes) * 100)) : 0;
 
@@ -578,7 +574,7 @@ async function getReports(period, env, corsHeaders) {
             kpi: efficiency,
             isSingleDay: isSingleDay,
             timeline: timeline,
-            details: details.sort((a,b) => a.time.localeCompare(b.time)) // Sortuj szczegóły po godzinie
+            details: details.sort((a,b) => a.time.localeCompare(b.time))
         });
     }
     
