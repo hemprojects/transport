@@ -309,7 +309,6 @@ async function createTask(request, env, corsHeaders, userId) {
     const drivers = await env.DB.prepare('SELECT id FROM users WHERE role = "driver" AND active = 1').all();
     for (const d of drivers.results) {
         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(d.id, 'new_task', 'Nowe zadanie', `Dodano: ${data.description}`, taskId).run();
-        await sendPush(d.id, { title: 'Nowe zadanie', body: data.description, tag: `task-${taskId}` }, env);
         await sendPushyNotification(d.id, 'Nowe zadanie', `Dodano: ${data.description}`, { taskId }, env);
     }
     return new Response(JSON.stringify({ id: taskId, success: true }), { headers: corsHeaders });
