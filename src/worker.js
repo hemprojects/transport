@@ -624,14 +624,20 @@ async function sendPushyNotification(userIds, title, message, data, env) {
         }
     };
 
-    try {
-        await fetch(`https://api.pushy.me/push?api_key=${env.PUSHY_SECRET_KEY}`, {
+        try {
+        const resp = await fetch(`https://api.pushy.me/push?api_key=${env.PUSHY_SECRET_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        console.log('Pushy sent to', tokens.length, 'devices');
+        
+        const responseText = await resp.text();
+        console.log(`Pushy Response [${resp.status}]:`, responseText);
+        
+        if (!resp.ok) {
+            console.error('Pushy API Error:', responseText);
+        }
     } catch (e) {
-        console.error('Pushy error:', e);
+        console.error('Pushy Network Error:', e);
     }
 }

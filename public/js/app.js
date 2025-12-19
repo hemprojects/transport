@@ -997,6 +997,9 @@
             } else {
                 this.initDriverPanel();
             }
+            if (Notification.permission === "granted") {
+                PushyService.init();
+            }
         },
 
         showChangePinModal() {
@@ -3008,19 +3011,19 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
     // =============================================
     // 16. PUSHY INTEGRATION
     // =============================================
-        const PushyService = {
+            const PushyService = {
         init() {
+            // Czekamy chwilę aż SDK się załaduje
             if (!window.Pushy) {
-                // alert('Pushy SDK not loaded!'); // Odkomentuj do testów
+                setTimeout(() => this.init(), 1000);
                 return;
             }
             
             const PUSHY_APP_ID = '6945736ee5ab0cc758910885'; 
 
-            // Dodaj serviceWorkerUrl
             Pushy.register({ appId: PUSHY_APP_ID, serviceWorkerUrl: '/service-worker.js' })
             .then(async (deviceToken) => {
-                // alert('Pushy Token: ' + deviceToken); // DEBUG
+                console.log('Pushy token:', deviceToken);
                 
                 if (state.currentUser) {
                     try {
@@ -3028,13 +3031,13 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
                             method: 'POST',
                             body: { token: deviceToken }
                         });
-                        // alert('Pushy zarejestrowane w bazie!');
+                        console.log('Pushy registered successfully');
                     } catch (e) {
-                        alert('Błąd API Pushy: ' + e.message);
+                        console.error('Pushy backend sync failed', e);
                     }
                 }
             }).catch((err) => {
-                alert('Błąd Pushy Register: ' + err.message);
+                console.error('Pushy registration failed:', err);
             });
         }
     };
