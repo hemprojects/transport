@@ -3,1282 +3,1410 @@
 // Wersja 2.0 - Kompletna przebudowa
 // =============================================
 
-(function() {
-    'use strict';
+(function () {
+  "use strict";
 
-    // =============================================
-    // 1. KONFIGURACJA
-    // =============================================
-    const CONFIG = {
-        API_URL: '/api',
-        NOTIFICATION_CHECK_INTERVAL: 20000,
-        TOAST_DURATION: 4000,
-        DATE_FORMAT: 'pl-PL',
-        STORAGE_KEYS: {
-            USER: 'tt_user',
-            THEME: 'tt_theme'
+  // =============================================
+  // 1. KONFIGURACJA
+  // =============================================
+  const CONFIG = {
+    API_URL: "/api",
+    NOTIFICATION_CHECK_INTERVAL: 20000,
+    TOAST_DURATION: 4000,
+    DATE_FORMAT: "pl-PL",
+    STORAGE_KEYS: {
+      USER: "tt_user",
+      THEME: "tt_theme",
+    },
+  };
+
+  // =============================================
+  // 2. STAN APLIKACJI
+  // =============================================
+  const state = {
+    currentUser: null,
+    currentScreen: "loading",
+    currentDate: new Date().toISOString().split("T")[0],
+    currentFilter: "all",
+    currentTab: "tasks",
+
+    users: [],
+    locations: [],
+    departments: [],
+    tasks: [],
+    notifications: [],
+    unreadNotifications: 0,
+
+    isLoading: false,
+    isReorderMode: false,
+    theme: "light",
+
+    notificationInterval: null,
+  };
+
+  // =============================================
+  // 3. UTILS
+  // =============================================
+  const Utils = {
+    formatDate(dateStr) {
+      if (!dateStr) return "";
+      const date = new Date(dateStr + "T00:00:00");
+      return date.toLocaleDateString(CONFIG.DATE_FORMAT, {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+    },
+
+    formatDateShort(dateStr) {
+      if (!dateStr) return "";
+      const date = new Date(dateStr + "T00:00:00");
+      return date.toLocaleDateString(CONFIG.DATE_FORMAT, {
+        day: "numeric",
+        month: "short",
+      });
+    },
+
+    formatTime(timeStr) {
+      if (!timeStr) return "";
+      // Jeśli to pełna data SQL (np. 2025-12-19 08:00:00)
+      if (timeStr.includes(" ") || timeStr.includes("T")) {
+        const date = new Date(timeStr.replace(" ", "T")); // fix dla sqlite formatu
+        return date.toLocaleTimeString(CONFIG.DATE_FORMAT, {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+      }
+      // Jeśli to sam czas (HH:MM:SS)
+      if (timeStr.includes(":")) {
+        return timeStr.substring(0, 5);
+      }
+      return timeStr;
+    },
+
+    formatRelativeTime(dateTimeStr) {
+      if (!dateTimeStr) return "";
+      const date = new Date(dateTimeStr);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMs / 3600000);
+      const diffDays = Math.floor(diffMs / 86400000);
+
+      if (diffMins < 1) return "przed chwilą";
+      if (diffMins < 60) return `${diffMins} min temu`;
+      if (diffHours < 24) return `${diffHours} godz. temu`;
+      if (diffDays < 7) return `${diffDays} dni temu`;
+      return this.formatDateShort(dateTimeStr.split("T")[0]);
+    },
+
+    getToday() {
+      // Pobierz datę lokalną w formacie YYYY-MM-DD
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, "0");
+      const day = String(now.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    },
+
+    addDays(dateStr, days) {
+      const date = new Date(dateStr + "T12:00:00"); // T12:00:00 zapobiega problemom ze strefą
+      date.setDate(date.getDate() + days);
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    },
+
+    isToday(dateStr) {
+      return dateStr === this.getToday();
+    },
+
+    escapeHtml(text) {
+      if (!text) return "";
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    },
+
+    $(selector) {
+      return document.querySelector(selector);
+    },
+
+    $$(selector) {
+      return document.querySelectorAll(selector);
+    },
+
+    show(element) {
+      if (typeof element === "string") element = this.$(element);
+      if (element) element.classList.remove("hidden");
+    },
+
+    hide(element) {
+      if (typeof element === "string") element = this.$(element);
+      if (element) element.classList.add("hidden");
+    },
+
+    toggle(element, show) {
+      if (typeof element === "string") element = this.$(element);
+      if (element) element.classList.toggle("hidden", !show);
+    },
+
+    getTaskTypeLabel(type) {
+      const labels = {
+        unloading: "Rozładunek",
+        transport: "Przewożenie",
+        loading: "Załadunek",
+      };
+      return labels[type] || type;
+    },
+
+    getTaskTypeIcon(type) {
+      const icons = {
+        unloading: "📥",
+        transport: "🚛",
+        loading: "📤",
+      };
+      return icons[type] || "📋";
+    },
+
+    getStatusLabel(status) {
+      const labels = {
+        pending: "Oczekuje",
+        in_progress: "W trakcie",
+        completed: "Zakończone",
+        cancelled: "Anulowane",
+      };
+      return labels[status] || status;
+    },
+
+    getStatusIcon(status) {
+      const icons = {
+        pending: "⏳",
+        in_progress: "🔄",
+        completed: "✅",
+        cancelled: "❌",
+      };
+      return icons[status] || "❓";
+    },
+
+    getPriorityLabel(priority) {
+      const labels = {
+        high: "Pilne",
+        normal: "Normalne",
+        low: "Niski",
+      };
+      return labels[priority] || priority;
+    },
+
+    getPriorityIcon(priority) {
+      const icons = {
+        high: "🔴",
+        normal: "🟡",
+        low: "🟢",
+      };
+      return icons[priority] || "⚪";
+    },
+
+    getDelayReasonLabel(reason) {
+      const labels = {
+        no_access: "Brak dojazdu",
+        waiting: "Oczekiwanie na załadunek/rozładunek",
+        traffic: "Korki / utrudnienia",
+        equipment: "Problem z sprzętem",
+        weather: "Warunki pogodowe",
+        break: "Przerwa",
+        other: "Inny powód",
+      };
+      return labels[reason] || reason;
+    },
+
+    getLogTypeIcon(type) {
+      const icons = {
+        note: "📝",
+        delay: "⏱️",
+        problem: "⚠️",
+        status_change: "🔄",
+      };
+      return icons[type] || "📋";
+    },
+
+    getPriorityOrder(priority) {
+      const order = { high: 1, normal: 2, low: 3 };
+      return order[priority] || 2;
+    },
+  };
+
+  // =============================================
+  // 4. API
+  // =============================================
+  const API = {
+    async request(endpoint, options = {}) {
+      const url = `${CONFIG.API_URL}${endpoint}`;
+      const token = state.currentUser?.token;
+
+      const config = {
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...options.headers,
+        },
+        ...options,
+      };
+
+      if (options.body && typeof options.body === "object") {
+        config.body = JSON.stringify(options.body);
+      }
+
+      try {
+        const response = await fetch(url, config);
+
+        // Obsługa wylogowania (401)
+        if (response.status === 401) {
+          Auth.logout(true); // true = bez potwierdzenia (force logout)
+          throw new Error("Sesja wygasła");
         }
-    };
 
-    // =============================================
-    // 2. STAN APLIKACJI
-    // =============================================
-    const state = {
-        currentUser: null,
-        currentScreen: 'loading',
-        currentDate: new Date().toISOString().split('T')[0],
-        currentFilter: 'all',
-        currentTab: 'tasks',
-        
-        users: [],
-        locations: [],
-        departments: [],
-        tasks: [],
-        notifications: [],
-        unreadNotifications: 0,
-        
-        isLoading: false,
-        isReorderMode: false,
-        theme: 'light',
-        
-        notificationInterval: null
-    };
+        const data = await response.json();
 
-    // =============================================
-    // 3. UTILS
-    // =============================================
-    const Utils = {
-        formatDate(dateStr) {
-            if (!dateStr) return '';
-            const date = new Date(dateStr + 'T00:00:00');
-            return date.toLocaleDateString(CONFIG.DATE_FORMAT, {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric'
-            });
-        },
-
-        formatDateShort(dateStr) {
-            if (!dateStr) return '';
-            const date = new Date(dateStr + 'T00:00:00');
-            return date.toLocaleDateString(CONFIG.DATE_FORMAT, {
-                day: 'numeric',
-                month: 'short'
-            });
-        },
-
-                formatTime(timeStr) {
-            if (!timeStr) return '';
-            // Jeśli to pełna data SQL (np. 2025-12-19 08:00:00)
-            if (timeStr.includes(' ') || timeStr.includes('T')) {
-                const date = new Date(timeStr.replace(' ', 'T')); // fix dla sqlite formatu
-                return date.toLocaleTimeString(CONFIG.DATE_FORMAT, {
-                    hour: '2-digit',
-                    minute: '2-digit'
-                });
-            }
-            // Jeśli to sam czas (HH:MM:SS)
-            if (timeStr.includes(':')) {
-                return timeStr.substring(0, 5);
-            }
-            return timeStr;
-        },
-
-        formatRelativeTime(dateTimeStr) {
-            if (!dateTimeStr) return '';
-            const date = new Date(dateTimeStr);
-            const now = new Date();
-            const diffMs = now - date;
-            const diffMins = Math.floor(diffMs / 60000);
-            const diffHours = Math.floor(diffMs / 3600000);
-            const diffDays = Math.floor(diffMs / 86400000);
-
-            if (diffMins < 1) return 'przed chwilą';
-            if (diffMins < 60) return `${diffMins} min temu`;
-            if (diffHours < 24) return `${diffHours} godz. temu`;
-            if (diffDays < 7) return `${diffDays} dni temu`;
-            return this.formatDateShort(dateTimeStr.split('T')[0]);
-        },
-
-        getToday() {
-            // Pobierz datę lokalną w formacie YYYY-MM-DD
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        },
-
-        addDays(dateStr, days) {
-            const date = new Date(dateStr + 'T12:00:00'); // T12:00:00 zapobiega problemom ze strefą
-            date.setDate(date.getDate() + days);
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        },
-
-        isToday(dateStr) {
-            return dateStr === this.getToday();
-        },
-
-        escapeHtml(text) {
-            if (!text) return '';
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        },
-
-        $(selector) {
-            return document.querySelector(selector);
-        },
-
-        $$(selector) {
-            return document.querySelectorAll(selector);
-        },
-
-        show(element) {
-            if (typeof element === 'string') element = this.$(element);
-            if (element) element.classList.remove('hidden');
-        },
-
-        hide(element) {
-            if (typeof element === 'string') element = this.$(element);
-            if (element) element.classList.add('hidden');
-        },
-
-        toggle(element, show) {
-            if (typeof element === 'string') element = this.$(element);
-            if (element) element.classList.toggle('hidden', !show);
-        },
-
-        getTaskTypeLabel(type) {
-            const labels = {
-                'unloading': 'Rozładunek',
-                'transport': 'Przewożenie',
-                'loading': 'Załadunek'
-            };
-            return labels[type] || type;
-        },
-
-        getTaskTypeIcon(type) {
-            const icons = {
-                'unloading': '📥',
-                'transport': '🚛',
-                'loading': '📤'
-            };
-            return icons[type] || '📋';
-        },
-
-        getStatusLabel(status) {
-            const labels = {
-                'pending': 'Oczekuje',
-                'in_progress': 'W trakcie',
-                'completed': 'Zakończone',
-                'cancelled': 'Anulowane'
-            };
-            return labels[status] || status;
-        },
-
-        getStatusIcon(status) {
-            const icons = {
-                'pending': '⏳',
-                'in_progress': '🔄',
-                'completed': '✅',
-                'cancelled': '❌'
-            };
-            return icons[status] || '❓';
-        },
-
-        getPriorityLabel(priority) {
-            const labels = {
-                'high': 'Pilne',
-                'normal': 'Normalne',
-                'low': 'Niski'
-            };
-            return labels[priority] || priority;
-        },
-
-        getPriorityIcon(priority) {
-            const icons = {
-                'high': '🔴',
-                'normal': '🟡',
-                'low': '🟢'
-            };
-            return icons[priority] || '⚪';
-        },
-
-        getDelayReasonLabel(reason) {
-            const labels = {
-                'no_access': 'Brak dojazdu',
-                'waiting': 'Oczekiwanie na załadunek/rozładunek',
-                'traffic': 'Korki / utrudnienia',
-                'equipment': 'Problem z sprzętem',
-                'weather': 'Warunki pogodowe',
-                'break': 'Przerwa',
-                'other': 'Inny powód'
-            };
-            return labels[reason] || reason;
-        },
-
-        getLogTypeIcon(type) {
-            const icons = {
-                'note': '📝',
-                'delay': '⏱️',
-                'problem': '⚠️',
-                'status_change': '🔄'
-            };
-            return icons[type] || '📋';
-        },
-
-        getPriorityOrder(priority) {
-            const order = { 'high': 1, 'normal': 2, 'low': 3 };
-            return order[priority] || 2;
+        if (!response.ok) {
+          throw new Error(data.error || "Wystąpił błąd");
         }
-    };
 
-    // =============================================
-    // 4. API
-    // =============================================
-        const API = {
-        async request(endpoint, options = {}) {
-            const url = `${CONFIG.API_URL}${endpoint}`;
-            const token = state.currentUser?.token;
-            
-            const config = {
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-                    ...options.headers
-                },
-                ...options
-            };
+        return data;
+      } catch (error) {
+        console.error("API Error:", error);
+        throw error;
+      }
+    },
 
-            if (options.body && typeof options.body === 'object') {
-                config.body = JSON.stringify(options.body);
-            }
+    // AUTH
+    async getUsers() {
+      return await this.request("/users");
+    },
 
-            try {
-                const response = await fetch(url, config);
-                
-                // Obsługa wylogowania (401)
-                if (response.status === 401) {
-                    Auth.logout(true); // true = bez potwierdzenia (force logout)
-                    throw new Error('Sesja wygasła');
-                }
+    async login(userId, pin) {
+      return await this.request("/auth/login", {
+        method: "POST",
+        body: { userId: parseInt(userId), pin },
+      });
+    },
 
-                const data = await response.json();
+    // USERS
+    async createUser(userData) {
+      return await this.request("/users", {
+        method: "POST",
+        body: userData,
+      });
+    },
 
-                if (!response.ok) {
-                    throw new Error(data.error || 'Wystąpił błąd');
-                }
+    async updateUser(id, userData) {
+      return await this.request(`/users/${id}`, {
+        method: "PUT",
+        body: userData,
+      });
+    },
 
-                return data;
-            } catch (error) {
-                console.error('API Error:', error);
-                throw error;
-            }
-        },
+    async deleteUser(id) {
+      return await this.request(`/users/${id}`, {
+        method: "DELETE",
+      });
+    },
 
-        // AUTH
-        async getUsers() {
-            return await this.request('/users');
-        },
+    // LOCATIONS
+    async getLocations() {
+      return await this.request("/locations");
+    },
 
-        async login(userId, pin) {
-            return await this.request('/auth/login', {
-                method: 'POST',
-                body: { userId: parseInt(userId), pin }
-            });
-        },
+    async createLocation(data) {
+      return await this.request("/locations", {
+        method: "POST",
+        body: data,
+      });
+    },
 
-        // USERS
-        async createUser(userData) {
-            return await this.request('/users', {
-                method: 'POST',
-                body: userData
-            });
-        },
+    async deleteLocation(id) {
+      return await this.request(`/locations/${id}`, {
+        method: "DELETE",
+      });
+    },
 
-        async updateUser(id, userData) {
-            return await this.request(`/users/${id}`, {
-                method: 'PUT',
-                body: userData
-            });
-        },
+    // TASKS
+    async getTasks(params = {}) {
+      const queryParams = new URLSearchParams();
+      if (params.date) queryParams.append("date", params.date);
+      if (params.status) queryParams.append("status", params.status);
+      if (params.userId) queryParams.append("userId", params.userId);
 
-        async deleteUser(id) {
-            return await this.request(`/users/${id}`, {
-                method: 'DELETE'
-            });
-        },
+      const query = queryParams.toString();
+      return await this.request(`/tasks${query ? "?" + query : ""}`);
+    },
 
-        // LOCATIONS
-        async getLocations() {
-            return await this.request('/locations');
-        },
+    async getTask(id) {
+      return await this.request(`/tasks/${id}`);
+    },
 
-        async createLocation(data) {
-            return await this.request('/locations', {
-                method: 'POST',
-                body: data
-            });
-        },
+    async createTask(taskData) {
+      return await this.request("/tasks", {
+        method: "POST",
+        body: taskData,
+      });
+    },
 
-        async deleteLocation(id) {
-            return await this.request(`/locations/${id}`, {
-                method: 'DELETE'
-            });
-        },
+    async updateTask(id, taskData) {
+      return await this.request(`/tasks/${id}`, {
+        method: "PUT",
+        body: taskData,
+      });
+    },
 
-        // TASKS
-        async getTasks(params = {}) {
-            const queryParams = new URLSearchParams();
-            if (params.date) queryParams.append('date', params.date);
-            if (params.status) queryParams.append('status', params.status);
-            if (params.userId) queryParams.append('userId', params.userId);
-            
-            const query = queryParams.toString();
-            return await this.request(`/tasks${query ? '?' + query : ''}`);
-        },
+    async deleteTask(id) {
+      return await this.request(`/tasks/${id}`, {
+        method: "DELETE",
+      });
+    },
 
-        async getTask(id) {
-            return await this.request(`/tasks/${id}`);
-        },
+    async updateTaskStatus(id, status, userId) {
+      return await this.request(`/tasks/${id}/status`, {
+        method: "PUT",
+        body: { status, userId },
+      });
+    },
 
-        async createTask(taskData) {
-            return await this.request('/tasks', {
-                method: 'POST',
-                body: taskData
-            });
-        },
+    async joinTask(taskId, userId) {
+      return await this.request(`/tasks/${taskId}/join`, {
+        method: "POST",
+        body: { userId },
+      });
+    },
 
-        async updateTask(id, taskData) {
-            return await this.request(`/tasks/${id}`, {
-                method: 'PUT',
-                body: taskData
-            });
-        },
+    async reorderTasks(taskIds, reason, userId) {
+      return await this.request("/tasks/reorder", {
+        method: "POST",
+        body: { tasks: taskIds, reason, userId },
+      });
+    },
 
-        async deleteTask(id) {
-            return await this.request(`/tasks/${id}`, {
-                method: 'DELETE'
-            });
-        },
+    // TASK LOGS
+    async createTaskLog(taskId, logData) {
+      return await this.request(`/tasks/${taskId}/logs`, {
+        method: "POST",
+        body: logData,
+      });
+    },
 
-        async updateTaskStatus(id, status, userId) {
-            return await this.request(`/tasks/${id}/status`, {
-                method: 'PUT',
-                body: { status, userId }
-            });
-        },
+    // NOTIFICATIONS
+    async getNotifications(userId) {
+      return await this.request(`/notifications/${userId}`);
+    },
 
-        async joinTask(taskId, userId) {
-            return await this.request(`/tasks/${taskId}/join`, {
-                method: 'POST',
-                body: { userId }
-            });
-        },
+    async markNotificationRead(notificationId) {
+      return await this.request(`/notifications/${notificationId}/read`, {
+        method: "POST",
+      });
+    },
 
-                async reorderTasks(taskIds, reason, userId) {
-            return await this.request('/tasks/reorder', {
-                method: 'POST',
-                body: { tasks: taskIds, reason, userId }
-            });
-        },
+    async markAllNotificationsRead(userId) {
+      return await this.request(`/notifications/user/${userId}/read-all`, {
+        method: "POST",
+      });
+    },
 
-        // TASK LOGS
-        async createTaskLog(taskId, logData) {
-            return await this.request(`/tasks/${taskId}/logs`, {
-                method: 'POST',
-                body: logData
-            });
-        },
+    // REPORTS
+    async getReports(period = "week") {
+      return await this.request(`/reports?period=${period}`);
+    },
+  };
 
-        // NOTIFICATIONS
-        async getNotifications(userId) {
-            return await this.request(`/notifications/${userId}`);
-        },
+  // =============================================
+  // 5. TOAST
+  // =============================================
+  const Toast = {
+    container: null,
 
-        async markNotificationRead(notificationId) {
-            return await this.request(`/notifications/${notificationId}/read`, {
-                method: 'POST'
-            });
-        },
+    init() {
+      this.container = Utils.$("#toast-container");
+    },
 
-        async markAllNotificationsRead(userId) {
-            return await this.request(`/notifications/user/${userId}/read-all`, {
-                method: 'POST'
-            });
-        },
+    show(message, type = "info", duration = CONFIG.TOAST_DURATION) {
+      if (!this.container) this.init();
 
-        // REPORTS
-        async getReports(period = 'week') {
-            return await this.request(`/reports?period=${period}`);
-        }
-    };
+      const icons = {
+        success: "✓",
+        error: "✕",
+        warning: "⚠",
+        info: "ℹ",
+      };
 
-    // =============================================
-    // 5. TOAST
-    // =============================================
-    const Toast = {
-        container: null,
-
-        init() {
-            this.container = Utils.$('#toast-container');
-        },
-
-        show(message, type = 'info', duration = CONFIG.TOAST_DURATION) {
-            if (!this.container) this.init();
-
-            const icons = {
-                'success': '✓',
-                'error': '✕',
-                'warning': '⚠',
-                'info': 'ℹ'
-            };
-
-            const toast = document.createElement('div');
-            toast.className = `toast toast-${type}`;
-            toast.innerHTML = `
+      const toast = document.createElement("div");
+      toast.className = `toast toast-${type}`;
+      toast.innerHTML = `
                 <span class="toast-icon">${icons[type] || icons.info}</span>
                 <span class="toast-message">${Utils.escapeHtml(message)}</span>
                 <button class="toast-close" aria-label="Zamknij">×</button>
             `;
 
-            toast.querySelector('.toast-close').addEventListener('click', () => {
-                this.remove(toast);
-            });
+      toast.querySelector(".toast-close").addEventListener("click", () => {
+        this.remove(toast);
+      });
 
-            this.container.appendChild(toast);
+      this.container.appendChild(toast);
 
-            setTimeout(() => {
-                this.remove(toast);
-            }, duration);
+      setTimeout(() => {
+        this.remove(toast);
+      }, duration);
 
-            return toast;
-        },
+      return toast;
+    },
 
-        remove(toast) {
-            if (!toast || !toast.parentNode) return;
-            toast.classList.add('toast-out');
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.parentNode.removeChild(toast);
-                }
-            }, 300);
-        },
-
-        success(message) { return this.show(message, 'success'); },
-        error(message) { return this.show(message, 'error'); },
-        warning(message) { return this.show(message, 'warning'); },
-        info(message) { return this.show(message, 'info'); }
-    };
-
-    // =============================================
-    // 6. MODAL
-    // =============================================
-    const Modal = {
-        openModals: [],
-
-        open(modalId) {
-            const modal = Utils.$(`#${modalId}`);
-            if (!modal) return;
-
-            Utils.show(modal);
-            this.openModals.push(modalId);
-            document.body.style.overflow = 'hidden';
-
-            setTimeout(() => {
-                const firstInput = modal.querySelector('input:not([type="hidden"]):not([type="radio"]), select, textarea');
-                if (firstInput) firstInput.focus();
-            }, 100);
-        },
-
-        close(modalId) {
-            const modal = Utils.$(`#${modalId}`);
-            if (!modal) return;
-
-            Utils.hide(modal);
-            this.openModals = this.openModals.filter(id => id !== modalId);
-
-            if (this.openModals.length === 0) {
-                document.body.style.overflow = '';
-            }
-
-            const form = modal.querySelector('form');
-            if (form) form.reset();
-        },
-
-        closeAll() {
-            [...this.openModals].forEach(id => this.close(id));
-        },
-
-        confirm(title, message, onConfirm, confirmText = 'Potwierdź', isDanger = true) {
-            Utils.$('#confirm-title').textContent = title;
-            Utils.$('#confirm-message').textContent = message;
-            
-            const confirmBtn = Utils.$('#confirm-action-btn');
-            confirmBtn.textContent = confirmText;
-            confirmBtn.className = `btn ${isDanger ? 'btn-danger' : 'btn-primary'}`;
-            
-            const newBtn = confirmBtn.cloneNode(true);
-            confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
-            
-            newBtn.addEventListener('click', () => {
-                Modal.close('modal-confirm');
-                if (typeof onConfirm === 'function') {
-                    onConfirm();
-                }
-            });
-
-            this.open('modal-confirm');
-        },
-
-        init() {
-            Utils.$$('[data-close]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const modalId = btn.getAttribute('data-close');
-                    this.close(modalId);
-                });
-            });
-
-            Utils.$$('.modal-overlay').forEach(overlay => {
-                overlay.addEventListener('click', () => {
-                    const modal = overlay.closest('.modal');
-                    if (modal) this.close(modal.id);
-                });
-            });
-
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && this.openModals.length > 0) {
-                    this.close(this.openModals[this.openModals.length - 1]);
-                }
-            });
+    remove(toast) {
+      if (!toast || !toast.parentNode) return;
+      toast.classList.add("toast-out");
+      setTimeout(() => {
+        if (toast.parentNode) {
+          toast.parentNode.removeChild(toast);
         }
-    };
+      }, 300);
+    },
 
-    // =============================================
-    // 7. THEME
-    // =============================================
-    const Theme = {
-        init() {
-    const saved = localStorage.getItem(CONFIG.STORAGE_KEYS.THEME);
-    if (saved) {
+    success(message) {
+      return this.show(message, "success");
+    },
+    error(message) {
+      return this.show(message, "error");
+    },
+    warning(message) {
+      return this.show(message, "warning");
+    },
+    info(message) {
+      return this.show(message, "info");
+    },
+  };
+
+  // =============================================
+  // 6. MODAL
+  // =============================================
+  const Modal = {
+    openModals: [],
+
+    open(modalId) {
+      const modal = Utils.$(`#${modalId}`);
+      if (!modal) return;
+
+      Utils.show(modal);
+      this.openModals.push(modalId);
+      document.body.style.overflow = "hidden";
+
+      setTimeout(() => {
+        const firstInput = modal.querySelector(
+          'input:not([type="hidden"]):not([type="radio"]), select, textarea'
+        );
+        if (firstInput) firstInput.focus();
+      }, 100);
+    },
+
+    close(modalId) {
+      const modal = Utils.$(`#${modalId}`);
+      if (!modal) return;
+
+      Utils.hide(modal);
+      this.openModals = this.openModals.filter((id) => id !== modalId);
+
+      if (this.openModals.length === 0) {
+        document.body.style.overflow = "";
+      }
+
+      const form = modal.querySelector("form");
+      if (form) form.reset();
+    },
+
+    closeAll() {
+      [...this.openModals].forEach((id) => this.close(id));
+    },
+
+    confirm(
+      title,
+      message,
+      onConfirm,
+      confirmText = "Potwierdź",
+      isDanger = true
+    ) {
+      Utils.$("#confirm-title").textContent = title;
+      Utils.$("#confirm-message").textContent = message;
+
+      const confirmBtn = Utils.$("#confirm-action-btn");
+      confirmBtn.textContent = confirmText;
+      confirmBtn.className = `btn ${isDanger ? "btn-danger" : "btn-primary"}`;
+
+      const newBtn = confirmBtn.cloneNode(true);
+      confirmBtn.parentNode.replaceChild(newBtn, confirmBtn);
+
+      newBtn.addEventListener("click", () => {
+        Modal.close("modal-confirm");
+        if (typeof onConfirm === "function") {
+          onConfirm();
+        }
+      });
+
+      this.open("modal-confirm");
+    },
+
+    init() {
+      Utils.$$("[data-close]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const modalId = btn.getAttribute("data-close");
+          this.close(modalId);
+        });
+      });
+
+      Utils.$$(".modal-overlay").forEach((overlay) => {
+        overlay.addEventListener("click", () => {
+          const modal = overlay.closest(".modal");
+          if (modal) this.close(modal.id);
+        });
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && this.openModals.length > 0) {
+          this.close(this.openModals[this.openModals.length - 1]);
+        }
+      });
+    },
+  };
+
+  // =============================================
+  // 7. THEME
+  // =============================================
+  const Theme = {
+    init() {
+      const saved = localStorage.getItem(CONFIG.STORAGE_KEYS.THEME);
+      if (saved) {
         this.set(saved);
-    } else {
+      } else {
         // Default to light - ignore system preference
-        this.set('light');
-    }
-},
+        this.set("light");
+      }
+    },
 
-        set(theme) {
-            state.theme = theme;
-            document.documentElement.setAttribute('data-theme', theme);
-            localStorage.setItem(CONFIG.STORAGE_KEYS.THEME, theme);
-            this.updateButtons();
-        },
+    set(theme) {
+      state.theme = theme;
+      document.documentElement.setAttribute("data-theme", theme);
+      localStorage.setItem(CONFIG.STORAGE_KEYS.THEME, theme);
+      this.updateButtons();
+    },
 
-        toggle() {
-            const newTheme = state.theme === 'light' ? 'dark' : 'light';
-            this.set(newTheme);
-            Toast.info(newTheme === 'dark' ? 'Tryb ciemny włączony' : 'Tryb jasny włączony');
-        },
+    toggle() {
+      const newTheme = state.theme === "light" ? "dark" : "light";
+      this.set(newTheme);
+      Toast.info(
+        newTheme === "dark" ? "Tryb ciemny włączony" : "Tryb jasny włączony"
+      );
+    },
 
-        updateButtons() {
-            const icon = state.theme === 'light' ? '🌙' : '☀️';
-            const driverBtn = Utils.$('#driver-theme-btn');
-            const adminBtn = Utils.$('#admin-theme-btn');
-            if (driverBtn) driverBtn.textContent = icon;
-            if (adminBtn) adminBtn.textContent = icon;
-        },
+    updateButtons() {
+      const icon = state.theme === "light" ? "🌙" : "☀️";
+      const driverBtn = Utils.$("#driver-theme-btn");
+      const adminBtn = Utils.$("#admin-theme-btn");
+      if (driverBtn) driverBtn.textContent = icon;
+      if (adminBtn) adminBtn.textContent = icon;
+    },
 
-        initEventListeners() {
-            Utils.$('#driver-theme-btn')?.addEventListener('click', () => this.toggle());
-            Utils.$('#admin-theme-btn')?.addEventListener('click', () => this.toggle());
+    initEventListeners() {
+      Utils.$("#driver-theme-btn")?.addEventListener("click", () =>
+        this.toggle()
+      );
+      Utils.$("#admin-theme-btn")?.addEventListener("click", () =>
+        this.toggle()
+      );
+    },
+  };
+
+  // =============================================
+  // 8. SCREEN
+  // =============================================
+  const Screen = {
+    show(screenId) {
+      Utils.$$(".screen").forEach((screen) => {
+        screen.classList.remove("active");
+      });
+
+      const targetScreen = Utils.$(`#screen-${screenId}`);
+      if (targetScreen) {
+        targetScreen.classList.add("active");
+        state.currentScreen = screenId;
+      }
+    },
+  };
+
+  // =============================================
+  // 9. NOTIFICATIONS
+  // =============================================
+  const Notifications = {
+    async requestPermission() {
+      if (!("Notification" in window)) return false;
+
+      // Zawsze próbuj zarejestrować Pushy, jeśli jest zgoda
+      if (Notification.permission === "granted") {
+        console.log("Permission already granted, registering Pushy...");
+        PushyService.init(); // <--- TO JEST KLUCZOWE
+        return true;
+      }
+
+      // Jeśli nie ma zgody, zapytaj
+      if (Notification.permission !== "denied") {
+        const permission = await Notification.requestPermission();
+        if (permission === "granted") {
+          PushyService.init();
+          return true;
         }
-    };
+      }
 
-    // =============================================
-    // 8. SCREEN
-    // =============================================
-    const Screen = {
-        show(screenId) {
-            Utils.$$('.screen').forEach(screen => {
-                screen.classList.remove('active');
-            });
+      return false;
+    },
 
-            const targetScreen = Utils.$(`#screen-${screenId}`);
-            if (targetScreen) {
-                targetScreen.classList.add('active');
-                state.currentScreen = screenId;
-            }
+    async load() {
+      if (!state.currentUser) return;
+
+      try {
+        const response = await API.getNotifications(state.currentUser.id);
+
+        if (response.unreadCount > state.unreadNotifications) {
+          const latest = response.notifications[0];
+          if (latest && !latest.is_read) {
+            this.showSystemNotification(
+              latest.title,
+              latest.message,
+              latest.task_id
+            );
+          }
         }
-    };
 
-    // =============================================
-    // 9. NOTIFICATIONS
-    // =============================================
-    const Notifications = {
-                    async requestPermission() {
-            if (!("Notification" in window)) return false;
-            
-            // Zawsze próbuj zarejestrować Pushy, jeśli jest zgoda
-            if (Notification.permission === "granted") {
-                console.log('Permission already granted, registering Pushy...');
-                PushyService.init(); // <--- TO JEST KLUCZOWE
-                return true;
-            }
-            
-            // Jeśli nie ma zgody, zapytaj
-            if (Notification.permission !== "denied") {
-                const permission = await Notification.requestPermission();
-                if (permission === "granted") {
-                    PushyService.init();
-                    return true;
-                }
-            }
-            
-            return false;
-        },
+        state.notifications = response.notifications || [];
+        state.unreadNotifications = response.unreadCount || 0;
+        this.updateBadge();
+      } catch (error) {
+        console.error("Failed to load notifications:", error);
+      }
+    },
 
-        async load() {
-            if (!state.currentUser) return;
+    showSystemNotification(title, body, taskId) {
+      if (!("Notification" in window) || Notification.permission !== "granted")
+        return;
 
-            try {
-                const response = await API.getNotifications(state.currentUser.id);
-                
-                if (response.unreadCount > state.unreadNotifications) {
-                    const latest = response.notifications[0];
-                    if (latest && !latest.is_read) {
-                        this.showSystemNotification(latest.title, latest.message, latest.task_id);
-                    }
-                }
+      // Web Notification (Standard)
+      const notif = new Notification(title, {
+        body: body,
+        icon: "/icon.png",
+        vibrate: [200, 100, 200],
+      });
 
-                state.notifications = response.notifications || [];
-                state.unreadNotifications = response.unreadCount || 0;
-                this.updateBadge();
-            } catch (error) {
-                console.error('Failed to load notifications:', error);
-            }
-        },
+      notif.onclick = () => {
+        window.focus();
+        if (taskId) {
+          if (state.currentUser.role === "admin")
+            AdminPanel.openTaskDetails(taskId);
+          else DriverPanel.openTaskDetails(taskId);
+          // Auto-read po kliknięciu
+          this.markRelatedRead(taskId);
+        }
+        notif.close();
+      };
+    },
 
-        showSystemNotification(title, body, taskId) {
-            if (!("Notification" in window) || Notification.permission !== "granted") return;
-            
-            // Web Notification (Standard)
-            const notif = new Notification(title, { 
-                body: body,
-                icon: '/icon.png',
-                vibrate: [200, 100, 200]
-            });
-            
-            notif.onclick = () => {
-                window.focus();
-                if (taskId) {
-                    if (state.currentUser.role === 'admin') AdminPanel.openTaskDetails(taskId);
-                    else DriverPanel.openTaskDetails(taskId);
-                    // Auto-read po kliknięciu
-                    this.markRelatedRead(taskId);
-                }
-                notif.close();
-            };
-        },
+    async markRelatedRead(taskId) {
+      if (!taskId) return;
+      // Znajdź nieprzeczytane powiadomienia dotyczące tego zadania
+      const related = state.notifications.filter(
+        (n) => n.task_id == taskId && !n.is_read
+      );
 
-        async markRelatedRead(taskId) {
-            if (!taskId) return;
-            // Znajdź nieprzeczytane powiadomienia dotyczące tego zadania
-            const related = state.notifications.filter(n => n.task_id == taskId && !n.is_read);
-            
-            for (const notif of related) {
-                try {
-                    await API.markNotificationRead(notif.id);
-                    notif.is_read = 1;
-                } catch (e) { console.error(e); }
-            }
-            
-            // Aktualizuj licznik lokalnie (bez odświeżania API)
-            state.unreadNotifications = Math.max(0, state.unreadNotifications - related.length);
-            this.updateBadge();
-        },
+      for (const notif of related) {
+        try {
+          await API.markNotificationRead(notif.id);
+          notif.is_read = 1;
+        } catch (e) {
+          console.error(e);
+        }
+      }
 
-        updateBadge() {
-            const driverBadge = Utils.$('#driver-notification-badge');
-            const adminBadge = Utils.$('#admin-notification-badge');
-            const badge = state.currentUser?.role === 'admin' ? adminBadge : driverBadge;
-            
-            if (badge) {
-                if (state.unreadNotifications > 0) {
-                    badge.textContent = state.unreadNotifications > 99 ? '99+' : state.unreadNotifications;
-                    Utils.show(badge);
-                } else {
-                    Utils.hide(badge);
-                }
-            }
-        },
+      // Aktualizuj licznik lokalnie (bez odświeżania API)
+      state.unreadNotifications = Math.max(
+        0,
+        state.unreadNotifications - related.length
+      );
+      this.updateBadge();
+    },
 
-        startPolling() {
-            this.load();
-            state.notificationInterval = setInterval(() => {
-                this.load();
-                if (state.currentUser?.role === 'driver') DriverPanel.loadTasks(true);
-                else if (state.currentUser?.role === 'admin') AdminPanel.loadTasks(true);
-            }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
-        },
+    updateBadge() {
+      const driverBadge = Utils.$("#driver-notification-badge");
+      const adminBadge = Utils.$("#admin-notification-badge");
+      const badge =
+        state.currentUser?.role === "admin" ? adminBadge : driverBadge;
 
-        stopPolling() {
-            if (state.notificationInterval) {
-                clearInterval(state.notificationInterval);
-                state.notificationInterval = null;
-            }
-        },
+      if (badge) {
+        if (state.unreadNotifications > 0) {
+          badge.textContent =
+            state.unreadNotifications > 99 ? "99+" : state.unreadNotifications;
+          Utils.show(badge);
+        } else {
+          Utils.hide(badge);
+        }
+      }
+    },
 
-        renderList() {
-            const list = Utils.$('#notifications-list');
-            const emptyState = Utils.$('#notifications-empty');
+    startPolling() {
+      this.load();
+      state.notificationInterval = setInterval(() => {
+        this.load();
+        if (state.currentUser?.role === "driver") DriverPanel.loadTasks(true);
+        else if (state.currentUser?.role === "admin")
+          AdminPanel.loadTasks(true);
+      }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
+    },
 
-            if (state.notifications.length === 0) {
-                list.innerHTML = '';
-                Utils.show(emptyState);
-                return;
-            }
+    stopPolling() {
+      if (state.notificationInterval) {
+        clearInterval(state.notificationInterval);
+        state.notificationInterval = null;
+      }
+    },
 
-            Utils.hide(emptyState);
-            list.innerHTML = state.notifications.map(notif => `
-                <div class="notification-item ${notif.is_read ? '' : 'unread'}" 
+    renderList() {
+      const list = Utils.$("#notifications-list");
+      const emptyState = Utils.$("#notifications-empty");
+
+      if (state.notifications.length === 0) {
+        list.innerHTML = "";
+        Utils.show(emptyState);
+        return;
+      }
+
+      Utils.hide(emptyState);
+      list.innerHTML = state.notifications
+        .map(
+          (notif) => `
+                <div class="notification-item ${notif.is_read ? "" : "unread"}" 
                      data-id="${notif.id}" 
-                     data-task-id="${notif.task_id || ''}">
-                    <div class="notification-icon">${this.getIcon(notif.type)}</div>
+                     data-task-id="${notif.task_id || ""}">
+                    <div class="notification-icon">${this.getIcon(
+                      notif.type
+                    )}</div>
                     <div class="notification-content">
-                        <div class="notification-title">${Utils.escapeHtml(notif.title)}</div>
-                        <div class="notification-message">${Utils.escapeHtml(notif.message)}</div>
-                        <div class="notification-time">${Utils.formatRelativeTime(notif.created_at)}</div>
+                        <div class="notification-title">${Utils.escapeHtml(
+                          notif.title
+                        )}</div>
+                        <div class="notification-message">${Utils.escapeHtml(
+                          notif.message
+                        )}</div>
+                        <div class="notification-time">${Utils.formatRelativeTime(
+                          notif.created_at
+                        )}</div>
                     </div>
-                    ${notif.is_read ? '' : '<div class="notification-unread-dot"></div>'}
+                    ${
+                      notif.is_read
+                        ? ""
+                        : '<div class="notification-unread-dot"></div>'
+                    }
                 </div>
-            `).join('');
+            `
+        )
+        .join("");
 
-            list.querySelectorAll('.notification-item').forEach(item => {
-                item.addEventListener('click', async () => {
-                    const id = item.dataset.id;
-                    const taskId = item.dataset.taskId;
+      list.querySelectorAll(".notification-item").forEach((item) => {
+        item.addEventListener("click", async () => {
+          const id = item.dataset.id;
+          const taskId = item.dataset.taskId;
 
-                    if (item.classList.contains('unread')) {
-                        try {
-                            await API.markNotificationRead(id);
-                            item.classList.remove('unread');
-                            item.querySelector('.notification-unread-dot')?.remove();
-                            state.unreadNotifications = Math.max(0, state.unreadNotifications - 1);
-                            this.updateBadge();
-                        } catch (error) { console.error(error); }
-                    }
-
-                    if (taskId) {
-                        Modal.close('modal-notifications');
-                        if (state.currentUser.role === 'admin') AdminPanel.openTaskDetails(taskId);
-                        else DriverPanel.openTaskDetails(taskId);
-                    }
-                });
-            });
-        },
-
-        getIcon(type) {
-            const icons = { 'new_task': '📋', 'status_change': '🔄', 'delay': '⏱️', 'problem': '⚠️', 'joined': '👥' };
-            return icons[type] || '🔔';
-        },
-
-        async markAllRead() {
-            if (!state.currentUser || state.unreadNotifications === 0) return;
+          if (item.classList.contains("unread")) {
             try {
-                await API.markAllNotificationsRead(state.currentUser.id);
-                state.notifications.forEach(n => n.is_read = 1);
-                state.unreadNotifications = 0;
-                this.updateBadge();
-                this.renderList();
-                Toast.success('Oznaczono jako przeczytane');
-            } catch (error) { Toast.error('Nie udało się oznaczyć'); }
-        },
+              await API.markNotificationRead(id);
+              item.classList.remove("unread");
+              item.querySelector(".notification-unread-dot")?.remove();
+              state.unreadNotifications = Math.max(
+                0,
+                state.unreadNotifications - 1
+              );
+              this.updateBadge();
+            } catch (error) {
+              console.error(error);
+            }
+          }
 
-        open() {
-            this.renderList();
-            Modal.open('modal-notifications');
-        },
+          if (taskId) {
+            Modal.close("modal-notifications");
+            if (state.currentUser.role === "admin")
+              AdminPanel.openTaskDetails(taskId);
+            else DriverPanel.openTaskDetails(taskId);
+          }
+        });
+      });
+    },
 
-        initEventListeners() {
-            Utils.$('#driver-notifications-btn')?.addEventListener('click', () => {
-                this.open();
-                this.requestPermission();
-            });
-            Utils.$('#admin-notifications-btn')?.addEventListener('click', () => {
-                this.open();
-                this.requestPermission();
-            });
-            Utils.$('#mark-all-read-btn')?.addEventListener('click', () => this.markAllRead());
+    getIcon(type) {
+      const icons = {
+        new_task: "📋",
+        status_change: "🔄",
+        delay: "⏱️",
+        problem: "⚠️",
+        joined: "👥",
+      };
+      return icons[type] || "🔔";
+    },
+
+    async markAllRead() {
+      if (!state.currentUser || state.unreadNotifications === 0) return;
+      try {
+        await API.markAllNotificationsRead(state.currentUser.id);
+        state.notifications.forEach((n) => (n.is_read = 1));
+        state.unreadNotifications = 0;
+        this.updateBadge();
+        this.renderList();
+        Toast.success("Oznaczono jako przeczytane");
+      } catch (error) {
+        Toast.error("Nie udało się oznaczyć");
+      }
+    },
+
+    open() {
+      this.renderList();
+      Modal.open("modal-notifications");
+    },
+
+    initEventListeners() {
+      Utils.$("#driver-notifications-btn")?.addEventListener("click", () => {
+        this.open();
+        this.requestPermission();
+      });
+      Utils.$("#admin-notifications-btn")?.addEventListener("click", () => {
+        this.open();
+        this.requestPermission();
+      });
+      Utils.$("#mark-all-read-btn")?.addEventListener("click", () =>
+        this.markAllRead()
+      );
+    },
+  };
+
+  // =============================================
+  // 10. DATALISTS
+  // =============================================
+  const DataLists = {
+    updateLocations() {
+      const datalist = Utils.$("#datalist-locations");
+      if (!datalist) return;
+
+      datalist.innerHTML = [...state.locations, ...state.departments]
+        .map((loc) => `<option value="${Utils.escapeHtml(loc.name)}">`)
+        .join("");
+    },
+
+    updateDepartmentSelects() {
+      const selects = [
+        Utils.$("#unloading-department"),
+        Utils.$("#loading-department"),
+      ];
+
+      selects.forEach((select) => {
+        if (!select) return;
+        const currentValue = select.value;
+        select.innerHTML =
+          '<option value="">Wybierz dział...</option>' +
+          state.departments
+            .map(
+              (dept) =>
+                `<option value="${Utils.escapeHtml(
+                  dept.name
+                )}">${Utils.escapeHtml(dept.name)}</option>`
+            )
+            .join("");
+        select.value = currentValue;
+      });
+    },
+
+    updateDriverSelect() {
+      const select = Utils.$("#task-assigned");
+      if (!select) return;
+
+      const drivers = state.users.filter((u) => u.role === "driver");
+      const currentValue = select.value;
+
+      select.innerHTML =
+        '<option value="">Dowolny kierowca</option>' +
+        drivers
+          .map(
+            (driver) =>
+              `<option value="${driver.id}">${Utils.escapeHtml(
+                driver.name
+              )}</option>`
+          )
+          .join("");
+
+      select.value = currentValue;
+    },
+
+    updateAll() {
+      this.updateLocations();
+      this.updateDepartmentSelects();
+      this.updateDriverSelect();
+    },
+  };
+  // =============================================
+  // 11. AUTH
+  // =============================================
+  const Auth = {
+    async init() {
+      const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
+
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+
+          // Sprawdź czy dane są poprawne
+          if (!parsed || !parsed.token || !parsed.id) {
+            throw new Error("Uszkodzone dane sesji");
+          }
+
+          // Przywróć stan
+          state.currentUser = parsed;
+
+          // Przejdź dalej
+          await this.onLoginSuccess();
+        } catch (e) {
+          console.error("Session error:", e);
+          this.logout(true); // Wymuś wylogowanie i czyszczenie
         }
-    };
+      } else {
+        await this.showLoginScreen();
+      }
+    },
 
-    // =============================================
-    // 10. DATALISTS
-    // =============================================
-    const DataLists = {
-        updateLocations() {
-            const datalist = Utils.$('#datalist-locations');
-            if (!datalist) return;
+    async showLoginScreen() {
+      try {
+        state.users = await API.getUsers();
+        this.populateUserSelect();
+      } catch (error) {
+        Toast.error("Nie udało się załadować użytkowników");
+      }
+      Screen.show("login");
+    },
 
-            datalist.innerHTML = [...state.locations, ...state.departments]
-                .map(loc => `<option value="${Utils.escapeHtml(loc.name)}">`)
-                .join('');
-        },
+    populateUserSelect() {
+      const select = Utils.$("#login-user");
+      select.innerHTML = '<option value="">Wybierz użytkownika...</option>';
 
-        updateDepartmentSelects() {
-            const selects = [
-                Utils.$('#unloading-department'),
-                Utils.$('#loading-department')
-            ];
+      const admins = state.users.filter((u) => u.role === "admin");
+      const drivers = state.users.filter((u) => u.role === "driver");
 
-            selects.forEach(select => {
-                if (!select) return;
-                const currentValue = select.value;
-                select.innerHTML = '<option value="">Wybierz dział...</option>' +
-                    state.departments.map(dept => 
-                        `<option value="${Utils.escapeHtml(dept.name)}">${Utils.escapeHtml(dept.name)}</option>`
-                    ).join('');
-                select.value = currentValue;
-            });
-        },
+      if (admins.length > 0) {
+        const adminGroup = document.createElement("optgroup");
+        adminGroup.label = "👔 Kierownicy";
+        admins.forEach((user) => {
+          const option = document.createElement("option");
+          option.value = user.id;
+          option.textContent = user.name;
+          adminGroup.appendChild(option);
+        });
+        select.appendChild(adminGroup);
+      }
 
-        updateDriverSelect() {
-            const select = Utils.$('#task-assigned');
-            if (!select) return;
+      if (drivers.length > 0) {
+        const driverGroup = document.createElement("optgroup");
+        driverGroup.label = "🚗 Kierowcy";
+        drivers.forEach((user) => {
+          const option = document.createElement("option");
+          option.value = user.id;
+          option.textContent = user.name;
+          driverGroup.appendChild(option);
+        });
+        select.appendChild(driverGroup);
+      }
+    },
 
-            const drivers = state.users.filter(u => u.role === 'driver');
-            const currentValue = select.value;
-            
-            select.innerHTML = '<option value="">Dowolny kierowca</option>' +
-                drivers.map(driver => 
-                    `<option value="${driver.id}">${Utils.escapeHtml(driver.name)}</option>`
-                ).join('');
-            
-            select.value = currentValue;
-        },
+    async handleLogin(e) {
+      e.preventDefault();
 
-        updateAll() {
-            this.updateLocations();
-            this.updateDepartmentSelects();
-            this.updateDriverSelect();
+      const userId = Utils.$("#login-user").value;
+      const pin = Utils.$("#login-pin").value;
+      const errorEl = Utils.$("#login-error");
+      const submitBtn = Utils.$("#login-submit-btn");
+
+      if (!userId || !pin) {
+        Utils.show(errorEl);
+        errorEl.textContent = "Wybierz użytkownika i wpisz PIN";
+        return;
+      }
+
+      submitBtn.disabled = true;
+      Utils.hide(submitBtn.querySelector(".btn-text"));
+      Utils.show(submitBtn.querySelector(".btn-loader"));
+      Utils.hide(errorEl);
+
+      try {
+        const response = await API.login(userId, pin);
+
+        // Zapisz usera I TOKEN
+        state.currentUser = { ...response.user, token: response.token };
+        localStorage.setItem(
+          CONFIG.STORAGE_KEYS.USER,
+          JSON.stringify(state.currentUser)
+        );
+
+        Toast.success(`Witaj, ${response.user.name}!`);
+        await this.onLoginSuccess();
+      } catch (error) {
+        Utils.show(errorEl);
+        errorEl.textContent = error.message || "Nieprawidłowy PIN";
+      } finally {
+        submitBtn.disabled = false;
+        Utils.show(submitBtn.querySelector(".btn-text"));
+        Utils.hide(submitBtn.querySelector(".btn-loader"));
+      }
+    },
+
+    async onLoginSuccess() {
+      Utils.$("#login-form")?.reset();
+
+      // Sprawdź czy wymuszona zmiana PIN
+      if (state.currentUser.force_pin_change) {
+        this.showChangePinModal();
+        return;
+      }
+
+      await this.loadCommonData();
+
+      if (state.currentUser.role === "admin") {
+        this.initAdminPanel();
+      } else {
+        this.initDriverPanel();
+      }
+      if (Notification.permission === "granted") {
+        PushyService.init();
+      }
+    },
+
+    showChangePinModal() {
+      // Ukryj ekran logowania, ale nie pokazuj jeszcze panelu
+      Screen.show("loading");
+
+      // Pokaż modal (bez możliwości zamknięcia)
+      const modal = Utils.$("#modal-change-pin");
+      Utils.show(modal);
+
+      // Obsługa formularza
+      const form = Utils.$("#change-pin-form");
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const newPin = Utils.$("#new-pin").value;
+        const confirmPin = Utils.$("#confirm-pin").value;
+
+        if (newPin !== confirmPin) {
+          Toast.error("PIN-y muszą być identyczne");
+          return;
         }
-    };
-        // =============================================
-    // 11. AUTH
-    // =============================================
-    const Auth = {
-                    async init() {
-            const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
-            
-            if (savedUser) {
-                try {
-                    const parsed = JSON.parse(savedUser);
-                    
-                    // Sprawdź czy dane są poprawne
-                    if (!parsed || !parsed.token || !parsed.id) {
-                        throw new Error('Uszkodzone dane sesji');
-                    }
 
-                    // Przywróć stan
-                    state.currentUser = parsed;
-                    
-                    // Przejdź dalej
-                    await this.onLoginSuccess();
-                    
-                } catch (e) {
-                    console.error('Session error:', e);
-                    this.logout(true); // Wymuś wylogowanie i czyszczenie
-                }
-            } else {
-                await this.showLoginScreen();
-            }
-        },
-
-        async showLoginScreen() {
-            try {
-                state.users = await API.getUsers();
-                this.populateUserSelect();
-            } catch (error) {
-                Toast.error('Nie udało się załadować użytkowników');
-            }
-            Screen.show('login');
-        },
-
-        populateUserSelect() {
-            const select = Utils.$('#login-user');
-            select.innerHTML = '<option value="">Wybierz użytkownika...</option>';
-
-            const admins = state.users.filter(u => u.role === 'admin');
-            const drivers = state.users.filter(u => u.role === 'driver');
-
-            if (admins.length > 0) {
-                const adminGroup = document.createElement('optgroup');
-                adminGroup.label = '👔 Kierownicy';
-                admins.forEach(user => {
-                    const option = document.createElement('option');
-                    option.value = user.id;
-                    option.textContent = user.name;
-                    adminGroup.appendChild(option);
-                });
-                select.appendChild(adminGroup);
-            }
-
-            if (drivers.length > 0) {
-                const driverGroup = document.createElement('optgroup');
-                driverGroup.label = '🚗 Kierowcy';
-                drivers.forEach(user => {
-                    const option = document.createElement('option');
-                    option.value = user.id;
-                    option.textContent = user.name;
-                    driverGroup.appendChild(option);
-                });
-                select.appendChild(driverGroup);
-            }
-        },
-
-        async handleLogin(e) {
-            e.preventDefault();
-
-            const userId = Utils.$('#login-user').value;
-            const pin = Utils.$('#login-pin').value;
-            const errorEl = Utils.$('#login-error');
-            const submitBtn = Utils.$('#login-submit-btn');
-
-            if (!userId || !pin) {
-                Utils.show(errorEl);
-                errorEl.textContent = 'Wybierz użytkownika i wpisz PIN';
-                return;
-            }
-
-            submitBtn.disabled = true;
-            Utils.hide(submitBtn.querySelector('.btn-text'));
-            Utils.show(submitBtn.querySelector('.btn-loader'));
-            Utils.hide(errorEl);
-
-            try {
-                const response = await API.login(userId, pin);
-                
-                // Zapisz usera I TOKEN
-                state.currentUser = { ...response.user, token: response.token };
-                localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(state.currentUser));
-                
-                Toast.success(`Witaj, ${response.user.name}!`);
-                await this.onLoginSuccess();
-
-            } catch (error) {
-                Utils.show(errorEl);
-                errorEl.textContent = error.message || 'Nieprawidłowy PIN';
-            } finally {
-                submitBtn.disabled = false;
-                Utils.show(submitBtn.querySelector('.btn-text'));
-                Utils.hide(submitBtn.querySelector('.btn-loader'));
-            }
-        },
-
-                async onLoginSuccess() {
-            Utils.$('#login-form')?.reset();
-
-            // Sprawdź czy wymuszona zmiana PIN
-            if (state.currentUser.force_pin_change) {
-                this.showChangePinModal();
-                return;
-            }
-
-            await this.loadCommonData();
-
-            if (state.currentUser.role === 'admin') {
-                this.initAdminPanel();
-            } else {
-                this.initDriverPanel();
-            }
-            if (Notification.permission === "granted") {
-                PushyService.init();
-            }
-        },
-
-        showChangePinModal() {
-            // Ukryj ekran logowania, ale nie pokazuj jeszcze panelu
-            Screen.show('loading');
-            
-            // Pokaż modal (bez możliwości zamknięcia)
-            const modal = Utils.$('#modal-change-pin');
-            Utils.show(modal);
-            
-            // Obsługa formularza
-            const form = Utils.$('#change-pin-form');
-            form.onsubmit = async (e) => {
-                e.preventDefault();
-                const newPin = Utils.$('#new-pin').value;
-                const confirmPin = Utils.$('#confirm-pin').value;
-
-                if (newPin !== confirmPin) {
-                    Toast.error('PIN-y muszą być identyczne');
-                    return;
-                }
-
-                if (newPin.length < 4 || newPin.length > 6) {
-                    Toast.error('PIN musi mieć 4-6 cyfr');
-                    return;
-                }
-
-                try {
-                    await API.updateUser(state.currentUser.id, { 
-                        pin: newPin,
-                        force_pin_change: 0 
-                    });
-                    
-                    Toast.success('PIN zmieniony pomyślnie!');
-                    Utils.hide(modal);
-                    
-                    // Zaktualizuj stan lokalny
-                    state.currentUser.force_pin_change = 0;
-                    localStorage.setItem(CONFIG.STORAGE_KEYS.USER, JSON.stringify(state.currentUser));
-                    
-                    // Kontynuuj logowanie
-                    await this.loadCommonData();
-                    if (state.currentUser.role === 'admin') {
-                        this.initAdminPanel();
-                    } else {
-                        this.initDriverPanel();
-                    }
-                } catch (error) {
-                    Toast.error('Nie udało się zmienić PIN-u');
-                }
-            };
-        },
-
-        async loadCommonData() {
-            try {
-                const [locations, users] = await Promise.all([
-                    API.getLocations(),
-                    API.getUsers()
-                ]);
-                state.locations = locations.filter(l => l.type === 'location');
-                state.departments = locations.filter(l => l.type === 'department');
-                state.users = users;
-                DataLists.updateAll();
-            } catch (error) {
-                console.error('Failed to load common data:', error);
-            }
-        },
-
-                initAdminPanel() {
-            Utils.$('#admin-user-name').textContent = state.currentUser.name;
-            state.currentDate = Utils.getToday();
-            Utils.$('#admin-date-picker').value = state.currentDate;
-            
-            Screen.show('admin');
-            // Wymuś zakładkę Tasks na starcie
-            AdminPanel.switchTab('tasks');
-            AdminPanel.loadTasks();
-            AdminPanel.loadUsers();
-            AdminPanel.loadLocations();
-            AdminPanel.updateDateButtons();
-            
-            // --- DODAJ TO: ---
-            // Załaduj domyślny raport (week)
-            AdminPanel.loadReports('week'); 
-            
-            Notifications.startPolling();
-        },
-
-        initDriverPanel() {
-            Utils.$('#driver-user-name').textContent = state.currentUser.name;
-            state.currentDate = Utils.getToday();
-            Utils.$('#driver-date-text').textContent = Utils.formatDate(state.currentDate);
-            
-            Screen.show('driver');
-            
-            DriverPanel.loadTasks();
-            Notifications.startPolling();
-        },
-
-            logout(force = false) {
-            const performLogout = () => {
-                state.currentUser = null;
-                state.tasks = [];
-                state.notifications = [];
-                state.currentTab = 'tasks'; // <-- DODAJ TO (Reset zakładki)
-                state.currentFilter = 'all'; // <-- DODAJ TO
-                
-                localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
-                Notifications.stopPolling();
-                this.showLoginScreen();
-            };
-
-            if (force) {
-                performLogout();
-                // Opcjonalnie: Toast.info('Sesja wygasła');
-            } else {
-                Modal.confirm('Wylogowanie', 'Czy na pewno?', performLogout, 'Wyloguj', false);
-            }
-        },
-
-        initEventListeners() {
-            Utils.$('#login-form')?.addEventListener('submit', (e) => this.handleLogin(e));
-
-            Utils.$('#toggle-pin')?.addEventListener('click', () => {
-                const pinInput = Utils.$('#login-pin');
-                const eyeIcon = Utils.$('#toggle-pin .eye-icon');
-                if (pinInput.type === 'password') {
-                    pinInput.type = 'text';
-                    eyeIcon.textContent = '🙈';
-                } else {
-                    pinInput.type = 'password';
-                    eyeIcon.textContent = '👁️';
-                }
-            });
-
-            Utils.$('#driver-logout-btn')?.addEventListener('click', () => this.logout());
-            Utils.$('#admin-logout-btn')?.addEventListener('click', () => this.logout());
+        if (newPin.length < 4 || newPin.length > 6) {
+          Toast.error("PIN musi mieć 4-6 cyfr");
+          return;
         }
-    };
 
-    // =============================================
-    // 12. DRIVER PANEL
-    // =============================================
-    const DriverPanel = {
-        async loadTasks(silent = false) {
-            try {
-                state.tasks = await API.getTasks({ date: state.currentDate });
-                this.sortTasks();
-                this.updateStats();
-                this.renderTasks();
-            } catch (error) {
-                if (!silent) Toast.error('Nie udało się załadować zadań');
-                console.error(error);
-            }
-        },
+        try {
+          await API.updateUser(state.currentUser.id, {
+            pin: newPin,
+            force_pin_change: 0,
+          });
 
-                sortTasks() {
-            state.tasks.sort((a, b) => {
-                // 1. Zakończone ZAWSZE na dole
-                if (a.status === 'completed' && b.status !== 'completed') return 1;
-                if (b.status === 'completed' && a.status !== 'completed') return -1;
+          Toast.success("PIN zmieniony pomyślnie!");
+          Utils.hide(modal);
 
-                // 2. W trakcie ZAWSZE na górze (przed oczekującymi)
-                if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
-                if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
-                
-                // 3. Potem priorytet (Pilne > Normalne > Niski)
-                const priorityDiff = Utils.getPriorityOrder(a.priority) - Utils.getPriorityOrder(b.priority);
-                if (priorityDiff !== 0) return priorityDiff;
-                
-                // 4. Na końcu kolejność ręczna (sort_order)
-                return (a.sort_order || 999) - (b.sort_order || 999);
-            });
-        },
+          // Zaktualizuj stan lokalny
+          state.currentUser.force_pin_change = 0;
+          localStorage.setItem(
+            CONFIG.STORAGE_KEYS.USER,
+            JSON.stringify(state.currentUser)
+          );
 
-        updateStats() {
-            const pending = state.tasks.filter(t => t.status === 'pending').length;
-            const inProgress = state.tasks.filter(t => t.status === 'in_progress').length;
-            const completed = state.tasks.filter(t => t.status === 'completed').length;
+          // Kontynuuj logowanie
+          await this.loadCommonData();
+          if (state.currentUser.role === "admin") {
+            this.initAdminPanel();
+          } else {
+            this.initDriverPanel();
+          }
+        } catch (error) {
+          Toast.error("Nie udało się zmienić PIN-u");
+        }
+      };
+    },
 
-            Utils.$('#driver-stat-pending').textContent = pending;
-            Utils.$('#driver-stat-progress').textContent = inProgress;
-            Utils.$('#driver-stat-done').textContent = completed;
-        },
+    async loadCommonData() {
+      try {
+        const [locations, users] = await Promise.all([
+          API.getLocations(),
+          API.getUsers(),
+        ]);
+        state.locations = locations.filter((l) => l.type === "location");
+        state.departments = locations.filter((l) => l.type === "department");
+        state.users = users;
+        DataLists.updateAll();
+      } catch (error) {
+        console.error("Failed to load common data:", error);
+      }
+    },
 
-        renderTasks() {
-            const tasksList = Utils.$('#driver-tasks-list');
-            const emptyState = Utils.$('#driver-tasks-empty');
+    initAdminPanel() {
+      Utils.$("#admin-user-name").textContent = state.currentUser.name;
+      state.currentDate = Utils.getToday();
+      Utils.$("#admin-date-picker").value = state.currentDate;
 
-            let filteredTasks = state.tasks;
-            if (state.currentFilter !== 'all') {
-                filteredTasks = state.tasks.filter(t => t.status === state.currentFilter);
-            }
+      Screen.show("admin");
+      // Wymuś zakładkę Tasks na starcie
+      AdminPanel.switchTab("tasks");
+      AdminPanel.loadTasks();
+      AdminPanel.loadUsers();
+      AdminPanel.loadLocations();
+      AdminPanel.updateDateButtons();
 
-            if (filteredTasks.length === 0) {
-                tasksList.innerHTML = '';
-                Utils.show(emptyState);
-                return;
-            }
+      // --- DODAJ TO: ---
+      // Załaduj domyślny raport (week)
+      AdminPanel.loadReports("week");
 
-            Utils.hide(emptyState);
-            tasksList.innerHTML = filteredTasks.map(task => this.renderTaskCard(task)).join('');
-            this.attachTaskEventListeners();
-        },
+      Notifications.startPolling();
+    },
 
-                renderTaskCard(task) {
-            const isMyTask = task.assigned_to === state.currentUser.id;
-            const isJoined = task.additional_drivers && task.additional_drivers.some(d => d.id === state.currentUser.id);
-            const isParticipating = isMyTask || isJoined;
-            
-            const isInProgress = task.status === 'in_progress';
-            const isLocked = isInProgress && !isParticipating;
+    initDriverPanel() {
+      Utils.$("#driver-user-name").textContent = state.currentUser.name;
+      state.currentDate = Utils.getToday();
+      Utils.$("#driver-date-text").textContent = Utils.formatDate(
+        state.currentDate
+      );
 
-            let taskDescription = '';
-            if (task.task_type === 'transport') {
-                taskDescription = `
+      Screen.show("driver");
+
+      DriverPanel.loadTasks();
+      Notifications.startPolling();
+    },
+
+    logout(force = false) {
+      const performLogout = () => {
+        state.currentUser = null;
+        state.tasks = [];
+        state.notifications = [];
+        state.currentTab = "tasks"; // <-- DODAJ TO (Reset zakładki)
+        state.currentFilter = "all"; // <-- DODAJ TO
+
+        localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
+        Notifications.stopPolling();
+        this.showLoginScreen();
+      };
+
+      if (force) {
+        performLogout();
+        // Opcjonalnie: Toast.info('Sesja wygasła');
+      } else {
+        Modal.confirm(
+          "Wylogowanie",
+          "Czy na pewno?",
+          performLogout,
+          "Wyloguj",
+          false
+        );
+      }
+    },
+
+    initEventListeners() {
+      Utils.$("#login-form")?.addEventListener("submit", (e) =>
+        this.handleLogin(e)
+      );
+
+      Utils.$("#toggle-pin")?.addEventListener("click", () => {
+        const pinInput = Utils.$("#login-pin");
+        const eyeIcon = Utils.$("#toggle-pin .eye-icon");
+        if (pinInput.type === "password") {
+          pinInput.type = "text";
+          eyeIcon.textContent = "🙈";
+        } else {
+          pinInput.type = "password";
+          eyeIcon.textContent = "👁️";
+        }
+      });
+
+      Utils.$("#driver-logout-btn")?.addEventListener("click", () =>
+        this.logout()
+      );
+      Utils.$("#admin-logout-btn")?.addEventListener("click", () =>
+        this.logout()
+      );
+    },
+  };
+
+  // =============================================
+  // 12. DRIVER PANEL
+  // =============================================
+  const DriverPanel = {
+    async loadTasks(silent = false) {
+      try {
+        state.tasks = await API.getTasks({ date: state.currentDate });
+        this.sortTasks();
+        this.updateStats();
+        this.renderTasks();
+      } catch (error) {
+        if (!silent) Toast.error("Nie udało się załadować zadań");
+        console.error(error);
+      }
+    },
+
+    sortTasks() {
+      state.tasks.sort((a, b) => {
+        // 1. Zakończone ZAWSZE na dole
+        if (a.status === "completed" && b.status !== "completed") return 1;
+        if (b.status === "completed" && a.status !== "completed") return -1;
+
+        // 2. W trakcie ZAWSZE na górze (przed oczekującymi)
+        if (a.status === "in_progress" && b.status !== "in_progress") return -1;
+        if (b.status === "in_progress" && a.status !== "in_progress") return 1;
+
+        // 3. Potem priorytet (Pilne > Normalne > Niski)
+        const priorityDiff =
+          Utils.getPriorityOrder(a.priority) -
+          Utils.getPriorityOrder(b.priority);
+        if (priorityDiff !== 0) return priorityDiff;
+
+        // 4. Na końcu kolejność ręczna (sort_order)
+        return (a.sort_order || 999) - (b.sort_order || 999);
+      });
+    },
+
+    updateStats() {
+      const pending = state.tasks.filter((t) => t.status === "pending").length;
+      const inProgress = state.tasks.filter(
+        (t) => t.status === "in_progress"
+      ).length;
+      const completed = state.tasks.filter(
+        (t) => t.status === "completed"
+      ).length;
+
+      Utils.$("#driver-stat-pending").textContent = pending;
+      Utils.$("#driver-stat-progress").textContent = inProgress;
+      Utils.$("#driver-stat-done").textContent = completed;
+    },
+
+    renderTasks() {
+      const tasksList = Utils.$("#driver-tasks-list");
+      const emptyState = Utils.$("#driver-tasks-empty");
+
+      let filteredTasks = state.tasks;
+      if (state.currentFilter !== "all") {
+        filteredTasks = state.tasks.filter(
+          (t) => t.status === state.currentFilter
+        );
+      }
+
+      if (filteredTasks.length === 0) {
+        tasksList.innerHTML = "";
+        Utils.show(emptyState);
+        return;
+      }
+
+      Utils.hide(emptyState);
+      tasksList.innerHTML = filteredTasks
+        .map((task) => this.renderTaskCard(task))
+        .join("");
+      this.attachTaskEventListeners();
+    },
+
+    renderTaskCard(task) {
+      const isMyTask = task.assigned_to === state.currentUser.id;
+      const isJoined =
+        task.additional_drivers &&
+        task.additional_drivers.some((d) => d.id === state.currentUser.id);
+      const isParticipating = isMyTask || isJoined;
+
+      const isInProgress = task.status === "in_progress";
+      const isLocked = isInProgress && !isParticipating;
+
+      let taskDescription = "";
+      if (task.task_type === "transport") {
+        taskDescription = `
                     <div class="task-route">
-                        <span>📍 ${Utils.escapeHtml(task.location_from || '?')}</span>
+                        <span>📍 ${Utils.escapeHtml(
+                          task.location_from || "?"
+                        )}</span>
                         <span class="task-route-arrow">→</span>
-                        <span>📍 ${Utils.escapeHtml(task.location_to || '?')}</span>
+                        <span>📍 ${Utils.escapeHtml(
+                          task.location_to || "?"
+                        )}</span>
                     </div>
                 `;
-            } else {
-                taskDescription = `
+      } else {
+        taskDescription = `
                     <div class="task-department">
                         <span>🏢</span>
-                        <span>${Utils.escapeHtml(task.department || 'Nie określono')}</span>
+                        <span>${Utils.escapeHtml(
+                          task.department || "Nie określono"
+                        )}</span>
                     </div>
                 `;
-            }
+      }
 
-            const materialHtml = task.material ? `
+      const materialHtml = task.material
+        ? `
                 <div class="task-material">
                     <span>📦</span>
                     <span>${Utils.escapeHtml(task.material)}</span>
                 </div>
-            ` : '';
+            `
+        : "";
 
-            const notesHtml = task.notes ? `
+      const notesHtml = task.notes
+        ? `
                 <div class="task-notes-preview">
                     <span>💬</span>
                     <span>${Utils.escapeHtml(task.notes)}</span>
                 </div>
-            ` : '';
+            `
+        : "";
 
-            // Obsługa wielu kierowców
-            let driversHtml = '';
-            const allDrivers = [];
-            
-            if (task.assigned_name) allDrivers.push(task.assigned_name);
-            if (task.additional_drivers) {
-                task.additional_drivers.forEach(d => allDrivers.push(d.name));
-            }
+      // Obsługa wielu kierowców
+      let driversHtml = "";
+      const allDrivers = [];
 
-            if (allDrivers.length > 0) {
-                const driversList = allDrivers.join(', ');
-                const icon = allDrivers.length > 1 ? '👥' : '👤';
-                const label = allDrivers.length > 1 ? 'Współdzielone' : '';
-                
-                driversHtml = `
-                    <span class="task-meta-item" title="${Utils.escapeHtml(driversList)}">
+      if (task.assigned_name) allDrivers.push(task.assigned_name);
+      if (task.additional_drivers) {
+        task.additional_drivers.forEach((d) => allDrivers.push(d.name));
+      }
+
+      if (allDrivers.length > 0) {
+        const driversList = allDrivers.join(", ");
+        const icon = allDrivers.length > 1 ? "👥" : "👤";
+        const label = allDrivers.length > 1 ? "Współdzielone" : "";
+
+        driversHtml = `
+                    <span class="task-meta-item" title="${Utils.escapeHtml(
+                      driversList
+                    )}">
                         <span>${icon}</span>
                         <span>${Utils.escapeHtml(driversList)}</span>
-                        ${label ? `<span class="task-drivers-badge">${label}</span>` : ''}
+                        ${
+                          label
+                            ? `<span class="task-drivers-badge">${label}</span>`
+                            : ""
+                        }
                     </span>
                 `;
-            }
+      }
 
-            // Przyciski akcji
-            let actionButtons = '';
-            if (task.status === 'pending') {
-                actionButtons = `
+      // Przyciski akcji
+      let actionButtons = "";
+      if (task.status === "pending") {
+        actionButtons = `
                     <button class="task-action-btn btn-start" data-action="start" data-id="${task.id}">
                         ▶️ Rozpocznij
                     </button>
                 `;
-            } else if (task.status === 'in_progress') {
-                if (isParticipating) {
-                    actionButtons = `
+      } else if (task.status === "in_progress") {
+        if (isParticipating) {
+          actionButtons = `
                         <button class="task-action-btn" data-action="add-log" data-id="${task.id}" title="Dodaj uwagę">
                             📝
                         </button>
@@ -1286,35 +1414,51 @@
                             ✅
                         </button>
                     `;
-                } else {
-                    actionButtons = `
+        } else {
+          actionButtons = `
                         <button class="task-action-btn btn-join" data-action="join" data-id="${task.id}">
                             👥 Dołącz
                         </button>
                     `;
-                }
-            }
+        }
+      }
 
-            return `
-                <div class="task-card priority-${task.priority} status-${task.status} ${isLocked ? 'task-locked' : ''}" 
+      return `
+                <div class="task-card priority-${task.priority} status-${
+        task.status
+      } ${isLocked ? "task-locked" : ""}" 
                      data-id="${task.id}">
                     <div class="task-status-indicator status-${task.status}">
-                        ${Utils.getStatusIcon(task.status)} ${Utils.getStatusLabel(task.status)}
+                        ${Utils.getStatusIcon(
+                          task.status
+                        )} ${Utils.getStatusLabel(task.status)}
                     </div>
                     
                     <div class="task-header">
                         <div class="task-badges">
-                            <span class="task-type-badge type-${task.task_type}">
-                                ${Utils.getTaskTypeIcon(task.task_type)} ${Utils.getTaskTypeLabel(task.task_type)}
+                            <span class="task-type-badge type-${
+                              task.task_type
+                            }">
+                                ${Utils.getTaskTypeIcon(
+                                  task.task_type
+                                )} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
-                            <span class="task-priority-badge priority-${task.priority}">
-                                ${Utils.getPriorityIcon(task.priority)} ${Utils.getPriorityLabel(task.priority)}
+                            <span class="task-priority-badge priority-${
+                              task.priority
+                            }">
+                                ${Utils.getPriorityIcon(
+                                  task.priority
+                                )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
                     </div>
                     
-                    <div class="task-body" data-action="details" data-id="${task.id}">
-                        <div class="task-title">${Utils.escapeHtml(task.description)}</div>
+                    <div class="task-body" data-action="details" data-id="${
+                      task.id
+                    }">
+                        <div class="task-title">${Utils.escapeHtml(
+                          task.description
+                        )}</div>
                         <div class="task-description">
                             ${taskDescription}
                             ${materialHtml}
@@ -1324,12 +1468,18 @@
                     
                     <div class="task-footer">
                         <div class="task-meta">
-                            ${task.scheduled_time ? `
+                            ${
+                              task.scheduled_time
+                                ? `
                                 <span class="task-meta-item">
                                     <span>🕐</span>
-                                    <span>${Utils.formatTime(task.scheduled_time)}</span>
+                                    <span>${Utils.formatTime(
+                                      task.scheduled_time
+                                    )}</span>
                                 </span>
-                            ` : ''}
+                            `
+                                : ""
+                            }
                             ${driversHtml}
                         </div>
                         <div class="task-actions">
@@ -1338,244 +1488,286 @@
                     </div>
                 </div>
             `;
-        },
+    },
 
-        attachTaskEventListeners() {
-            Utils.$$('#driver-tasks-list [data-action]').forEach(el => {
-                el.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const action = el.dataset.action;
-                    const taskId = el.dataset.id;
+    attachTaskEventListeners() {
+      Utils.$$("#driver-tasks-list [data-action]").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const action = el.dataset.action;
+          const taskId = el.dataset.id;
 
-                    switch (action) {
-                        case 'start': this.startTask(taskId); break;
-                        case 'complete': this.completeTask(taskId); break;
-                        case 'add-log': this.openLogModal(taskId); break;
-                        case 'details': this.openTaskDetails(taskId); break;
-                        case 'join': this.openJoinModal(taskId); break;
-                    }
-                });
-            });
-        },
+          switch (action) {
+            case "start":
+              this.startTask(taskId);
+              break;
+            case "complete":
+              this.completeTask(taskId);
+              break;
+            case "add-log":
+              this.openLogModal(taskId);
+              break;
+            case "details":
+              this.openTaskDetails(taskId);
+              break;
+            case "join":
+              this.openJoinModal(taskId);
+              break;
+          }
+        });
+      });
+    },
 
-        async startTask(taskId) {
-        Notifications.markRelatedRead(taskId);
-    Modal.confirm(
-        'Rozpocząć zadanie?',
-        'Czy chcesz rozpocząć wykonywanie tego zadania?',
+    async startTask(taskId) {
+      Notifications.markRelatedRead(taskId);
+      Modal.confirm(
+        "Rozpocząć zadanie?",
+        "Czy chcesz rozpocząć wykonywanie tego zadania?",
         async () => {
-            // Natychmiast aktualizuj UI
-            const task = state.tasks.find(t => t.id == taskId);
-            if (task) {
-                task.status = 'in_progress';
-                task.assigned_to = state.currentUser.id;
-                task.assigned_name = state.currentUser.name;
-            }
-            this.sortTasks();
-            this.updateStats();
-            this.setFilter('in_progress');
-            Toast.success('Zadanie rozpoczęte!');
+          // Natychmiast aktualizuj UI
+          const task = state.tasks.find((t) => t.id == taskId);
+          if (task) {
+            task.status = "in_progress";
+            task.assigned_to = state.currentUser.id;
+            task.assigned_name = state.currentUser.name;
+          }
+          this.sortTasks();
+          this.updateStats();
+          this.setFilter("in_progress");
+          Toast.success("Zadanie rozpoczęte!");
 
-            // Wyślij do serwera w tle
-            try {
-                await API.updateTaskStatus(taskId, 'in_progress', state.currentUser.id);
-            } catch (error) {
-                // Cofnij zmiany jeśli błąd
-                Toast.error('Błąd synchronizacji - odświeżam...');
-                await this.loadTasks();
-            }
+          // Wyślij do serwera w tle
+          try {
+            await API.updateTaskStatus(
+              taskId,
+              "in_progress",
+              state.currentUser.id
+            );
+          } catch (error) {
+            // Cofnij zmiany jeśli błąd
+            Toast.error("Błąd synchronizacji - odświeżam...");
+            await this.loadTasks();
+          }
         },
-        'Rozpocznij',
+        "Rozpocznij",
         false
-    );
-},
+      );
+    },
 
-        async completeTask(taskId) {
-    Modal.confirm(
-        'Zakończyć zadanie?',
-        'Czy na pewno chcesz oznaczyć zadanie jako wykonane?',
+    async completeTask(taskId) {
+      Modal.confirm(
+        "Zakończyć zadanie?",
+        "Czy na pewno chcesz oznaczyć zadanie jako wykonane?",
         async () => {
-            // Natychmiast aktualizuj UI
-            const task = state.tasks.find(t => t.id == taskId);
-            if (task) {
-                task.status = 'completed';
-            }
-            this.sortTasks();
-            this.updateStats();
-            this.renderTasks();
-            Toast.success('Zadanie zakończone! 🎉');
+          // Natychmiast aktualizuj UI
+          const task = state.tasks.find((t) => t.id == taskId);
+          if (task) {
+            task.status = "completed";
+          }
+          this.sortTasks();
+          this.updateStats();
+          this.renderTasks();
+          Toast.success("Zadanie zakończone! 🎉");
 
-            // Wyślij do serwera w tle
-            try {
-                await API.updateTaskStatus(taskId, 'completed', state.currentUser.id);
-            } catch (error) {
-                Toast.error('Błąd synchronizacji - odświeżam...');
-                await this.loadTasks();
-            }
+          // Wyślij do serwera w tle
+          try {
+            await API.updateTaskStatus(
+              taskId,
+              "completed",
+              state.currentUser.id
+            );
+          } catch (error) {
+            Toast.error("Błąd synchronizacji - odświeżam...");
+            await this.loadTasks();
+          }
         },
-        'Zakończ',
+        "Zakończ",
         false
-    );
-},
+      );
+    },
 
-        openJoinModal(taskId) {
-            const task = state.tasks.find(t => t.id == taskId);
-            Utils.$('#join-task-id').value = taskId;
-            Utils.$('#join-task-message').textContent = 
-                `Czy chcesz dołączyć do zadania "${task?.description || ''}" i pomagać przy jego realizacji?`;
-            Modal.open('modal-join-task');
-        },
+    openJoinModal(taskId) {
+      const task = state.tasks.find((t) => t.id == taskId);
+      Utils.$("#join-task-id").value = taskId;
+      Utils.$(
+        "#join-task-message"
+      ).textContent = `Czy chcesz dołączyć do zadania "${
+        task?.description || ""
+      }" i pomagać przy jego realizacji?`;
+      Modal.open("modal-join-task");
+    },
 
-        async joinTask() {
-    const taskId = Utils.$('#join-task-id').value;
-    Notifications.markRelatedRead(taskId);
-    // Natychmiast zamknij modal i pokaż sukces
-    Modal.close('modal-join-task');
-    Toast.success('Dołączyłeś do zadania!');
-    
-    // Sync w tle
-    try {
+    async joinTask() {
+      const taskId = Utils.$("#join-task-id").value;
+      Notifications.markRelatedRead(taskId);
+      // Natychmiast zamknij modal i pokaż sukces
+      Modal.close("modal-join-task");
+      Toast.success("Dołączyłeś do zadania!");
+
+      // Sync w tle
+      try {
         await API.joinTask(taskId, state.currentUser.id);
         await this.loadTasks(true);
-    } catch (error) {
-        Toast.error('Błąd synchronizacji');
+      } catch (error) {
+        Toast.error("Błąd synchronizacji");
         await this.loadTasks();
-    }
-},
+      }
+    },
 
-        openLogModal(taskId) {
-            Utils.$('#log-task-id').value = taskId;
-            Utils.$('#task-log-form').reset();
-            this.toggleLogFields('note');
-            Modal.open('modal-task-log');
-        },
+    openLogModal(taskId) {
+      Utils.$("#log-task-id").value = taskId;
+      Utils.$("#task-log-form").reset();
+      this.toggleLogFields("note");
+      Modal.open("modal-task-log");
+    },
 
-        toggleLogFields(type) {
-            Utils.$$('.log-fields').forEach(el => Utils.hide(el));
-            Utils.show(`#log-fields-${type}`);
-        },
+    toggleLogFields(type) {
+      Utils.$$(".log-fields").forEach((el) => Utils.hide(el));
+      Utils.show(`#log-fields-${type}`);
+    },
 
-        async handleLogSubmit(e) {
-    e.preventDefault();
+    async handleLogSubmit(e) {
+      e.preventDefault();
 
-    const taskId = Utils.$('#log-task-id').value;
-    const logType = document.querySelector('input[name="log-type"]:checked').value;
+      const taskId = Utils.$("#log-task-id").value;
+      const logType = document.querySelector(
+        'input[name="log-type"]:checked'
+      ).value;
 
-    const logData = {
+      const logData = {
         userId: state.currentUser.id,
-        logType
-    };
+        logType,
+      };
 
-    if (logType === 'note') {
-        logData.message = Utils.$('#log-message').value.trim();
+      if (logType === "note") {
+        logData.message = Utils.$("#log-message").value.trim();
         if (!logData.message) {
-            Toast.warning('Wpisz treść uwagi');
-            return;
+          Toast.warning("Wpisz treść uwagi");
+          return;
         }
-    } else if (logType === 'delay') {
-        logData.delayReason = Utils.$('#delay-reason').value;
-        logData.delayMinutes = parseInt(Utils.$('#delay-minutes').value) || 0;
-        logData.message = Utils.$('#delay-details').value.trim();
-        
+      } else if (logType === "delay") {
+        logData.delayReason = Utils.$("#delay-reason").value;
+        logData.delayMinutes = parseInt(Utils.$("#delay-minutes").value) || 0;
+        logData.message = Utils.$("#delay-details").value.trim();
+
         if (!logData.delayReason) {
-            Toast.warning('Wybierz powód przestoju');
-            return;
+          Toast.warning("Wybierz powód przestoju");
+          return;
         }
-    } else if (logType === 'problem') {
-        logData.message = Utils.$('#problem-message').value.trim();
+      } else if (logType === "problem") {
+        logData.message = Utils.$("#problem-message").value.trim();
         if (!logData.message) {
-            Toast.warning('Opisz problem');
-            return;
+          Toast.warning("Opisz problem");
+          return;
         }
-    }
+      }
 
-    // Natychmiast zamknij i pokaż sukces
-    Modal.close('modal-task-log');
-    Toast.success('Zapisano!');
+      // Natychmiast zamknij i pokaż sukces
+      Modal.close("modal-task-log");
+      Toast.success("Zapisano!");
 
-    // Sync w tle
-    try {
+      // Sync w tle
+      try {
         await API.createTaskLog(taskId, logData);
-    } catch (error) {
-        Toast.error('Błąd synchronizacji');
-    }
-},
+      } catch (error) {
+        Toast.error("Błąd synchronizacji");
+      }
+    },
 
-        async openTaskDetails(taskId) {
-            Notifications.markRelatedRead(taskId);
-            try {
-                const task = await API.getTask(taskId);
-                this.renderTaskDetails(task);
-                Modal.open('modal-task-detail');
-            } catch (error) {
-                Toast.error('Nie udało się załadować szczegółów');
-            }
-        },
+    async openTaskDetails(taskId) {
+      Notifications.markRelatedRead(taskId);
+      try {
+        const task = await API.getTask(taskId);
+        this.renderTaskDetails(task);
+        Modal.open("modal-task-detail");
+      } catch (error) {
+        Toast.error("Nie udało się załadować szczegółów");
+      }
+    },
 
-        renderTaskDetails(task) {
-            const content = Utils.$('#task-detail-content');
-            const isDriver = state.currentUser.role === 'driver';
-            const isMyTask = task.assigned_to === state.currentUser.id;
-            
-            let locationInfo = '';
-            if (task.task_type === 'transport') {
-                locationInfo = `
+    renderTaskDetails(task) {
+      const content = Utils.$("#task-detail-content");
+      const isDriver = state.currentUser.role === "driver";
+      const isMyTask = task.assigned_to === state.currentUser.id;
+
+      let locationInfo = "";
+      if (task.task_type === "transport") {
+        locationInfo = `
                     <div class="task-detail-row">
                         <span class="task-detail-label">Skąd</span>
-                        <span class="task-detail-value">📍 ${Utils.escapeHtml(task.location_from || '-')}</span>
+                        <span class="task-detail-value">📍 ${Utils.escapeHtml(
+                          task.location_from || "-"
+                        )}</span>
                     </div>
                     <div class="task-detail-row">
                         <span class="task-detail-label">Dokąd</span>
-                        <span class="task-detail-value">📍 ${Utils.escapeHtml(task.location_to || '-')}</span>
+                        <span class="task-detail-value">📍 ${Utils.escapeHtml(
+                          task.location_to || "-"
+                        )}</span>
                     </div>
                 `;
-            } else {
-                locationInfo = `
+      } else {
+        locationInfo = `
                     <div class="task-detail-row">
                         <span class="task-detail-label">Dział</span>
-                        <span class="task-detail-value">🏢 ${Utils.escapeHtml(task.department || '-')}</span>
+                        <span class="task-detail-value">🏢 ${Utils.escapeHtml(
+                          task.department || "-"
+                        )}</span>
                     </div>
                 `;
-            }
+      }
 
-            let logsHtml = '';
-            if (task.logs && task.logs.length > 0) {
-                logsHtml = `
+      let logsHtml = "";
+      if (task.logs && task.logs.length > 0) {
+        logsHtml = `
                     <div class="task-logs-section">
                         <h4>Historia i uwagi</h4>
-                        ${task.logs.map(log => `
+                        ${task.logs
+                          .map(
+                            (log) => `
                             <div class="task-log-item log-${log.log_type}">
-                                <span class="task-log-icon">${Utils.getLogTypeIcon(log.log_type)}</span>
+                                <span class="task-log-icon">${Utils.getLogTypeIcon(
+                                  log.log_type
+                                )}</span>
                                 <div class="task-log-content">
                                     <div class="task-log-message">
-                                        ${log.log_type === 'delay' 
-                                            ? `<strong>${Utils.getDelayReasonLabel(log.delay_reason)}</strong> (${log.delay_minutes || 0} min)<br>` 
-                                            : ''
+                                        ${
+                                          log.log_type === "delay"
+                                            ? `<strong>${Utils.getDelayReasonLabel(
+                                                log.delay_reason
+                                              )}</strong> (${
+                                                log.delay_minutes || 0
+                                              } min)<br>`
+                                            : ""
                                         }
-                                        ${Utils.escapeHtml(log.message || '')}
+                                        ${Utils.escapeHtml(log.message || "")}
                                     </div>
                                                                         <div class="task-log-meta">
-                                        ${Utils.escapeHtml(log.user_name || 'Nieznany')} • ${Utils.formatTime(log.created_at)}
+                                        ${Utils.escapeHtml(
+                                          log.user_name || "Nieznany"
+                                        )} • ${Utils.formatTime(log.created_at)}
                                     </div>
                                 </div>
                             </div>
-                        `).join('')}
+                        `
+                          )
+                          .join("")}
                     </div>
                 `;
-            }
+      }
 
-            let actionsHtml = '';
-            if (isDriver) {
-                if (task.status === 'pending') {
-                    actionsHtml = `
+      let actionsHtml = "";
+      if (isDriver) {
+        if (task.status === "pending") {
+          actionsHtml = `
                         <div class="task-detail-actions">
                             <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.startTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
                                 ▶️ Rozpocznij zadanie
                             </button>
                         </div>
                     `;
-                } else if (task.status === 'in_progress' && isMyTask) {
-                    actionsHtml = `
+        } else if (task.status === "in_progress" && isMyTask) {
+          actionsHtml = `
                         <div class="task-detail-actions">
                             <button class="btn btn-secondary" onclick="TransportTracker.DriverPanel.openLogModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
                                 📝 Dodaj uwagę
@@ -1585,17 +1777,17 @@
                             </button>
                         </div>
                     `;
-                } else if (task.status === 'in_progress' && !isMyTask) {
-                    actionsHtml = `
+        } else if (task.status === "in_progress" && !isMyTask) {
+          actionsHtml = `
                         <div class="task-detail-actions">
                             <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.openJoinModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
                                 👥 Dołącz do zadania
                             </button>
                         </div>
                     `;
-                }
-            } else {
-                actionsHtml = `
+        }
+      } else {
+        actionsHtml = `
                     <div class="task-detail-actions">
                         <button class="btn btn-secondary" onclick="TransportTracker.AdminPanel.openPriorityModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
                             🎯 Zmień priorytet
@@ -1605,51 +1797,81 @@
                         </button>
                     </div>
                 `;
-            }
+      }
 
-            content.innerHTML = `
+      content.innerHTML = `
                 <div class="task-detail-header">
                     <span class="task-type-badge type-${task.task_type}">
-                        ${Utils.getTaskTypeIcon(task.task_type)} ${Utils.getTaskTypeLabel(task.task_type)}
+                        ${Utils.getTaskTypeIcon(
+                          task.task_type
+                        )} ${Utils.getTaskTypeLabel(task.task_type)}
                     </span>
                     <span class="task-priority-badge priority-${task.priority}">
-                        ${Utils.getPriorityIcon(task.priority)} ${Utils.getPriorityLabel(task.priority)}
+                        ${Utils.getPriorityIcon(
+                          task.priority
+                        )} ${Utils.getPriorityLabel(task.priority)}
                     </span>
                     <span class="task-status-indicator status-${task.status}">
-                        ${Utils.getStatusIcon(task.status)} ${Utils.getStatusLabel(task.status)}
+                        ${Utils.getStatusIcon(
+                          task.status
+                        )} ${Utils.getStatusLabel(task.status)}
                     </span>
                 </div>
                 
-                <h3 class="task-detail-title">${Utils.escapeHtml(task.description)}</h3>
+                <h3 class="task-detail-title">${Utils.escapeHtml(
+                  task.description
+                )}</h3>
                 
                 <div class="task-detail-section">
                     <h4>Szczegóły</h4>
                     ${locationInfo}
-                    ${task.material ? `
+                    ${
+                      task.material
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Materiał</span>
-                            <span class="task-detail-value">📦 ${Utils.escapeHtml(task.material)}</span>
+                            <span class="task-detail-value">📦 ${Utils.escapeHtml(
+                              task.material
+                            )}</span>
                         </div>
-                    ` : ''}
+                    `
+                        : ""
+                    }
                     <div class="task-detail-row">
                         <span class="task-detail-label">Data</span>
-                        <span class="task-detail-value">📅 ${Utils.formatDate(task.scheduled_date)}</span>
+                        <span class="task-detail-value">📅 ${Utils.formatDate(
+                          task.scheduled_date
+                        )}</span>
                     </div>
-                    ${task.scheduled_time ? `
+                    ${
+                      task.scheduled_time
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Godzina</span>
-                            <span class="task-detail-value">🕐 ${Utils.formatTime(task.scheduled_time)}</span>
+                            <span class="task-detail-value">🕐 ${Utils.formatTime(
+                              task.scheduled_time
+                            )}</span>
                         </div>
-                    ` : ''}
-                    ${task.assigned_name ? `
+                    `
+                        : ""
+                    }
+                    ${
+                      task.assigned_name
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Przypisany</span>
-                            <span class="task-detail-value">👤 ${Utils.escapeHtml(task.assigned_name)}</span>
+                            <span class="task-detail-value">👤 ${Utils.escapeHtml(
+                              task.assigned_name
+                            )}</span>
                         </div>
-                    ` : ''}
+                    `
+                        : ""
+                    }
                 </div>
                 
-                ${task.notes ? `
+                ${
+                  task.notes
+                    ? `
                     <div class="task-detail-section">
                         <h4>Uwagi</h4>
                         <div class="task-notes-preview">
@@ -1657,380 +1879,422 @@
                             <span>${Utils.escapeHtml(task.notes)}</span>
                         </div>
                     </div>
-                ` : ''}
+                `
+                    : ""
+                }
                 
                 ${logsHtml}
                 ${actionsHtml}
             `;
-        },
+    },
 
-        setFilter(filter) {
-            state.currentFilter = filter;
-            
-            Utils.$$('#screen-driver .filter-btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.filter === filter);
-            });
-            
-            this.renderTasks();
-        },
+    setFilter(filter) {
+      state.currentFilter = filter;
 
-        initEventListeners() {
-            // Filter buttons
-            Utils.$$('#screen-driver .filter-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    this.setFilter(btn.dataset.filter);
-                });
-            });
+      Utils.$$("#screen-driver .filter-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.filter === filter);
+      });
 
-            // Log form
-            Utils.$('#task-log-form')?.addEventListener('submit', (e) => this.handleLogSubmit(e));
+      this.renderTasks();
+    },
 
-            // Log type change
-            Utils.$$('input[name="log-type"]').forEach(radio => {
-                radio.addEventListener('change', () => {
-                    this.toggleLogFields(radio.value);
-                });
-            });
+    initEventListeners() {
+      // Filter buttons
+      Utils.$$("#screen-driver .filter-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          this.setFilter(btn.dataset.filter);
+        });
+      });
 
-            // Join task
-            Utils.$('#join-task-confirm-btn')?.addEventListener('click', () => this.joinTask());
+      // Log form
+      Utils.$("#task-log-form")?.addEventListener("submit", (e) =>
+        this.handleLogSubmit(e)
+      );
+
+      // Log type change
+      Utils.$$('input[name="log-type"]').forEach((radio) => {
+        radio.addEventListener("change", () => {
+          this.toggleLogFields(radio.value);
+        });
+      });
+
+      // Join task
+      Utils.$("#join-task-confirm-btn")?.addEventListener("click", () =>
+        this.joinTask()
+      );
+    },
+  };
+
+  // =============================================
+  // 13. TASK FORM
+  // =============================================
+  const TaskForm = {
+    currentTaskId: null,
+
+    async open(taskId = null) {
+      this.currentTaskId = taskId;
+
+      // Jeśli edycja - sprawdź uprawnienia
+      if (taskId) {
+        const task = state.tasks.find((t) => t.id == taskId);
+        const isMainAdmin = state.currentUser.id === 1; // Zakładamy ID 1 = Główny Admin
+        const isCreator = task && task.creator_id === state.currentUser.id;
+
+        if (!isMainAdmin && !isCreator) {
+          Toast.error("Możesz edytować tylko zadania utworzone przez siebie");
+          return;
         }
-    };
+      }
 
-    // =============================================
-    // 13. TASK FORM
-    // =============================================
-    const TaskForm = {
-        currentTaskId: null,
+      Utils.$("#modal-task-title").textContent = taskId
+        ? "Edytuj zadanie"
+        : "Nowe zadanie";
+      Utils.$("#task-form").reset();
+      Utils.$("#task-id").value = "";
+      Utils.$("#task-date").value = state.currentDate;
 
-                async open(taskId = null) {
-            this.currentTaskId = taskId;
+      DataLists.updateAll();
+      this.toggleTaskFields("transport");
 
-            // Jeśli edycja - sprawdź uprawnienia
-            if (taskId) {
-                const task = state.tasks.find(t => t.id == taskId);
-                const isMainAdmin = state.currentUser.id === 1; // Zakładamy ID 1 = Główny Admin
-                const isCreator = task && task.creator_id === state.currentUser.id;
-                
-                if (!isMainAdmin && !isCreator) {
-                    Toast.error('Możesz edytować tylko zadania utworzone przez siebie');
-                    return;
-                }
-            }
+      if (taskId) {
+        this.loadTask(taskId);
+      } else {
+        Modal.open("modal-task");
+      }
+    },
 
-            Utils.$('#modal-task-title').textContent = taskId ? 'Edytuj zadanie' : 'Nowe zadanie';
-            Utils.$('#task-form').reset();
-            Utils.$('#task-id').value = '';
-            Utils.$('#task-date').value = state.currentDate;
+    async loadTask(taskId) {
+      try {
+        const task = await API.getTask(taskId);
+        this.populateForm(task);
+        Modal.open("modal-task");
+      } catch (error) {
+        Toast.error("Nie udało się załadować zadania");
+      }
+    },
 
-            DataLists.updateAll();
-            this.toggleTaskFields('transport');
+    populateForm(task) {
+      Utils.$("#task-id").value = task.id;
 
-            if (taskId) {
-                this.loadTask(taskId);
-            } else {
-                Modal.open('modal-task');
-            }
-        },
+      const typeRadio = document.querySelector(
+        `input[name="task-type"][value="${task.task_type}"]`
+      );
+      if (typeRadio) typeRadio.checked = true;
+      this.toggleTaskFields(task.task_type);
 
-        async loadTask(taskId) {
-            try {
-                const task = await API.getTask(taskId);
-                this.populateForm(task);
-                Modal.open('modal-task');
-            } catch (error) {
-                Toast.error('Nie udało się załadować zadania');
-            }
-        },
+      if (task.task_type === "transport") {
+        Utils.$("#transport-material").value = task.material || "";
+        Utils.$("#transport-from").value = task.location_from || "";
+        Utils.$("#transport-to").value = task.location_to || "";
+      } else if (task.task_type === "unloading") {
+        Utils.$("#unloading-material").value =
+          task.material || task.description || "";
+        Utils.$("#unloading-department").value = task.department || "";
+      } else if (task.task_type === "loading") {
+        Utils.$("#loading-material").value =
+          task.material || task.description || "";
+        Utils.$("#loading-department").value = task.department || "";
+      }
 
-        populateForm(task) {
-            Utils.$('#task-id').value = task.id;
+      Utils.$("#task-date").value = task.scheduled_date || "";
+      Utils.$("#task-time").value = task.scheduled_time || "";
+      Utils.$("#task-notes").value = task.notes || "";
+      Utils.$("#task-assigned").value = task.assigned_to || "";
 
-            const typeRadio = document.querySelector(`input[name="task-type"][value="${task.task_type}"]`);
-            if (typeRadio) typeRadio.checked = true;
-            this.toggleTaskFields(task.task_type);
+      const priorityRadio = document.querySelector(
+        `input[name="task-priority"][value="${task.priority}"]`
+      );
+      if (priorityRadio) priorityRadio.checked = true;
+    },
 
-            if (task.task_type === 'transport') {
-                Utils.$('#transport-material').value = task.material || '';
-                Utils.$('#transport-from').value = task.location_from || '';
-                Utils.$('#transport-to').value = task.location_to || '';
-            } else if (task.task_type === 'unloading') {
-                Utils.$('#unloading-material').value = task.material || task.description || '';
-                Utils.$('#unloading-department').value = task.department || '';
-            } else if (task.task_type === 'loading') {
-                Utils.$('#loading-material').value = task.material || task.description || '';
-                Utils.$('#loading-department').value = task.department || '';
-            }
+    toggleTaskFields(type) {
+      Utils.$$(".task-fields").forEach((el) => Utils.hide(el));
+      Utils.show(`#fields-${type}`);
+    },
 
-            Utils.$('#task-date').value = task.scheduled_date || '';
-            Utils.$('#task-time').value = task.scheduled_time || '';
-            Utils.$('#task-notes').value = task.notes || '';
-            Utils.$('#task-assigned').value = task.assigned_to || '';
+    getFormData() {
+      const taskType = document.querySelector(
+        'input[name="task-type"]:checked'
+      ).value;
+      const priority = document.querySelector(
+        'input[name="task-priority"]:checked'
+      ).value;
 
-            const priorityRadio = document.querySelector(`input[name="task-priority"][value="${task.priority}"]`);
-            if (priorityRadio) priorityRadio.checked = true;
-        },
+      const data = {
+        task_type: taskType,
+        scheduled_date: Utils.$("#task-date").value,
+        scheduled_time: Utils.$("#task-time").value || null,
+        priority,
+        notes: Utils.$("#task-notes").value.trim() || null,
+        assigned_to: Utils.$("#task-assigned").value || null,
+        created_by: state.currentUser.id,
+      };
 
-        toggleTaskFields(type) {
-            Utils.$$('.task-fields').forEach(el => Utils.hide(el));
-            Utils.show(`#fields-${type}`);
-        },
+      if (taskType === "transport") {
+        data.material = Utils.$("#transport-material").value.trim();
+        data.description = data.material;
+        data.location_from = Utils.$("#transport-from").value.trim();
+        data.location_to = Utils.$("#transport-to").value.trim();
+      } else if (taskType === "unloading") {
+        data.material = Utils.$("#unloading-material").value.trim();
+        data.description = `Rozładunek: ${data.material}`;
+        data.department = Utils.$("#unloading-department").value;
+      } else if (taskType === "loading") {
+        data.material = Utils.$("#loading-material").value.trim();
+        data.description = `Załadunek: ${data.material}`;
+        data.department = Utils.$("#loading-department").value;
+      }
 
-        getFormData() {
-            const taskType = document.querySelector('input[name="task-type"]:checked').value;
-            const priority = document.querySelector('input[name="task-priority"]:checked').value;
+      return data;
+    },
 
-            const data = {
-                task_type: taskType,
-                scheduled_date: Utils.$('#task-date').value,
-                scheduled_time: Utils.$('#task-time').value || null,
-                priority,
-                notes: Utils.$('#task-notes').value.trim() || null,
-                assigned_to: Utils.$('#task-assigned').value || null,
-                created_by: state.currentUser.id
-            };
+    validate(data) {
+      if (!data.scheduled_date) {
+        Toast.warning("Wybierz datę");
+        return false;
+      }
 
-            if (taskType === 'transport') {
-                data.material = Utils.$('#transport-material').value.trim();
-                data.description = data.material;
-                data.location_from = Utils.$('#transport-from').value.trim();
-                data.location_to = Utils.$('#transport-to').value.trim();
-            } else if (taskType === 'unloading') {
-                data.material = Utils.$('#unloading-material').value.trim();
-                data.description = `Rozładunek: ${data.material}`;
-                data.department = Utils.$('#unloading-department').value;
-            } else if (taskType === 'loading') {
-                data.material = Utils.$('#loading-material').value.trim();
-                data.description = `Załadunek: ${data.material}`;
-                data.department = Utils.$('#loading-department').value;
-            }
+      if (data.task_type === "transport") {
+        if (!data.material) {
+          Toast.warning("Wpisz co jest przewożone");
+          return false;
+        }
+        if (!data.location_from || !data.location_to) {
+          Toast.warning("Podaj lokalizację początkową i końcową");
+          return false;
+        }
+      } else if (data.task_type === "unloading") {
+        if (!data.material) {
+          Toast.warning("Wpisz nazwę/opis rozładunku");
+          return false;
+        }
+        if (!data.department) {
+          Toast.warning("Wybierz dział");
+          return false;
+        }
+      } else if (data.task_type === "loading") {
+        if (!data.material) {
+          Toast.warning("Wpisz rodzaj materiału");
+          return false;
+        }
+        if (!data.department) {
+          Toast.warning("Wybierz dział");
+          return false;
+        }
+      }
 
-            return data;
-        },
+      return true;
+    },
 
-        validate(data) {
-            if (!data.scheduled_date) {
-                Toast.warning('Wybierz datę');
-                return false;
-            }
+    async handleSubmit(e) {
+      e.preventDefault();
 
-            if (data.task_type === 'transport') {
-                if (!data.material) {
-                    Toast.warning('Wpisz co jest przewożone');
-                    return false;
-                }
-                if (!data.location_from || !data.location_to) {
-                    Toast.warning('Podaj lokalizację początkową i końcową');
-                    return false;
-                }
-            } else if (data.task_type === 'unloading') {
-                if (!data.material) {
-                    Toast.warning('Wpisz nazwę/opis rozładunku');
-                    return false;
-                }
-                if (!data.department) {
-                    Toast.warning('Wybierz dział');
-                    return false;
-                }
-            } else if (data.task_type === 'loading') {
-                if (!data.material) {
-                    Toast.warning('Wpisz rodzaj materiału');
-                    return false;
-                }
-                if (!data.department) {
-                    Toast.warning('Wybierz dział');
-                    return false;
-                }
-            }
+      const data = this.getFormData();
 
-            return true;
-        },
+      if (!this.validate(data)) return;
 
-        async handleSubmit(e) {
-    e.preventDefault();
+      const taskId = Utils.$("#task-id").value;
 
-    const data = this.getFormData();
-    
-    if (!this.validate(data)) return;
+      // Natychmiast zamknij i pokaż sukces
+      Modal.close("modal-task");
+      Toast.success(taskId ? "Zadanie zaktualizowane!" : "Zadanie dodane!");
 
-    const taskId = Utils.$('#task-id').value;
-
-    // Natychmiast zamknij i pokaż sukces
-    Modal.close('modal-task');
-    Toast.success(taskId ? 'Zadanie zaktualizowane!' : 'Zadanie dodane!');
-
-    // Sync w tle
-    try {
+      // Sync w tle
+      try {
         if (taskId) {
-            await API.updateTask(taskId, data);
+          await API.updateTask(taskId, data);
         } else {
-            await API.createTask(data);
+          await API.createTask(data);
         }
         await AdminPanel.loadTasks();
-    } catch (error) {
-        Toast.error('Błąd synchronizacji');
+      } catch (error) {
+        Toast.error("Błąd synchronizacji");
         await AdminPanel.loadTasks();
-    }
-},
+      }
+    },
 
-        initEventListeners() {
-            Utils.$$('input[name="task-type"]').forEach(radio => {
-                radio.addEventListener('change', () => {
-                    this.toggleTaskFields(radio.value);
-                });
-            });
+    initEventListeners() {
+      Utils.$$('input[name="task-type"]').forEach((radio) => {
+        radio.addEventListener("change", () => {
+          this.toggleTaskFields(radio.value);
+        });
+      });
 
-            Utils.$('#task-form')?.addEventListener('submit', (e) => this.handleSubmit(e));
-        }
-    };
-        // =============================================
-    // 14. ADMIN PANEL
-    // =============================================
-    const AdminPanel = {
-        async loadTasks(silent = false) {
-    try {
+      Utils.$("#task-form")?.addEventListener("submit", (e) =>
+        this.handleSubmit(e)
+      );
+    },
+  };
+  // =============================================
+  // 14. ADMIN PANEL
+  // =============================================
+  const AdminPanel = {
+    async loadTasks(silent = false) {
+      try {
         state.tasks = await API.getTasks({ date: state.currentDate });
-                this.sortTasks();
-                this.updateStats();
-                this.updateDateDisplay();
-                this.renderTasks();
-                } catch (error) {
-        if (!silent) Toast.error('Nie udało się załadować zadań');
+        this.sortTasks();
+        this.updateStats();
+        this.updateDateDisplay();
+        this.renderTasks();
+      } catch (error) {
+        if (!silent) Toast.error("Nie udało się załadować zadań");
         console.error(error);
-    }
-        },
+      }
+    },
 
-                sortTasks() {
-            state.tasks.sort((a, b) => {
-                // 1. Zakończone na dole
-                if (a.status === 'completed' && b.status !== 'completed') return 1;
-                if (b.status === 'completed' && a.status !== 'completed') return -1;
-                
-                // 2. W trakcie na górze
-                if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
-                if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
-                
-                // 3. Priorytet
-                const priorityDiff = Utils.getPriorityOrder(a.priority) - Utils.getPriorityOrder(b.priority);
-                if (priorityDiff !== 0) return priorityDiff;
-                
-                // 4. Kolejność
-                return (a.sort_order || 999) - (b.sort_order || 999);
-            });
-        },
+    sortTasks() {
+      state.tasks.sort((a, b) => {
+        // 1. Zakończone na dole
+        if (a.status === "completed" && b.status !== "completed") return 1;
+        if (b.status === "completed" && a.status !== "completed") return -1;
 
-        updateStats() {
-            const pending = state.tasks.filter(t => t.status === 'pending').length;
-            const inProgress = state.tasks.filter(t => t.status === 'in_progress').length;
-            const completed = state.tasks.filter(t => t.status === 'completed').length;
+        // 2. W trakcie na górze
+        if (a.status === "in_progress" && b.status !== "in_progress") return -1;
+        if (b.status === "in_progress" && a.status !== "in_progress") return 1;
 
-            Utils.$('#admin-stat-pending').textContent = pending;
-            Utils.$('#admin-stat-progress').textContent = inProgress;
-            Utils.$('#admin-stat-done').textContent = completed;
-        },
+        // 3. Priorytet
+        const priorityDiff =
+          Utils.getPriorityOrder(a.priority) -
+          Utils.getPriorityOrder(b.priority);
+        if (priorityDiff !== 0) return priorityDiff;
 
-        updateDateDisplay() {
-            const dateText = Utils.formatDate(state.currentDate);
-            Utils.$('#admin-date-display').textContent = dateText;
-            this.updateDateButtons();
-        },
+        // 4. Kolejność
+        return (a.sort_order || 999) - (b.sort_order || 999);
+      });
+    },
 
-        updateDateButtons() {
-    const today = Utils.getToday();
-    Utils.$$('.date-quick-btn').forEach(btn => {
+    updateStats() {
+      const pending = state.tasks.filter((t) => t.status === "pending").length;
+      const inProgress = state.tasks.filter(
+        (t) => t.status === "in_progress"
+      ).length;
+      const completed = state.tasks.filter(
+        (t) => t.status === "completed"
+      ).length;
+
+      Utils.$("#admin-stat-pending").textContent = pending;
+      Utils.$("#admin-stat-progress").textContent = inProgress;
+      Utils.$("#admin-stat-done").textContent = completed;
+    },
+
+    updateDateDisplay() {
+      const dateText = Utils.formatDate(state.currentDate);
+      Utils.$("#admin-date-display").textContent = dateText;
+      this.updateDateButtons();
+    },
+
+    updateDateButtons() {
+      const today = Utils.getToday();
+      Utils.$$(".date-quick-btn").forEach((btn) => {
         const offset = parseInt(btn.dataset.offset);
         const btnDate = Utils.addDays(today, offset);
         // Porównaj daty jako stringi
         const isActive = btnDate === state.currentDate;
-        btn.classList.toggle('active', isActive);
-    });
-    
-    // Debug - możesz usunąć po testach
-    console.log('Today:', today, 'Current:', state.currentDate);
-},
+        btn.classList.toggle("active", isActive);
+      });
 
-        renderTasks() {
-            const tasksList = Utils.$('#admin-tasks-list');
-            const emptyState = Utils.$('#admin-tasks-empty');
+      // Debug - możesz usunąć po testach
+      console.log("Today:", today, "Current:", state.currentDate);
+    },
 
-            // Apply filter
-            let filteredTasks = state.tasks;
-            if (state.currentFilter !== 'all') {
-                filteredTasks = state.tasks.filter(t => t.status === state.currentFilter);
-            }
+    renderTasks() {
+      const tasksList = Utils.$("#admin-tasks-list");
+      const emptyState = Utils.$("#admin-tasks-empty");
 
-            if (filteredTasks.length === 0) {
-                tasksList.innerHTML = '';
-                Utils.show(emptyState);
-                return;
-            }
+      // Apply filter
+      let filteredTasks = state.tasks;
+      if (state.currentFilter !== "all") {
+        filteredTasks = state.tasks.filter(
+          (t) => t.status === state.currentFilter
+        );
+      }
 
-            Utils.hide(emptyState);
+      if (filteredTasks.length === 0) {
+        tasksList.innerHTML = "";
+        Utils.show(emptyState);
+        return;
+      }
 
-            tasksList.innerHTML = filteredTasks.map((task, index) => 
-                this.renderTaskCard(task, index + 1)
-            ).join('');
+      Utils.hide(emptyState);
 
-            this.attachTaskEventListeners();
+      tasksList.innerHTML = filteredTasks
+        .map((task, index) => this.renderTaskCard(task, index + 1))
+        .join("");
 
-            if (state.isReorderMode) {
-                this.initDragAndDrop();
-            }
-        },
+      this.attachTaskEventListeners();
 
-                renderTaskCard(task, order) {
-            const isCompleted = task.status === 'completed';
-            const isInProgress = task.status === 'in_progress';
-            
-            // Sprawdź czy użytkownik może edytować (admin główny lub twórca)
-            // Zakładamy że ID=1 to główny admin
-            const isMainAdmin = state.currentUser.id === 1; 
-            const isCreator = task.creator_id === state.currentUser.id;
-            const canEdit = isMainAdmin || isCreator;
+      if (state.isReorderMode) {
+        this.initDragAndDrop();
+      }
+    },
 
-            let taskDescription = '';
-            if (task.task_type === 'transport') {
-                taskDescription = `
+    renderTaskCard(task, order) {
+      const isCompleted = task.status === "completed";
+      const isInProgress = task.status === "in_progress";
+
+      // Sprawdź czy użytkownik może edytować (admin główny lub twórca)
+      // Zakładamy że ID=1 to główny admin
+      const isMainAdmin = state.currentUser.id === 1;
+      const isCreator = task.creator_id === state.currentUser.id;
+      const canEdit = isMainAdmin || isCreator;
+
+      let taskDescription = "";
+      if (task.task_type === "transport") {
+        taskDescription = `
                     <div class="task-route">
-                        <span>📍 ${Utils.escapeHtml(task.location_from || '?')}</span>
+                        <span>📍 ${Utils.escapeHtml(
+                          task.location_from || "?"
+                        )}</span>
                         <span class="task-route-arrow">→</span>
-                        <span>📍 ${Utils.escapeHtml(task.location_to || '?')}</span>
+                        <span>📍 ${Utils.escapeHtml(
+                          task.location_to || "?"
+                        )}</span>
                     </div>
                 `;
-            } else {
-                taskDescription = `
+      } else {
+        taskDescription = `
                     <div class="task-department">
                         <span>🏢</span>
-                        <span>${Utils.escapeHtml(task.department || 'Nie określono')}</span>
+                        <span>${Utils.escapeHtml(
+                          task.department || "Nie określono"
+                        )}</span>
                     </div>
                 `;
-            }
+      }
 
-            const materialHtml = task.material ? `
+      const materialHtml = task.material
+        ? `
                 <div class="task-material">
                     <span>📦</span>
                     <span>${Utils.escapeHtml(task.material)}</span>
                 </div>
-            ` : '';
+            `
+        : "";
 
-            const assignedHtml = task.assigned_name ? `
+      const assignedHtml = task.assigned_name
+        ? `
                 <span class="task-meta-item">
                     <span>👤</span>
                     <span>${Utils.escapeHtml(task.assigned_name)}</span>
                 </span>
-            ` : '';
-            
-                        const creatorHtml = task.creator_name ? `
+            `
+        : "";
+
+      const creatorHtml = task.creator_name
+        ? `
                 <span class="task-meta-item" title="Utworzył">
                     <span>✏️</span>
-                    <span>${Utils.escapeHtml(task.creator_name)} (${Utils.formatTime(task.created_at)})</span>
+                    <span>${Utils.escapeHtml(
+                      task.creator_name
+                    )} (${Utils.formatTime(task.created_at)})</span>
                 </span>
-            ` : '';
+            `
+        : "";
 
-            // Przyciski akcji - tylko jeśli ma uprawnienia
-            let actionsHtml = '';
-            if (canEdit) {
-                actionsHtml = `
+      // Przyciski akcji - tylko jeśli ma uprawnienia
+      let actionsHtml = "";
+      if (canEdit) {
+        actionsHtml = `
                     <div class="task-actions">
                         <button class="task-action-btn" data-action="edit" data-id="${task.id}" title="Edytuj">
                             ✏️
@@ -2040,20 +2304,29 @@
                         </button>
                     </div>
                 `;
-            } else {
-                actionsHtml = `
+      } else {
+        actionsHtml = `
                     <div class="task-actions">
                         <span class="text-muted" style="font-size:12px">Brak uprawnień</span>
                     </div>
                 `;
-            }
+      }
 
-            return `
-                <div class="task-card priority-${task.priority} status-${task.status}" 
+      return `
+                <div class="task-card priority-${task.priority} status-${
+        task.status
+      }" 
                      data-id="${task.id}" 
-                     draggable="${state.isReorderMode && !isCompleted && !isInProgress && canEdit}">
+                     draggable="${
+                       state.isReorderMode &&
+                       !isCompleted &&
+                       !isInProgress &&
+                       canEdit
+                     }">
                     
-                    ${state.isReorderMode && canEdit ? `
+                    ${
+                      state.isReorderMode && canEdit
+                        ? `
                     <div class="task-drag-handle">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <circle cx="9" cy="6" r="2"/>
@@ -2063,29 +2336,51 @@
                             <circle cx="9" cy="18" r="2"/>
                             <circle cx="15" cy="18" r="2"/>
                         </svg>
-                    </div>` : ''}
+                    </div>`
+                        : ""
+                    }
                     
                     <div class="task-status-indicator status-${task.status}">
-                        ${Utils.getStatusIcon(task.status)} ${Utils.getStatusLabel(task.status)}
+                        ${Utils.getStatusIcon(
+                          task.status
+                        )} ${Utils.getStatusLabel(task.status)}
                     </div>
                     
                     <div class="task-header">
                         <div class="task-badges">
                             <span class="task-order-badge">#${order}</span>
-                            <span class="task-type-badge type-${task.task_type}">
-                                ${Utils.getTaskTypeIcon(task.task_type)} ${Utils.getTaskTypeLabel(task.task_type)}
+                            <span class="task-type-badge type-${
+                              task.task_type
+                            }">
+                                ${Utils.getTaskTypeIcon(
+                                  task.task_type
+                                )} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
-                            <span class="task-priority-badge priority-${task.priority}" 
-                                  data-action="${canEdit ? 'change-priority' : ''}" data-id="${task.id}" 
+                            <span class="task-priority-badge priority-${
+                              task.priority
+                            }" 
+                                  data-action="${
+                                    canEdit ? "change-priority" : ""
+                                  }" data-id="${task.id}" 
                                   title="Zmień priorytet" 
-                                  style="${canEdit ? 'cursor:pointer' : 'cursor:default'}">
-                                ${Utils.getPriorityIcon(task.priority)} ${Utils.getPriorityLabel(task.priority)}
+                                  style="${
+                                    canEdit
+                                      ? "cursor:pointer"
+                                      : "cursor:default"
+                                  }">
+                                ${Utils.getPriorityIcon(
+                                  task.priority
+                                )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
                     </div>
                     
-                    <div class="task-body" data-action="details" data-id="${task.id}">
-                        <div class="task-title">${Utils.escapeHtml(task.description)}</div>
+                    <div class="task-body" data-action="details" data-id="${
+                      task.id
+                    }">
+                        <div class="task-title">${Utils.escapeHtml(
+                          task.description
+                        )}</div>
                         <div class="task-description">
                             ${taskDescription}
                             ${materialHtml}
@@ -2094,12 +2389,18 @@
                     
                     <div class="task-footer">
                         <div class="task-meta">
-                            ${task.scheduled_time ? `
+                            ${
+                              task.scheduled_time
+                                ? `
                                 <span class="task-meta-item">
                                     <span>🕐</span>
-                                    <span>${Utils.formatTime(task.scheduled_time)}</span>
+                                    <span>${Utils.formatTime(
+                                      task.scheduled_time
+                                    )}</span>
                                 </span>
-                            ` : ''}
+                            `
+                                : ""
+                            }
                             ${assignedHtml}
                             ${creatorHtml}
                         </div>
@@ -2107,143 +2408,154 @@
                     </div>
                 </div>
             `;
-        },
+    },
 
-        attachTaskEventListeners() {
-            Utils.$$('#admin-tasks-list [data-action]').forEach(el => {
-                el.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const action = el.dataset.action;
-                    const taskId = el.dataset.id;
+    attachTaskEventListeners() {
+      Utils.$$("#admin-tasks-list [data-action]").forEach((el) => {
+        el.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const action = el.dataset.action;
+          const taskId = el.dataset.id;
 
-                    switch (action) {
-                        case 'edit': this.editTask(taskId); break;
-                        case 'delete': this.deleteTask(taskId); break;
-                        case 'details': this.openTaskDetails(taskId); break;
-                        case 'change-priority': this.openPriorityModal(taskId); break;
-                    }
-                });
-            });
-        },
+          switch (action) {
+            case "edit":
+              this.editTask(taskId);
+              break;
+            case "delete":
+              this.deleteTask(taskId);
+              break;
+            case "details":
+              this.openTaskDetails(taskId);
+              break;
+            case "change-priority":
+              this.openPriorityModal(taskId);
+              break;
+          }
+        });
+      });
+    },
 
-        editTask(taskId) {
-            TaskForm.open(taskId);
-        },
+    editTask(taskId) {
+      TaskForm.open(taskId);
+    },
 
-        async deleteTask(taskId) {
-    const task = state.tasks.find(t => t.id == taskId);
-    
-    Modal.confirm(
-        'Usunąć zadanie?',
-        `Czy na pewno chcesz usunąć "${task?.description || 'to zadanie'}"?`,
+    async deleteTask(taskId) {
+      const task = state.tasks.find((t) => t.id == taskId);
+
+      Modal.confirm(
+        "Usunąć zadanie?",
+        `Czy na pewno chcesz usunąć "${task?.description || "to zadanie"}"?`,
         async () => {
-            // Natychmiast usuń z UI
-            state.tasks = state.tasks.filter(t => t.id != taskId);
-            this.updateStats();
-            this.renderTasks();
-            Toast.success('Zadanie usunięte');
+          // Natychmiast usuń z UI
+          state.tasks = state.tasks.filter((t) => t.id != taskId);
+          this.updateStats();
+          this.renderTasks();
+          Toast.success("Zadanie usunięte");
 
-            // Sync w tle
-            try {
-                await API.deleteTask(taskId);
-            } catch (error) {
-                Toast.error('Błąd synchronizacji');
-                await this.loadTasks();
-            }
+          // Sync w tle
+          try {
+            await API.deleteTask(taskId);
+          } catch (error) {
+            Toast.error("Błąd synchronizacji");
+            await this.loadTasks();
+          }
         }
-    );
-},
+      );
+    },
 
-        async openTaskDetails(taskId) {
-            try {
-                const task = await API.getTask(taskId);
-                DriverPanel.renderTaskDetails(task);
-                Modal.open('modal-task-detail');
-            } catch (error) {
-                Toast.error('Nie udało się załadować szczegółów');
-            }
-        },
+    async openTaskDetails(taskId) {
+      try {
+        const task = await API.getTask(taskId);
+        DriverPanel.renderTaskDetails(task);
+        Modal.open("modal-task-detail");
+      } catch (error) {
+        Toast.error("Nie udało się załadować szczegółów");
+      }
+    },
 
-        openPriorityModal(taskId) {
-            Utils.$('#priority-task-id').value = taskId;
-            Modal.open('modal-priority');
-        },
+    openPriorityModal(taskId) {
+      Utils.$("#priority-task-id").value = taskId;
+      Modal.open("modal-priority");
+    },
 
-        async changePriority(taskId, newPriority) {
-    const task = state.tasks.find(t => t.id == taskId);
-    if (!task) return;
+    async changePriority(taskId, newPriority) {
+      const task = state.tasks.find((t) => t.id == taskId);
+      if (!task) return;
 
-    // Natychmiast aktualizuj UI
-    task.priority = newPriority;
-    this.sortTasks();
-    this.renderTasks();
-    Modal.close('modal-priority');
-    Toast.success('Priorytet zmieniony');
+      // Natychmiast aktualizuj UI
+      task.priority = newPriority;
+      this.sortTasks();
+      this.renderTasks();
+      Modal.close("modal-priority");
+      Toast.success("Priorytet zmieniony");
 
-    // Sync w tle
-    try {
+      // Sync w tle
+      try {
         await API.updateTask(taskId, { ...task, priority: newPriority });
-    } catch (error) {
-        Toast.error('Błąd synchronizacji');
+      } catch (error) {
+        Toast.error("Błąd synchronizacji");
         await this.loadTasks();
-    }
-},
+      }
+    },
 
-        // DATE NAVIGATION
-        changeDate(days) {
-    state.currentDate = Utils.addDays(state.currentDate, days);
-    Utils.$('#admin-date-picker').value = state.currentDate;
-    state.currentFilter = 'all';
-    this.updateFilterButtons();
-    this.loadTasks();
-},
+    // DATE NAVIGATION
+    changeDate(days) {
+      state.currentDate = Utils.addDays(state.currentDate, days);
+      Utils.$("#admin-date-picker").value = state.currentDate;
+      state.currentFilter = "all";
+      this.updateFilterButtons();
+      this.loadTasks();
+    },
 
-        setDateByOffset(offset) {
-            const today = Utils.getToday();
-            state.currentDate = Utils.addDays(today, offset);
-            Utils.$('#admin-date-picker').value = state.currentDate;
-            state.currentFilter = 'all';
-            this.updateFilterButtons();
-            this.loadTasks();
-        },
+    setDateByOffset(offset) {
+      const today = Utils.getToday();
+      state.currentDate = Utils.addDays(today, offset);
+      Utils.$("#admin-date-picker").value = state.currentDate;
+      state.currentFilter = "all";
+      this.updateFilterButtons();
+      this.loadTasks();
+    },
 
-        setDate(date) {
-            state.currentDate = date;
-            state.currentFilter = 'all';
-            this.updateFilterButtons();
-            this.loadTasks();
-        },
+    setDate(date) {
+      state.currentDate = date;
+      state.currentFilter = "all";
+      this.updateFilterButtons();
+      this.loadTasks();
+    },
 
-        setFilter(filter) {
-            state.currentFilter = filter;
-            this.updateFilterButtons();
-            this.renderTasks();
-        },
+    setFilter(filter) {
+      state.currentFilter = filter;
+      this.updateFilterButtons();
+      this.renderTasks();
+    },
 
-        updateFilterButtons() {
-            Utils.$$('#admin-filters .filter-btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.filter === state.currentFilter);
-            });
-        },
+    updateFilterButtons() {
+      Utils.$$("#admin-filters .filter-btn").forEach((btn) => {
+        btn.classList.toggle(
+          "active",
+          btn.dataset.filter === state.currentFilter
+        );
+      });
+    },
 
-        // REORDER MODE
-        toggleReorderMode() {
-            state.isReorderMode = !state.isReorderMode;
-            
-            const tasksList = Utils.$('#admin-tasks-list');
-            const toggleBtn = Utils.$('#toggle-reorder-btn');
-            const reorderInfo = Utils.$('#reorder-info');
+    // REORDER MODE
+    toggleReorderMode() {
+      state.isReorderMode = !state.isReorderMode;
 
-            tasksList.classList.toggle('reorder-mode', state.isReorderMode);
-            Utils.toggle(reorderInfo, state.isReorderMode);
-            
-            if (state.isReorderMode) {
-                toggleBtn.innerHTML = '❌ Anuluj';
-                // Filter to show only pending tasks
-                state.currentFilter = 'pending';
-                this.updateFilterButtons();
-            } else {
-                toggleBtn.innerHTML = `
+      const tasksList = Utils.$("#admin-tasks-list");
+      const toggleBtn = Utils.$("#toggle-reorder-btn");
+      const reorderInfo = Utils.$("#reorder-info");
+
+      tasksList.classList.toggle("reorder-mode", state.isReorderMode);
+      Utils.toggle(reorderInfo, state.isReorderMode);
+
+      if (state.isReorderMode) {
+        toggleBtn.innerHTML = "❌ Anuluj";
+        // Filter to show only pending tasks
+        state.currentFilter = "pending";
+        this.updateFilterButtons();
+      } else {
+        toggleBtn.innerHTML = `
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="3" y1="6" x2="21" y2="6"></line>
                         <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -2251,16 +2563,16 @@
                     </svg>
                     <span>Zmień kolejność</span>
                 `;
-            }
+      }
 
-            this.renderTasks();
-        },
+      this.renderTasks();
+    },
 
-        cancelReorder() {
-            state.isReorderMode = false;
-            Utils.$('#admin-tasks-list').classList.remove('reorder-mode');
-            Utils.hide('#reorder-info');
-            Utils.$('#toggle-reorder-btn').innerHTML = `
+    cancelReorder() {
+      state.isReorderMode = false;
+      Utils.$("#admin-tasks-list").classList.remove("reorder-mode");
+      Utils.hide("#reorder-info");
+      Utils.$("#toggle-reorder-btn").innerHTML = `
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="3" y1="6" x2="21" y2="6"></line>
                     <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -2268,56 +2580,60 @@
                 </svg>
                 <span>Zmień kolejność</span>
             `;
-            this.loadTasks();
-        },
+      this.loadTasks();
+    },
 
-                async saveReorder() {
-            // Jeśli główny admin - zapisz od razu
-            if (state.currentUser.id === 1) {
-                this.submitReorder();
-                return;
-            }
+    async saveReorder() {
+      // Jeśli główny admin - zapisz od razu
+      if (state.currentUser.id === 1) {
+        this.submitReorder();
+        return;
+      }
 
-            // Inni muszą podać powód
-            Utils.$('#reorder-reason').value = '';
-            Modal.open('modal-reorder-reason');
-            
-            // Obsługa przycisków modala
-            const confirmBtn = Utils.$('#confirm-reorder-reason');
-            const cancelBtn = Utils.$('#cancel-reorder-reason');
-            
-            // Usuń stare listenery (klonowanie)
-            const newConfirm = confirmBtn.cloneNode(true);
-            const newCancel = cancelBtn.cloneNode(true);
-            confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
-            cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
+      // Inni muszą podać powód
+      Utils.$("#reorder-reason").value = "";
+      Modal.open("modal-reorder-reason");
 
-            newConfirm.addEventListener('click', () => {
-                const reason = Utils.$('#reorder-reason').value.trim();
-                if (!reason) {
-                    Toast.warning('Musisz podać powód');
-                    return;
-                }
-                Modal.close('modal-reorder-reason');
-                this.submitReorder(reason);
-            });
+      // Obsługa przycisków modala
+      const confirmBtn = Utils.$("#confirm-reorder-reason");
+      const cancelBtn = Utils.$("#cancel-reorder-reason");
 
-            newCancel.addEventListener('click', () => {
-                Modal.close('modal-reorder-reason');
-            });
-        },
+      // Usuń stare listenery (klonowanie)
+      const newConfirm = confirmBtn.cloneNode(true);
+      const newCancel = cancelBtn.cloneNode(true);
+      confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
+      cancelBtn.parentNode.replaceChild(newCancel, cancelBtn);
 
-        async submitReorder(reason = null) {
-            try {
-                const taskCards = Utils.$$('#admin-tasks-list .task-card:not(.status-completed):not(.status-in_progress)');
-                const newOrder = Array.from(taskCards).map(card => parseInt(card.dataset.id));
+      newConfirm.addEventListener("click", () => {
+        const reason = Utils.$("#reorder-reason").value.trim();
+        if (!reason) {
+          Toast.warning("Musisz podać powód");
+          return;
+        }
+        Modal.close("modal-reorder-reason");
+        this.submitReorder(reason);
+      });
 
-                await API.reorderTasks(newOrder, reason, state.currentUser.id);
-                
-                state.isReorderMode = false;
-                Utils.$('#admin-tasks-list').classList.remove('reorder-mode');
-                Utils.hide('#reorder-info');
-                Utils.$('#toggle-reorder-btn').innerHTML = `
+      newCancel.addEventListener("click", () => {
+        Modal.close("modal-reorder-reason");
+      });
+    },
+
+    async submitReorder(reason = null) {
+      try {
+        const taskCards = Utils.$$(
+          "#admin-tasks-list .task-card:not(.status-completed):not(.status-in_progress)"
+        );
+        const newOrder = Array.from(taskCards).map((card) =>
+          parseInt(card.dataset.id)
+        );
+
+        await API.reorderTasks(newOrder, reason, state.currentUser.id);
+
+        state.isReorderMode = false;
+        Utils.$("#admin-tasks-list").classList.remove("reorder-mode");
+        Utils.hide("#reorder-info");
+        Utils.$("#toggle-reorder-btn").innerHTML = `
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="3" y1="6" x2="21" y2="6"></line>
                         <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -2325,250 +2641,311 @@
                     </svg>
                     <span>Zmień kolejność</span>
                 `;
-                
-                Toast.success('Kolejność zapisana!');
-                state.currentFilter = 'all';
-                this.updateFilterButtons();
-                this.loadTasks();
 
-            } catch (error) {
-                Toast.error('Nie udało się zapisać kolejności');
+        Toast.success("Kolejność zapisana!");
+        state.currentFilter = "all";
+        this.updateFilterButtons();
+        this.loadTasks();
+      } catch (error) {
+        Toast.error("Nie udało się zapisać kolejności");
+      }
+    },
+
+    initDragAndDrop() {
+      const tasksList = Utils.$("#admin-tasks-list");
+      const cards = tasksList.querySelectorAll(
+        ".task-card:not(.status-completed):not(.status-in_progress)"
+      );
+
+      let draggedItem = null;
+
+      cards.forEach((card) => {
+        card.addEventListener("dragstart", (e) => {
+          draggedItem = card;
+          card.classList.add("dragging");
+          e.dataTransfer.effectAllowed = "move";
+        });
+
+        card.addEventListener("dragend", () => {
+          if (draggedItem) draggedItem.classList.remove("dragging");
+          draggedItem = null;
+          cards.forEach((c) => c.classList.remove("drag-over"));
+          this.updateOrderBadges();
+        });
+
+        card.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          if (
+            card !== draggedItem &&
+            !card.classList.contains("status-in_progress")
+          ) {
+            card.classList.add("drag-over");
+          }
+        });
+
+        card.addEventListener("dragleave", () => {
+          card.classList.remove("drag-over");
+        });
+
+        card.addEventListener("drop", (e) => {
+          e.preventDefault();
+          card.classList.remove("drag-over");
+
+          if (draggedItem && card !== draggedItem) {
+            const allCards = Array.from(
+              tasksList.querySelectorAll(
+                ".task-card:not(.status-completed):not(.status-in_progress)"
+              )
+            );
+            const draggedIdx = allCards.indexOf(draggedItem);
+            const targetIdx = allCards.indexOf(card);
+
+            if (draggedIdx < targetIdx) {
+              card.parentNode.insertBefore(draggedItem, card.nextSibling);
+            } else {
+              card.parentNode.insertBefore(draggedItem, card);
             }
-        },
+            this.updateOrderBadges();
+          }
+        });
+      });
+    },
 
-        initDragAndDrop() {
-            const tasksList = Utils.$('#admin-tasks-list');
-            const cards = tasksList.querySelectorAll('.task-card:not(.status-completed):not(.status-in_progress)');
-            
-            let draggedItem = null;
+    updateOrderBadges() {
+      const cards = Utils.$$("#admin-tasks-list .task-card");
+      cards.forEach((card, index) => {
+        const badge = card.querySelector(".task-order-badge");
+        if (badge) badge.textContent = `#${index + 1}`;
+      });
+    },
 
-            cards.forEach(card => {
-                card.addEventListener('dragstart', (e) => {
-                    draggedItem = card;
-                    card.classList.add('dragging');
-                    e.dataTransfer.effectAllowed = 'move';
-                });
+    // USERS
+    async loadUsers() {
+      try {
+        state.users = await API.getUsers();
+        this.renderUsers();
+        DataLists.updateDriverSelect();
+      } catch (error) {
+        Toast.error("Nie udało się załadować użytkowników");
+      }
+    },
 
-                card.addEventListener('dragend', () => {
-                    if (draggedItem) draggedItem.classList.remove('dragging');
-                    draggedItem = null;
-                    cards.forEach(c => c.classList.remove('drag-over'));
-                    this.updateOrderBadges();
-                });
+    renderUsers() {
+      const list = Utils.$("#users-list");
+      const emptyState = Utils.$("#users-empty");
 
-                card.addEventListener('dragover', (e) => {
-                    e.preventDefault();
-                    if (card !== draggedItem && !card.classList.contains('status-in_progress')) {
-                        card.classList.add('drag-over');
-                    }
-                });
+      if (state.users.length === 0) {
+        list.innerHTML = "";
+        Utils.show(emptyState);
+        return;
+      }
 
-                card.addEventListener('dragleave', () => {
-                    card.classList.remove('drag-over');
-                });
+      Utils.hide(emptyState);
 
-                card.addEventListener('drop', (e) => {
-                    e.preventDefault();
-                    card.classList.remove('drag-over');
-                    
-                    if (draggedItem && card !== draggedItem) {
-                        const allCards = Array.from(tasksList.querySelectorAll('.task-card:not(.status-completed):not(.status-in_progress)'));
-                        const draggedIdx = allCards.indexOf(draggedItem);
-                        const targetIdx = allCards.indexOf(card);
-                        
-                        if (draggedIdx < targetIdx) {
-                            card.parentNode.insertBefore(draggedItem, card.nextSibling);
-                        } else {
-                            card.parentNode.insertBefore(draggedItem, card);
-                        }
-                        this.updateOrderBadges();
-                    }
-                });
-            });
-        },
-
-        updateOrderBadges() {
-            const cards = Utils.$$('#admin-tasks-list .task-card');
-            cards.forEach((card, index) => {
-                const badge = card.querySelector('.task-order-badge');
-                if (badge) badge.textContent = `#${index + 1}`;
-            });
-        },
-
-        // USERS
-        async loadUsers() {
-            try {
-                state.users = await API.getUsers();
-                this.renderUsers();
-                DataLists.updateDriverSelect();
-            } catch (error) {
-                Toast.error('Nie udało się załadować użytkowników');
-            }
-        },
-
-        renderUsers() {
-            const list = Utils.$('#users-list');
-            const emptyState = Utils.$('#users-empty');
-
-            if (state.users.length === 0) {
-                list.innerHTML = '';
-                Utils.show(emptyState);
-                return;
-            }
-
-            Utils.hide(emptyState);
-
-            list.innerHTML = state.users.map(user => `
+      list.innerHTML = state.users
+        .map(
+          (user) => `
                 <div class="user-card" data-id="${user.id}">
                     <div class="user-info">
-                        <div class="user-avatar ${user.role === 'admin' ? 'admin' : ''}">
-                            ${user.role === 'admin' ? '👔' : '🚗'}
+                        <div class="user-avatar ${
+                          user.role === "admin" ? "admin" : ""
+                        }">
+                            ${user.role === "admin" ? "👔" : "🚗"}
                         </div>
                         <div class="user-details">
                             <h3>${Utils.escapeHtml(user.name)}</h3>
-                            <p>${user.role === 'admin' ? 'Kierownik' : 'Kierowca'}</p>
+                            <p>${
+                              user.role === "admin" ? "Kierownik" : "Kierowca"
+                            }</p>
                         </div>
                     </div>
                     <div class="user-actions">
-                        <button class="task-action-btn" data-action="edit-user" data-id="${user.id}">✏️</button>
-                        <button class="task-action-btn btn-delete" data-action="delete-user" data-id="${user.id}">🗑️</button>
+                        <button class="task-action-btn" data-action="edit-user" data-id="${
+                          user.id
+                        }">✏️</button>
+                        <button class="task-action-btn btn-delete" data-action="delete-user" data-id="${
+                          user.id
+                        }">🗑️</button>
                     </div>
                 </div>
-            `).join('');
+            `
+        )
+        .join("");
 
-            list.querySelectorAll('[data-action]').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const action = btn.dataset.action;
-                    const userId = btn.dataset.id;
-                    if (action === 'edit-user') this.openUserModal(userId);
-                    else if (action === 'delete-user') this.deleteUser(userId);
-                });
-            });
-        },
+      list.querySelectorAll("[data-action]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const action = btn.dataset.action;
+          const userId = btn.dataset.id;
+          if (action === "edit-user") this.openUserModal(userId);
+          else if (action === "delete-user") this.deleteUser(userId);
+        });
+      });
+    },
 
-                openUserModal(userId = null) {
-            const isEdit = !!userId;
-            
-            Utils.$('#modal-user-title').textContent = isEdit ? 'Edytuj użytkownika' : 'Nowy użytkownik';
-            Utils.$('#user-form').reset();
-            Utils.$('#user-id').value = '';
-            Utils.$('#pin-hint').classList.toggle('hidden', !isEdit);
-            Utils.$('#user-pin').required = !isEdit;
-            
-            // Domyślne godziny
-            Utils.$('#user-work-start').value = '07:00';
-            Utils.$('#user-work-end').value = '15:00';
+    openUserModal(userId = null) {
+      const isEdit = !!userId;
 
-            // Pokaż/ukryj pola godzin
-            const toggleHours = () => {
-                const role = document.querySelector('input[name="user-role"]:checked').value;
-                Utils.toggle('#driver-hours-fields', role === 'driver');
-            };
+      Utils.$("#modal-user-title").textContent = isEdit
+        ? "Edytuj użytkownika"
+        : "Nowy użytkownik";
+      Utils.$("#user-form").reset();
+      Utils.$("#user-id").value = "";
+      Utils.$("#pin-hint").classList.toggle("hidden", !isEdit);
+      Utils.$("#user-pin").required = !isEdit;
 
-            Utils.$$('input[name="user-role"]').forEach(r => r.addEventListener('change', toggleHours));
+      // Domyślne godziny
+      Utils.$("#user-work-start").value = "07:00";
+      Utils.$("#user-work-end").value = "15:00";
 
-            if (isEdit) {
-                const user = state.users.find(u => u.id == userId);
-                if (user) {
-                    Utils.$('#user-id').value = user.id;
-                    Utils.$('#user-name').value = user.name;
-                    document.querySelector(`input[name="user-role"][value="${user.role}"]`).checked = true;
-                    if (user.work_start) Utils.$('#user-work-start').value = user.work_start;
-                    if (user.work_end) Utils.$('#user-work-end').value = user.work_end;
-                }
-            }
-            
-            toggleHours();
-            Modal.open('modal-user');
-        },
+      // Pokaż/ukryj pola godzin
+      const toggleHours = () => {
+        const role = document.querySelector(
+          'input[name="user-role"]:checked'
+        ).value;
+        Utils.toggle("#driver-hours-fields", role === "driver");
+      };
 
-        async handleUserSubmit(e) {
-            e.preventDefault();
+      Utils.$$('input[name="user-role"]').forEach((r) =>
+        r.addEventListener("change", toggleHours)
+      );
 
-            const userId = Utils.$('#user-id').value;
-            const name = Utils.$('#user-name').value.trim();
-            const pin = Utils.$('#user-pin').value.trim();
-            const role = document.querySelector('input[name="user-role"]:checked').value;
-            
-            const work_start = role === 'driver' ? Utils.$('#user-work-start').value : null;
-            const work_end = role === 'driver' ? Utils.$('#user-work-end').value : null;
+      if (isEdit) {
+        const user = state.users.find((u) => u.id == userId);
+        if (user) {
+          Utils.$("#user-id").value = user.id;
+          Utils.$("#user-name").value = user.name;
+          document.querySelector(
+            `input[name="user-role"][value="${user.role}"]`
+          ).checked = true;
+          if (user.work_start)
+            Utils.$("#user-work-start").value = user.work_start;
+          if (user.work_end) Utils.$("#user-work-end").value = user.work_end;
+        }
+      }
 
-    if (!name) { Toast.warning('Wpisz imię'); return; }
-    if (!userId && !pin) { Toast.warning('Wpisz PIN'); return; }
-    if (pin && (pin.length < 4 || pin.length > 6)) { Toast.warning('PIN musi mieć 4-6 cyfr'); return; }
+      toggleHours();
+      Modal.open("modal-user");
+    },
 
-    // Natychmiast zamknij i pokaż sukces
-    Modal.close('modal-user');
-    Toast.success(userId ? 'Użytkownik zaktualizowany' : 'Użytkownik dodany');
+    async handleUserSubmit(e) {
+      e.preventDefault();
 
-    // Sync w tle
-    try {
-                if (userId) {
-                    await API.updateUser(userId, { name, pin: pin || undefined, role, work_start, work_end });
-                } else {
-                    // Domyślnie wymuś zmianę PIN dla nowych
-                    await API.createUser({ name, pin, role, work_start, work_end, force_pin_change: 1 });
-                }
-        await this.loadUsers();
-    } catch (error) {
-        Toast.error('Błąd synchronizacji');
-        await this.loadUsers();
-    }
-},
+      const userId = Utils.$("#user-id").value;
+      const name = Utils.$("#user-name").value.trim();
+      const pin = Utils.$("#user-pin").value.trim();
+      const role = document.querySelector(
+        'input[name="user-role"]:checked'
+      ).value;
 
-        async deleteUser(userId) {
-    const user = state.users.find(u => u.id == userId);
-    
-    if (user.id === state.currentUser.id) {
-        Toast.warning('Nie możesz usunąć siebie');
+      const work_start =
+        role === "driver" ? Utils.$("#user-work-start").value : null;
+      const work_end =
+        role === "driver" ? Utils.$("#user-work-end").value : null;
+
+      if (!name) {
+        Toast.warning("Wpisz imię");
         return;
-    }
+      }
+      if (!userId && !pin) {
+        Toast.warning("Wpisz PIN");
+        return;
+      }
+      if (pin && (pin.length < 4 || pin.length > 6)) {
+        Toast.warning("PIN musi mieć 4-6 cyfr");
+        return;
+      }
 
-    Modal.confirm(
-        'Usunąć użytkownika?',
+      // Natychmiast zamknij i pokaż sukces
+      Modal.close("modal-user");
+      Toast.success(userId ? "Użytkownik zaktualizowany" : "Użytkownik dodany");
+
+      // Sync w tle
+      try {
+        if (userId) {
+          await API.updateUser(userId, {
+            name,
+            pin: pin || undefined,
+            role,
+            work_start,
+            work_end,
+          });
+        } else {
+          // Domyślnie wymuś zmianę PIN dla nowych
+          await API.createUser({
+            name,
+            pin,
+            role,
+            work_start,
+            work_end,
+            force_pin_change: 1,
+          });
+        }
+        await this.loadUsers();
+      } catch (error) {
+        Toast.error("Błąd synchronizacji");
+        await this.loadUsers();
+      }
+    },
+
+    async deleteUser(userId) {
+      const user = state.users.find((u) => u.id == userId);
+
+      if (user.id === state.currentUser.id) {
+        Toast.warning("Nie możesz usunąć siebie");
+        return;
+      }
+
+      Modal.confirm(
+        "Usunąć użytkownika?",
         `Czy na pewno chcesz usunąć "${user?.name}"?`,
         async () => {
-            // Natychmiast usuń z UI
-            state.users = state.users.filter(u => u.id != userId);
-            this.renderUsers();
-            Toast.success('Użytkownik usunięty');
+          // Natychmiast usuń z UI
+          state.users = state.users.filter((u) => u.id != userId);
+          this.renderUsers();
+          Toast.success("Użytkownik usunięty");
 
-            // Sync w tle
-            try {
-                await API.deleteUser(userId);
-            } catch (error) {
-                Toast.error('Błąd synchronizacji');
-                await this.loadUsers();
-            }
+          // Sync w tle
+          try {
+            await API.deleteUser(userId);
+          } catch (error) {
+            Toast.error("Błąd synchronizacji");
+            await this.loadUsers();
+          }
         }
-    );
-},
+      );
+    },
 
-        // LOCATIONS
-        async loadLocations() {
-            try {
-                const allLocations = await API.getLocations();
-                state.locations = allLocations.filter(l => l.type === 'location');
-                state.departments = allLocations.filter(l => l.type === 'department');
-                this.renderLocations();
-                DataLists.updateAll();
-            } catch (error) {
-                Toast.error('Nie udało się załadować lokalizacji');
-            }
-        },
+    // LOCATIONS
+    async loadLocations() {
+      try {
+        const allLocations = await API.getLocations();
+        state.locations = allLocations.filter((l) => l.type === "location");
+        state.departments = allLocations.filter((l) => l.type === "department");
+        this.renderLocations();
+        DataLists.updateAll();
+      } catch (error) {
+        Toast.error("Nie udało się załadować lokalizacji");
+      }
+    },
 
-                renderLocations() {
-            const locationsList = Utils.$('#locations-list');
-            const departmentsList = Utils.$('#departments-list');
-            const isMainAdmin = state.currentUser.id === 1; // Tylko główny admin usuwa
+    renderLocations() {
+      const locationsList = Utils.$("#locations-list");
+      const departmentsList = Utils.$("#departments-list");
+      const isMainAdmin = state.currentUser.id === 1; // Tylko główny admin usuwa
 
-            const renderDeleteBtn = (id) => isMainAdmin ? `
+      const renderDeleteBtn = (id) =>
+        isMainAdmin
+          ? `
                 <div class="location-actions">
                     <button class="task-action-btn btn-delete" data-action="delete-location" data-id="${id}">🗑️</button>
                 </div>
-            ` : '';
+            `
+          : "";
 
-            locationsList.innerHTML = state.locations.map(loc => `
+      locationsList.innerHTML =
+        state.locations
+          .map(
+            (loc) => `
                 <div class="location-card" data-id="${loc.id}">
                     <div class="location-info">
                         <div class="location-details">
@@ -2577,9 +2954,14 @@
                     </div>
                     ${renderDeleteBtn(loc.id)}
                 </div>
-            `).join('') || '<p class="text-muted text-center">Brak lokalizacji</p>';
+            `
+          )
+          .join("") || '<p class="text-muted text-center">Brak lokalizacji</p>';
 
-            departmentsList.innerHTML = state.departments.map(dept => `
+      departmentsList.innerHTML =
+        state.departments
+          .map(
+            (dept) => `
                 <div class="location-card" data-id="${dept.id}">
                     <div class="location-info">
                         <div class="location-details">
@@ -2588,86 +2970,106 @@
                     </div>
                     ${renderDeleteBtn(dept.id)}
                 </div>
-            `).join('') || '<p class="text-muted text-center">Brak działów</p>';
+            `
+          )
+          .join("") || '<p class="text-muted text-center">Brak działów</p>';
 
-            if (isMainAdmin) {
-                Utils.$$('[data-action="delete-location"]').forEach(btn => {
-                    btn.addEventListener('click', () => this.deleteLocation(btn.dataset.id));
-                });
-            }
-        },
+      if (isMainAdmin) {
+        Utils.$$('[data-action="delete-location"]').forEach((btn) => {
+          btn.addEventListener("click", () =>
+            this.deleteLocation(btn.dataset.id)
+          );
+        });
+      }
+    },
 
-        async handleLocationSubmit(e) {
-    e.preventDefault();
+    async handleLocationSubmit(e) {
+      e.preventDefault();
 
-    const name = Utils.$('#location-name').value.trim();
-    const type = document.querySelector('input[name="location-type"]:checked').value;
+      const name = Utils.$("#location-name").value.trim();
+      const type = document.querySelector(
+        'input[name="location-type"]:checked'
+      ).value;
 
-    if (!name) { Toast.warning('Wpisz nazwę'); return; }
+      if (!name) {
+        Toast.warning("Wpisz nazwę");
+        return;
+      }
 
-    // Natychmiast zamknij i pokaż sukces
-    Modal.close('modal-location');
-    Toast.success(type === 'department' ? 'Dział dodany' : 'Lokalizacja dodana');
+      // Natychmiast zamknij i pokaż sukces
+      Modal.close("modal-location");
+      Toast.success(
+        type === "department" ? "Dział dodany" : "Lokalizacja dodana"
+      );
 
-    // Sync w tle
-    try {
+      // Sync w tle
+      try {
         await API.createLocation({ name, type });
         await this.loadLocations();
-    } catch (error) {
-        Toast.error('Błąd synchronizacji');
+      } catch (error) {
+        Toast.error("Błąd synchronizacji");
         await this.loadLocations();
-    }
-},
+      }
+    },
 
-        async deleteLocation(locationId) {
-    const loc = [...state.locations, ...state.departments].find(l => l.id == locationId);
-    
-    Modal.confirm(
-        'Usunąć?',
+    async deleteLocation(locationId) {
+      const loc = [...state.locations, ...state.departments].find(
+        (l) => l.id == locationId
+      );
+
+      Modal.confirm(
+        "Usunąć?",
         `Czy na pewno chcesz usunąć "${loc?.name}"?`,
         async () => {
-            // Natychmiast usuń z UI
-            state.locations = state.locations.filter(l => l.id != locationId);
-            state.departments = state.departments.filter(l => l.id != locationId);
-            this.renderLocations();
-            Toast.success('Usunięto');
+          // Natychmiast usuń z UI
+          state.locations = state.locations.filter((l) => l.id != locationId);
+          state.departments = state.departments.filter(
+            (l) => l.id != locationId
+          );
+          this.renderLocations();
+          Toast.success("Usunięto");
 
-            // Sync w tle
-            try {
-                await API.deleteLocation(locationId);
-            } catch (error) {
-                Toast.error('Błąd synchronizacji');
-                await this.loadLocations();
-            }
+          // Sync w tle
+          try {
+            await API.deleteLocation(locationId);
+          } catch (error) {
+            Toast.error("Błąd synchronizacji");
+            await this.loadLocations();
+          }
         }
-    );
-},
+      );
+    },
 
-                // REPORTS
-        async loadReports(period = 'week') {
-            try {
-                const data = await API.getReports(period);
-                this.renderReports(data);
-            } catch (error) {
-                console.error('Failed to load reports:', error);
-                Utils.$('#report-stats').innerHTML = '<p class="text-muted">Błąd ładowania</p>';
-            }
-        },
+    // REPORTS
+    async loadReports(period = "week") {
+      try {
+        const data = await API.getReports(period);
+        this.renderReports(data);
+      } catch (error) {
+        console.error("Failed to load reports:", error);
+        Utils.$("#report-stats").innerHTML =
+          '<p class="text-muted">Błąd ładowania</p>';
+      }
+    },
 
-                renderReports(data) {
-            const container = Utils.$('#report-drivers-list');
-            const statsContainer = Utils.$('#report-stats');
+    renderReports(data) {
+      const container = Utils.$("#report-drivers-list");
+      const statsContainer = Utils.$("#report-stats");
 
-            if (!data || !data.drivers) {
-                container.innerHTML = '<p class="text-muted text-center">Brak danych</p>';
-                return;
-            }
+      if (!data || !data.drivers) {
+        container.innerHTML =
+          '<p class="text-muted text-center">Brak danych</p>';
+        return;
+      }
 
-            // Podsumowanie ogólne
-            const totalTasks = data.drivers.reduce((sum, d) => sum + d.tasksCount, 0);
-            const avgKpi = Math.round(data.drivers.reduce((sum, d) => sum + d.kpi, 0) / (data.drivers.length || 1));
+      // Podsumowanie ogólne
+      const totalTasks = data.drivers.reduce((sum, d) => sum + d.tasksCount, 0);
+      const avgKpi = Math.round(
+        data.drivers.reduce((sum, d) => sum + d.kpi, 0) /
+          (data.drivers.length || 1)
+      );
 
-            statsContainer.innerHTML = `
+      statsContainer.innerHTML = `
                 <div class="report-stat">
                     <div class="report-stat-value">${totalTasks}</div>
                     <div class="report-stat-label">Zadań</div>
@@ -2682,382 +3084,519 @@
                 </div>
             `;
 
-            container.innerHTML = data.drivers.map((driver, index) => {
-                const kpiColor = driver.kpi >= 80 ? 'high' : driver.kpi >= 50 ? 'medium' : 'low';
-                let chartHtml = '';
-                let labelsHtml = '';
-                let detailsHtml = '';
+      container.innerHTML = data.drivers
+        .map((driver, index) => {
+          const kpiColor =
+            driver.kpi >= 80 ? "high" : driver.kpi >= 50 ? "medium" : "low";
+          let chartHtml = "";
+          let labelsHtml = "";
+          let detailsHtml = "";
 
-                if (driver.isSingleDay) {
-                    chartHtml = this.generateTimeline(driver.timeline);
-                    labelsHtml = `
+          if (driver.isSingleDay) {
+            chartHtml = this.generateTimeline(driver.timeline);
+            labelsHtml = `
                         <div class="timeline-labels">
-                            <span>${driver.workStart || '07:00'}</span>
-                            <span>${driver.workEnd || '15:00'}</span>
+                            <span>${driver.workStart || "07:00"}</span>
+                            <span>${driver.workEnd || "15:00"}</span>
                         </div>
                     `;
-                    
-                    // Generuj tabelę szczegółów tylko dla widoku dnia
-                    if (driver.details && driver.details.length > 0) {
-                        detailsHtml = `
+
+            // Generuj tabelę szczegółów tylko dla widoku dnia
+            if (driver.details && driver.details.length > 0) {
+              detailsHtml = `
                             <button class="btn btn-small btn-toggle-details" onclick="TransportTracker.AdminPanel.toggleDetails(${index})">
                                 ▼ Pokaż szczegóły
                             </button>
                             <div id="details-${index}" class="details-container">
-                                ${driver.details.map(d => `
+                                ${driver.details
+                                  .map(
+                                    (d) => `
                                     <div class="details-row type-${d.type}">
-                                        <span class="details-time">${d.time}</span>
-                                        <span class="details-desc">${Utils.escapeHtml(d.desc)}</span>
-                                        <span class="details-duration">${d.duration}m</span>
+                                        <span class="details-time">${
+                                          d.time
+                                        }</span>
+                                        <span class="details-desc">${Utils.escapeHtml(
+                                          d.desc
+                                        )}</span>
+                                        <span class="details-duration">${
+                                          d.duration
+                                        }m</span>
                                     </div>
-                                `).join('')}
+                                `
+                                  )
+                                  .join("")}
                             </div>
                         `;
-                    }
-                } else {
-                    chartHtml = this.generateBarChart(driver.timeline);
-                }
+            }
+          } else {
+            chartHtml = this.generateBarChart(driver.timeline);
+          }
 
-                return `
+          return `
                     <div class="report-driver-card">
                         <div class="report-driver-header">
                             <div class="report-driver-info">
                                 <div class="user-avatar">🚗</div>
                                 <div>
                                     <h3>${Utils.escapeHtml(driver.name)}</h3>
-                                    <span class="text-muted" style="font-size:12px">KPI: ${driver.kpi}%</span>
+                                    <span class="text-muted" style="font-size:12px">KPI: ${
+                                      driver.kpi
+                                    }%</span>
                                 </div>
                             </div>
-                            <div class="report-driver-kpi ${kpiColor}">${driver.kpi}%</div>
+                            <div class="report-driver-kpi ${kpiColor}">${
+            driver.kpi
+          }%</div>
                         </div>
 
                         <div class="kpi-grid">
                             <div class="kpi-box">
-                                <div class="kpi-value">${this.formatDuration(driver.workTime)}</div>
+                                <div class="kpi-value">${this.formatDuration(
+                                  driver.workTime
+                                )}</div>
                                 <div class="kpi-label">Praca</div>
                             </div>
                             <div class="kpi-box">
-                                <div class="kpi-value" style="color:var(--danger)">${this.formatDuration(driver.delayTime)}</div>
+                                <div class="kpi-value" style="color:var(--danger)">${this.formatDuration(
+                                  driver.delayTime
+                                )}</div>
                                 <div class="kpi-label">Przestoje</div>
                             </div>
                             <div class="kpi-box">
-                                <div class="kpi-value">${driver.tasksCount}</div>
+                                <div class="kpi-value">${
+                                  driver.tasksCount
+                                }</div>
                                 <div class="kpi-label">Zadań</div>
                             </div>
                         </div>
 
-                        <div class="timeline-container ${driver.isSingleDay ? '' : 'bar-chart'}" 
-                             style="${driver.isSingleDay ? '' : 'height:150px; overflow-x:auto; overflow-y:hidden;'}">
+                        <div class="timeline-container ${
+                          driver.isSingleDay ? "" : "bar-chart"
+                        }" 
+                             style="${
+                               driver.isSingleDay
+                                 ? ""
+                                 : "height:150px; overflow-x:auto; overflow-y:hidden;"
+                             }">
                             ${chartHtml}
                         </div>
                         ${labelsHtml}
                         ${detailsHtml}
                     </div>
                 `;
-            }).join('');
-        },
+        })
+        .join("");
+    },
 
-        // Dodaj tę funkcję do obiektu AdminPanel:
-        toggleDetails(index) {
-            const el = Utils.$(`#details-${index}`);
-            const btn = el.previousElementSibling;
-            if (el.classList.contains('visible')) {
-                el.classList.remove('visible');
-                btn.textContent = '▼ Pokaż szczegóły';
-            } else {
-                el.classList.add('visible');
-                btn.textContent = '▲ Ukryj szczegóły';
-            }
-        },
+    // Dodaj tę funkcję do obiektu AdminPanel:
+    toggleDetails(index) {
+      const el = Utils.$(`#details-${index}`);
+      const btn = el.previousElementSibling;
+      if (el.classList.contains("visible")) {
+        el.classList.remove("visible");
+        btn.textContent = "▼ Pokaż szczegóły";
+      } else {
+        el.classList.add("visible");
+        btn.textContent = "▲ Ukryj szczegóły";
+      }
+    },
 
-        formatDuration(minutes) {
-            if (!minutes) return '0m';
-            const h = Math.floor(minutes / 60);
-            const m = minutes % 60;
-            return h > 0 ? `${h}h ${m}m` : `${m}m`;
-        },
+    formatDuration(minutes) {
+      if (!minutes) return "0m";
+      const h = Math.floor(minutes / 60);
+      const m = minutes % 60;
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    },
 
-        generateBarChart(days) {
-            if (!days || days.length === 0) return '<p class="text-center text-muted" style="padding:20px">Brak danych</p>';
+    generateBarChart(days) {
+      if (!days || days.length === 0)
+        return '<p class="text-center text-muted" style="padding:20px">Brak danych</p>';
 
-            return `
+      return `
                 <div style="display:flex; gap:10px; height:100%; align-items:flex-end; padding:10px;">
-                    ${days.map(d => `
+                    ${days
+                      .map(
+                        (d) => `
                         <div style="flex:1; display:flex; flex-direction:column; align-items:center; min-width:30px;">
-                            <div style="font-size:10px; margin-bottom:4px; font-weight:bold;">${this.formatDuration(d.minutes)}</div>
+                            <div style="font-size:10px; margin-bottom:4px; font-weight:bold;">${this.formatDuration(
+                              d.minutes
+                            )}</div>
                             <div style="width:100%; background:var(--bg-tertiary); height:80px; border-radius:4px; position:relative; overflow:hidden;">
-                                <div style="position:absolute; bottom:0; left:0; right:0; height:${d.percent}%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(d.date)}"></div>
+                                <div style="position:absolute; bottom:0; left:0; right:0; height:${
+                                  d.percent
+                                }%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(
+                          d.date
+                        )}"></div>
                             </div>
-                            <div style="font-size:9px; margin-top:4px; color:var(--text-secondary); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${Utils.formatDateShort(d.date)}</div>
+                            <div style="font-size:9px; margin-top:4px; color:var(--text-secondary); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${Utils.formatDateShort(
+                              d.date
+                            )}</div>
                         </div>
-                    `).join('')}
+                    `
+                      )
+                      .join("")}
                 </div>
             `;
-        },
+    },
 
-                generateTimeline(events) {
-            if (!events || events.length === 0) return '';
-            
-            const startHour = 6; 
-            const endHour = 18;
-            const totalMinutes = (endHour - startHour) * 60;
-            const dayStart = new Date();
-            dayStart.setHours(startHour, 0, 0, 0);
+    generateTimeline(events) {
+      if (!events || events.length === 0) return "";
 
-            // Sortuj eventy chronologicznie
-            events.sort((a, b) => new Date(a.start) - new Date(b.start));
+      const startHour = 6;
+      const endHour = 18;
+      const totalMinutes = (endHour - startHour) * 60;
+      const dayStart = new Date();
+      dayStart.setHours(startHour, 0, 0, 0);
 
-            // Algorytm pakowania w rzędy (jak Tetris)
-            let rows = []; 
+      // Sortuj eventy chronologicznie
+      events.sort((a, b) => new Date(a.start) - new Date(b.start));
 
-            events.forEach(event => {
-                const start = new Date(event.start);
-                const end = new Date(event.end);
-                
-                // Znajdź pierwszy wolny rząd
-                let rowIndex = -1;
-                for (let i = 0; i < rows.length; i++) {
-                    const lastEventInRow = rows[i][rows[i].length - 1];
-                    if (new Date(lastEventInRow.end) <= start) {
-                        rowIndex = i;
-                        break;
-                    }
-                }
+      // Algorytm pakowania w rzędy (jak Tetris)
+      let rows = [];
 
-                if (rowIndex === -1) {
-                    // Nowy rząd
-                    rows.push([event]);
-                } else {
-                    // Dodaj do istniejącego
-                    rows[rowIndex].push(event);
-                }
-            });
+      events.forEach((event) => {
+        const start = new Date(event.start);
+        const end = new Date(event.end);
 
-            // Renderowanie
-            return rows.map((row, rowIndex) => {
-                const height = 100 / rows.length; // Dzielimy wysokość na rzędy
-                const top = rowIndex * height;
-                
-                return row.map(event => {
-                    const start = new Date(event.start);
-                    const end = new Date(event.end);
-                    
-                    const startDiff = (start - dayStart) / 1000 / 60;
-                    const duration = (end - start) / 1000 / 60;
-                    
-                    let left = (startDiff / totalMinutes) * 100;
-                    let width = (duration / totalMinutes) * 100;
-                    
-                    if (left < 0) { width += left; left = 0; }
-                    if (left + width > 100) width = 100 - left;
-                    if (width <= 0) return '';
+        // Znajdź pierwszy wolny rząd
+        let rowIndex = -1;
+        for (let i = 0; i < rows.length; i++) {
+          const lastEventInRow = rows[i][rows[i].length - 1];
+          if (new Date(lastEventInRow.end) <= start) {
+            rowIndex = i;
+            break;
+          }
+        }
 
-                    return `
+        if (rowIndex === -1) {
+          // Nowy rząd
+          rows.push([event]);
+        } else {
+          // Dodaj do istniejącego
+          rows[rowIndex].push(event);
+        }
+      });
+
+      // Renderowanie
+      return rows
+        .map((row, rowIndex) => {
+          const height = 100 / rows.length; // Dzielimy wysokość na rzędy
+          const top = rowIndex * height;
+
+          return row
+            .map((event) => {
+              const start = new Date(event.start);
+              const end = new Date(event.end);
+
+              const startDiff = (start - dayStart) / 1000 / 60;
+              const duration = (end - start) / 1000 / 60;
+
+              let left = (startDiff / totalMinutes) * 100;
+              let width = (duration / totalMinutes) * 100;
+
+              if (left < 0) {
+                width += left;
+                left = 0;
+              }
+              if (left + width > 100) width = 100 - left;
+              if (width <= 0) return "";
+
+              return `
                         <div class="timeline-bar ${event.type}" 
-                             style="left: ${left}%; width: ${width}%; height: ${height - 2}%; top: ${top}%;"
-                             data-title="${Utils.escapeHtml(event.desc)} (${Math.round(duration)} min)">
+                             style="left: ${left}%; width: ${width}%; height: ${
+                height - 2
+              }%; top: ${top}%;"
+                             data-title="${Utils.escapeHtml(
+                               event.desc
+                             )} (${Math.round(duration)} min)">
                         </div>
                     `;
-                }).join('');
-            }).join('');
-        },
+            })
+            .join("");
+        })
+        .join("");
+    },
 
-        // TABS
-            switchTab(tabId) {
-            // Blokada zakładki użytkownicy dla zwykłych kierowników
-            if (tabId === 'users' && state.currentUser.id !== 1) {
-                Toast.warning('Brak uprawnień do zarządzania użytkownikami');
-                
-                // Jeśli już jesteśmy na innej zakładce, zostańmy tam.
-                // Jeśli nie (np. start aplikacji), idź do tasks.
-                if (state.currentTab === 'users' || !state.currentTab) {
-                    this.switchTab('tasks');
-                }
-                return;
-            }
+    // TABS
+    switchTab(tabId) {
+      // Blokada zakładki użytkownicy dla zwykłych kierowników
+      if (tabId === "users" && state.currentUser.id !== 1) {
+        Toast.warning("Brak uprawnień do zarządzania użytkownikami");
 
-            state.currentTab = tabId;
-
-            Utils.$$('.tab-btn').forEach(btn => {
-                btn.classList.toggle('active', btn.dataset.tab === tabId);
-            });
-
-            Utils.$$('.tab-content').forEach(content => {
-                content.classList.toggle('active', content.id === `tab-${tabId}`);
-            });
-
-            if (tabId === 'reports') {
-                this.loadReports();
-            }
-        },
-
-        // EVENT LISTENERS
-        initEventListeners() {
-            // Add task
-            Utils.$('#add-task-btn')?.addEventListener('click', () => TaskForm.open());
-            Utils.$('#add-task-empty-btn')?.addEventListener('click', () => TaskForm.open());
-
-            // Date navigation
-Utils.$('#prev-day-btn')?.addEventListener('click', () => this.changeDate(-1));
-Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
-            Utils.$('#admin-date-picker')?.addEventListener('change', (e) => this.setDate(e.target.value));
-
-            // Quick date buttons
-            Utils.$$('.date-quick-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const offset = parseInt(btn.dataset.offset);
-                    this.setDateByOffset(offset);
-                });
-            });
-
-            // Filters
-            Utils.$$('#admin-filters .filter-btn').forEach(btn => {
-                btn.addEventListener('click', () => this.setFilter(btn.dataset.filter));
-            });
-
-            // Reorder
-            Utils.$('#toggle-reorder-btn')?.addEventListener('click', () => this.toggleReorderMode());
-            Utils.$('#save-reorder-btn')?.addEventListener('click', () => this.saveReorder());
-            Utils.$('#cancel-reorder-btn')?.addEventListener('click', () => this.cancelReorder());
-
-            // Priority modal
-            Utils.$$('.priority-select-btn').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    const taskId = Utils.$('#priority-task-id').value;
-                    this.changePriority(taskId, btn.dataset.priority);
-                });
-            });
-
-            // Tabs
-            Utils.$$('.tab-btn').forEach(btn => {
-                btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
-            });
-
-            // Users
-            Utils.$('#add-user-btn')?.addEventListener('click', () => this.openUserModal());
-            Utils.$('#user-form')?.addEventListener('submit', (e) => this.handleUserSubmit(e));
-
-            // Locations
-            Utils.$('#add-location-btn')?.addEventListener('click', () => Modal.open('modal-location'));
-            Utils.$('#location-form')?.addEventListener('submit', (e) => this.handleLocationSubmit(e));
-
-                       // Reports - NOWA LOGIKA
-            const reportType = Utils.$('#report-period-type');
-            const monthPicker = Utils.$('#report-month-picker');
-            const dayPicker = Utils.$('#report-day-picker');
-
-            // Ustaw domyślne daty
-            if (monthPicker) monthPicker.value = new Date().toISOString().slice(0, 7);
-            if (dayPicker) dayPicker.value = Utils.getToday();
-
-            const updateReport = () => {
-                if (!reportType) return;
-                
-                const type = reportType.value;
-                let period = type;
-                
-                Utils.hide(monthPicker);
-                Utils.hide(dayPicker);
-
-                if (type === 'month') {
-                    Utils.show(monthPicker);
-                    period = monthPicker.value;
-                } else if (type === 'day') {
-                    Utils.show(dayPicker);
-                    period = dayPicker.value;
-                }
-
-                this.loadReports(period);
-            };
-
-                        if (reportType) {
-                reportType.addEventListener('change', updateReport);
-                // NIE wywołujemy tu updateReport() - zrobimy to po zalogowaniu
-            }
-            
-            monthPicker?.addEventListener('change', updateReport);
-            dayPicker?.addEventListener('change', updateReport);
+        // Jeśli już jesteśmy na innej zakładce, zostańmy tam.
+        // Jeśli nie (np. start aplikacji), idź do tasks.
+        if (state.currentTab === "users" || !state.currentTab) {
+          this.switchTab("tasks");
         }
-    };
+        return;
+      }
 
-    // =============================================
-    // 15. INIT
-    // =============================================
-    async function init() {
-        console.log('🚛 TransportTracker v2.0 initializing...');
+      state.currentTab = tabId;
 
-        Toast.init();
-        Modal.init();
-        Theme.init();
-        Theme.initEventListeners();
-        Auth.initEventListeners();
-        Notifications.initEventListeners();
-        DriverPanel.initEventListeners();
-        TaskForm.initEventListeners();
-        AdminPanel.initEventListeners();
+      Utils.$$(".tab-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === tabId);
+      });
 
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await Auth.init();
-        
-        console.log('✅ TransportTracker ready!');
-    }
+      Utils.$$(".tab-content").forEach((content) => {
+        content.classList.toggle("active", content.id === `tab-${tabId}`);
+      });
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', init);
-    } else {
-        init();
-    }
-    
-    // =============================================
-    // 16. PUSHY INTEGRATION
-    // =============================================
-            const PushyService = {
-        init() {
-            // Czekamy chwilę aż SDK się załaduje
-            if (!window.Pushy) {
-                setTimeout(() => this.init(), 1000);
-                return;
-            }
-            
-            const PUSHY_APP_ID = '6945736ee5ab0cc758910885'; 
+      if (tabId === "reports") {
+        this.loadReports();
+      }
+    },
 
-            Pushy.register({ appId: PUSHY_APP_ID, serviceWorkerUrl: '/service-worker.js' })
-            .then(async (deviceToken) => {
-                console.log('Pushy token:', deviceToken);
-                
-                if (state.currentUser) {
-                    try {
-                        await API.request('/pushy/register', {
-                            method: 'POST',
-                            body: { token: deviceToken }
-                        });
-                        console.log('Pushy registered successfully');
-                    } catch (e) {
-                        console.error('Pushy backend sync failed', e);
-                    }
-                }
-            }).catch((err) => {
-                console.error('Pushy registration failed:', err);
-            });
+    // EVENT LISTENERS
+    initEventListeners() {
+      // Add task
+      Utils.$("#add-task-btn")?.addEventListener("click", () =>
+        TaskForm.open()
+      );
+      Utils.$("#add-task-empty-btn")?.addEventListener("click", () =>
+        TaskForm.open()
+      );
+
+      // Date navigation
+      Utils.$("#prev-day-btn")?.addEventListener("click", () =>
+        this.changeDate(-1)
+      );
+      Utils.$("#next-day-btn")?.addEventListener("click", () =>
+        this.changeDate(1)
+      );
+      Utils.$("#admin-date-picker")?.addEventListener("change", (e) =>
+        this.setDate(e.target.value)
+      );
+
+      // Quick date buttons
+      Utils.$$(".date-quick-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const offset = parseInt(btn.dataset.offset);
+          this.setDateByOffset(offset);
+        });
+      });
+
+      // Filters
+      Utils.$$("#admin-filters .filter-btn").forEach((btn) => {
+        btn.addEventListener("click", () => this.setFilter(btn.dataset.filter));
+      });
+
+      // Reorder
+      Utils.$("#toggle-reorder-btn")?.addEventListener("click", () =>
+        this.toggleReorderMode()
+      );
+      Utils.$("#save-reorder-btn")?.addEventListener("click", () =>
+        this.saveReorder()
+      );
+      Utils.$("#cancel-reorder-btn")?.addEventListener("click", () =>
+        this.cancelReorder()
+      );
+
+      // Priority modal
+      Utils.$$(".priority-select-btn").forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const taskId = Utils.$("#priority-task-id").value;
+          this.changePriority(taskId, btn.dataset.priority);
+        });
+      });
+
+      // Tabs
+      Utils.$$(".tab-btn").forEach((btn) => {
+        btn.addEventListener("click", () => this.switchTab(btn.dataset.tab));
+      });
+
+      // Users
+      Utils.$("#add-user-btn")?.addEventListener("click", () =>
+        this.openUserModal()
+      );
+      Utils.$("#user-form")?.addEventListener("submit", (e) =>
+        this.handleUserSubmit(e)
+      );
+
+      // Locations
+      Utils.$("#add-location-btn")?.addEventListener("click", () =>
+        Modal.open("modal-location")
+      );
+      Utils.$("#location-form")?.addEventListener("submit", (e) =>
+        this.handleLocationSubmit(e)
+      );
+
+      // Reports - NOWA LOGIKA
+      const reportType = Utils.$("#report-period-type");
+      const monthPicker = Utils.$("#report-month-picker");
+      const dayPicker = Utils.$("#report-day-picker");
+
+      // Ustaw domyślne daty
+      if (monthPicker) monthPicker.value = new Date().toISOString().slice(0, 7);
+      if (dayPicker) dayPicker.value = Utils.getToday();
+
+      const updateReport = () => {
+        if (!reportType) return;
+
+        const type = reportType.value;
+        let period = type;
+
+        Utils.hide(monthPicker);
+        Utils.hide(dayPicker);
+
+        if (type === "month") {
+          Utils.show(monthPicker);
+          period = monthPicker.value;
+        } else if (type === "day") {
+          Utils.show(dayPicker);
+          period = dayPicker.value;
         }
-    };
 
-    // =============================================
-    // 17. EXPORT
-    // =============================================
-    window.TransportTracker = {
-        state,
-        Utils,
-        API,
-        Toast,
-        Modal,
-        Screen,
-        Theme,
-        Auth,
-        Notifications,
-        DriverPanel,
-        TaskForm,
-        AdminPanel
-    };
+        this.loadReports(period);
+      };
 
+      if (reportType) {
+        reportType.addEventListener("change", updateReport);
+        // NIE wywołujemy tu updateReport() - zrobimy to po zalogowaniu
+      }
+
+      monthPicker?.addEventListener("change", updateReport);
+      dayPicker?.addEventListener("change", updateReport);
+    },
+  };
+
+  // =============================================
+  // 15. INIT
+  // =============================================
+  async function init() {
+    console.log("🚛 TransportTracker v2.0 initializing...");
+
+    Toast.init();
+    Modal.init();
+    Theme.init();
+    Theme.initEventListeners();
+    Auth.initEventListeners();
+    Notifications.initEventListeners();
+    DriverPanel.initEventListeners();
+    TaskForm.initEventListeners();
+    AdminPanel.initEventListeners();
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await Auth.init();
+
+    console.log("✅ TransportTracker ready!");
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  // =============================================
+  // 16. PUSHY INTEGRATION
+  // =============================================
+  const PushyService = {
+    initPromise: null,
+
+    async init() {
+      // Prevent multiple initializations (Singleton pattern)
+      if (this.initPromise) {
+        return this.initPromise;
+      }
+
+      this.initPromise = (async () => {
+        // Check for Service Worker support
+        if (!("serviceWorker" in navigator)) {
+          console.warn("Service workers are not supported on this device.");
+          return;
+        }
+
+        // Wait for Pushy SDK to load
+        if (!window.Pushy) {
+          console.log("Pushy SDK not loaded yet, retrying in 500ms...");
+          this.initPromise = null; 
+          setTimeout(() => this.init(), 500);
+          return;
+        }
+
+        const PUSHY_APP_ID = "6945736ee5ab0cc758910885";
+
+        try {
+            // Check if already registered to avoid error logs
+            const isRegistered = await Pushy.isRegistered();
+            if (isRegistered) {
+                console.log("Pushy already registered");
+            }
+
+            // Attempt registration
+            const deviceToken = await Pushy.register({
+                appId: PUSHY_APP_ID,
+                serviceWorkerUrl: "/service-worker.js",
+            });
+            
+            console.log("Pushy device token:", deviceToken);
+            await this.syncToken(deviceToken);
+
+        } catch (err) {
+            console.warn("⚠️ Initial Pushy registration failed:", err);
+            console.log("🔄 Attempting Smart Recovery (unregister & retry)...");
+            
+            try {
+                // Smart Recovery: Unregister bad Service Workers
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                for (const registration of registrations) {
+                    console.log("🧹 Unregistering conflicting SW:", registration);
+                    await registration.unregister();
+                }
+
+                // Wait a moment for cleanup
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Retry registration
+                console.log("🔄 Retrying Pushy registration...");
+                const deviceToken = await Pushy.register({
+                    appId: PUSHY_APP_ID,
+                    serviceWorkerUrl: "/service-worker.js",
+                });
+
+                console.log("✅ Smart Recovery successful! Token:", deviceToken);
+                await this.syncToken(deviceToken);
+
+            } catch (retryErr) {
+                console.error("❌ Fatal: Pushy registration failed after recovery:", retryErr);
+                this.initPromise = null; // Allow retry on next app launch/interaction
+            }
+        }
+      })();
+
+      return this.initPromise;
+    },
+
+    async syncToken(deviceToken) {
+        if (state.currentUser) {
+            try {
+                await API.request("/pushy/register", {
+                    method: "POST",
+                    body: { token: deviceToken },
+                });
+                console.log("✅ Pushy verified with backend");
+            } catch (e) {
+                console.log("Pushy backend sync info:", e); 
+            }
+        }
+    }
+  };
+
+  // =============================================
+  // 17. EXPORT
+  // =============================================
+  window.TransportTracker = {
+    state,
+    Utils,
+    API,
+    Toast,
+    Modal,
+    Screen,
+    Theme,
+    Auth,
+    Notifications,
+    DriverPanel,
+    TaskForm,
+    AdminPanel,
+  };
 })();
