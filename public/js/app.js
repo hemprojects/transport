@@ -621,19 +621,23 @@
     // 9. NOTIFICATIONS
     // =============================================
     const Notifications = {
-                async requestPermission() {
+                    async requestPermission() {
             if (!("Notification" in window)) return false;
             
-            let permission = Notification.permission;
-            
-            if (permission !== "granted") {
-                permission = await Notification.requestPermission();
+            // Zawsze próbuj zarejestrować Pushy, jeśli jest zgoda
+            if (Notification.permission === "granted") {
+                console.log('Permission already granted, registering Pushy...');
+                PushyService.init(); // <--- TO JEST KLUCZOWE
+                return true;
             }
             
-            if (permission === "granted") {
-                // Dopiero teraz rejestrujemy Pushy!
-                PushyService.init();
-                return true;
+            // Jeśli nie ma zgody, zapytaj
+            if (Notification.permission !== "denied") {
+                const permission = await Notification.requestPermission();
+                if (permission === "granted") {
+                    PushyService.init();
+                    return true;
+                }
             }
             
             return false;
