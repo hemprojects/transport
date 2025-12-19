@@ -68,9 +68,17 @@
             });
         },
 
-        formatTime(timeStr) {
+                formatTime(timeStr) {
             if (!timeStr) return '';
-            // Jeśli format HH:MM:SS lub HH:MM
+            // Jeśli to pełna data SQL (np. 2025-12-19 08:00:00)
+            if (timeStr.includes(' ') || timeStr.includes('T')) {
+                const date = new Date(timeStr.replace(' ', 'T')); // fix dla sqlite formatu
+                return date.toLocaleTimeString(CONFIG.DATE_FORMAT, {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            }
+            // Jeśli to sam czas (HH:MM:SS)
             if (timeStr.includes(':')) {
                 return timeStr.substring(0, 5);
             }
@@ -613,14 +621,9 @@
     // 9. NOTIFICATIONS
     // =============================================
     const Notifications = {
-        // Dodaj tę funkcję:
         async requestPermission() {
-            if (!("Notification" in window)) return;
-            
-            if (Notification.permission === "granted") {
-                return true;
-            }
-            
+            if (!("Notification" in window)) return false;
+            if (Notification.permission === "granted") return true;
             if (Notification.permission !== "denied") {
                 const permission = await Notification.requestPermission();
                 return permission === "granted";
@@ -628,59 +631,69 @@
             return false;
         },
 
-        // Zaktualizuj funkcję load():
-async load() {
-    if (!state.currentUser) return;
+        async load() {
+            if (!state.currentUser) return;
 
-    try {
-        const response = await API.getNotifications(state.currentUser.id);
-        
-        // --- CZYTAJ TUTAJ ---
-        // Jeśli nie ma nowych powiadomień, to nic nie robimy
-        // Ale musimy zawsze zaktualizować listę!
-        
-        if (response.unreadCount > state.unreadNotifications) {
-            const latest = response.notifications[0];
-            if (latest && !latest.is_read) {
-                // To wywołuje systemowe
-                this.showSystemNotification(latest.title, latest.message);
-            }
-        }
-
-        // To musi się wykonać ZAWSZE:
-        state.notifications = response.notifications || [];
-        state.unreadNotifications = response.unreadCount || 0;
-        this.updateBadge(); // To aktualizuje czerwoną kropkę
-    } catch (error) {
-        console.error('Failed to load notifications:', error);
-    }
-},
-
-        // Dodaj funkcję wyświetlania:
-        showSystemNotification(title, body) {
-            if (!("Notification" in window)) return;
-            
-            if (Notification.permission === "granted") {
-                // Jeśli jest Service Worker (dla Androida lepiej)
-                if (navigator.serviceWorker.controller) {
-                    navigator.serviceWorker.ready.then(registration => {
-                        registration.showNotification(title, {
-                            body: body,
-                            icon: '/icon.png', // opcjonalnie
-                            vibrate: [200, 100, 200]
-                        });
-                    });
-                } else {
-                    // Zwykłe powiadomienie
-                    new Notification(title, { body: body });
+            try {
+                const response = await API.getNotifications(state.currentUser.id);
+                
+                if (response.unreadCount > state.unreadNotifications) {
+                    const latest = response.notifications[0];
+                    if (latest && !latest.is_read) {
+                        this.showSystemNotification(latest.title, latest.message, latest.task_id);
+                    }
                 }
+
+                state.notifications = response.notifications || [];
+                state.unreadNotifications = response.unreadCount || 0;
+                this.updateBadge();
+            } catch (error) {
+                console.error('Failed to load notifications:', error);
             }
+        },
+
+        showSystemNotification(title, body, taskId) {
+            if (!("Notification" in window) || Notification.permission !== "granted") return;
+            
+            // Web Notification (Standard)
+            const notif = new Notification(title, { 
+                body: body,
+                icon: '/icon.png',
+                vibrate: [200, 100, 200]
+            });
+            
+            notif.onclick = () => {
+                window.focus();
+                if (taskId) {
+                    if (state.currentUser.role === 'admin') AdminPanel.openTaskDetails(taskId);
+                    else DriverPanel.openTaskDetails(taskId);
+                    // Auto-read po kliknięciu
+                    this.markRelatedRead(taskId);
+                }
+                notif.close();
+            };
+        },
+
+        async markRelatedRead(taskId) {
+            if (!taskId) return;
+            // Znajdź nieprzeczytane powiadomienia dotyczące tego zadania
+            const related = state.notifications.filter(n => n.task_id == taskId && !n.is_read);
+            
+            for (const notif of related) {
+                try {
+                    await API.markNotificationRead(notif.id);
+                    notif.is_read = 1;
+                } catch (e) { console.error(e); }
+            }
+            
+            // Aktualizuj licznik lokalnie (bez odświeżania API)
+            state.unreadNotifications = Math.max(0, state.unreadNotifications - related.length);
+            this.updateBadge();
         },
 
         updateBadge() {
             const driverBadge = Utils.$('#driver-notification-badge');
             const adminBadge = Utils.$('#admin-notification-badge');
-            
             const badge = state.currentUser?.role === 'admin' ? adminBadge : driverBadge;
             
             if (badge) {
@@ -694,17 +707,13 @@ async load() {
         },
 
         startPolling() {
-    this.load();
-    state.notificationInterval = setInterval(() => {
-        this.load();
-        // Auto refresh tasks for both driver and admin
-        if (state.currentUser?.role === 'driver') {
-            DriverPanel.loadTasks(true);
-        } else if (state.currentUser?.role === 'admin') {
-            AdminPanel.loadTasks(true);
-        }
-    }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
-},
+            this.load();
+            state.notificationInterval = setInterval(() => {
+                this.load();
+                if (state.currentUser?.role === 'driver') DriverPanel.loadTasks(true);
+                else if (state.currentUser?.role === 'admin') AdminPanel.loadTasks(true);
+            }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
+        },
 
         stopPolling() {
             if (state.notificationInterval) {
@@ -750,37 +759,25 @@ async load() {
                             item.querySelector('.notification-unread-dot')?.remove();
                             state.unreadNotifications = Math.max(0, state.unreadNotifications - 1);
                             this.updateBadge();
-                        } catch (error) {
-                            console.error('Failed to mark notification as read:', error);
-                        }
+                        } catch (error) { console.error(error); }
                     }
 
                     if (taskId) {
                         Modal.close('modal-notifications');
-                        if (state.currentUser.role === 'admin') {
-                            AdminPanel.openTaskDetails(taskId);
-                        } else {
-                            DriverPanel.openTaskDetails(taskId);
-                        }
+                        if (state.currentUser.role === 'admin') AdminPanel.openTaskDetails(taskId);
+                        else DriverPanel.openTaskDetails(taskId);
                     }
                 });
             });
         },
 
         getIcon(type) {
-            const icons = {
-                'new_task': '📋',
-                'status_change': '🔄',
-                'delay': '⏱️',
-                'problem': '⚠️',
-                'joined': '👥'
-            };
+            const icons = { 'new_task': '📋', 'status_change': '🔄', 'delay': '⏱️', 'problem': '⚠️', 'joined': '👥' };
             return icons[type] || '🔔';
         },
 
         async markAllRead() {
             if (!state.currentUser || state.unreadNotifications === 0) return;
-
             try {
                 await API.markAllNotificationsRead(state.currentUser.id);
                 state.notifications.forEach(n => n.is_read = 1);
@@ -788,9 +785,7 @@ async load() {
                 this.updateBadge();
                 this.renderList();
                 Toast.success('Oznaczono jako przeczytane');
-            } catch (error) {
-                Toast.error('Nie udało się oznaczyć');
-            }
+            } catch (error) { Toast.error('Nie udało się oznaczyć'); }
         },
 
         open() {
@@ -798,14 +793,14 @@ async load() {
             Modal.open('modal-notifications');
         },
 
-                initEventListeners() {
+        initEventListeners() {
             Utils.$('#driver-notifications-btn')?.addEventListener('click', () => {
                 this.open();
-                this.requestPermission(); // To poprosi o zgodę!
+                this.requestPermission();
             });
             Utils.$('#admin-notifications-btn')?.addEventListener('click', () => {
                 this.open();
-                this.requestPermission(); // To też!
+                this.requestPermission();
             });
             Utils.$('#mark-all-read-btn')?.addEventListener('click', () => this.markAllRead());
         }
@@ -1064,7 +1059,8 @@ async load() {
             Utils.$('#admin-date-picker').value = state.currentDate;
             
             Screen.show('admin');
-            
+            // Wymuś zakładkę Tasks na starcie
+            AdminPanel.switchTab('tasks');
             AdminPanel.loadTasks();
             AdminPanel.loadUsers();
             AdminPanel.loadLocations();
@@ -1088,11 +1084,14 @@ async load() {
             Notifications.startPolling();
         },
 
-                    logout(force = false) {
+            logout(force = false) {
             const performLogout = () => {
                 state.currentUser = null;
                 state.tasks = [];
                 state.notifications = [];
+                state.currentTab = 'tasks'; // <-- DODAJ TO (Reset zakładki)
+                state.currentFilter = 'all'; // <-- DODAJ TO
+                
                 localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
                 Notifications.stopPolling();
                 this.showLoginScreen();
@@ -1142,18 +1141,21 @@ async load() {
             }
         },
 
-        sortTasks() {
-            // Sort: in_progress first, then by priority, then by sort_order
+                sortTasks() {
             state.tasks.sort((a, b) => {
-                // In progress tasks first
+                // 1. Zakończone ZAWSZE na dole
+                if (a.status === 'completed' && b.status !== 'completed') return 1;
+                if (b.status === 'completed' && a.status !== 'completed') return -1;
+
+                // 2. W trakcie ZAWSZE na górze (przed oczekującymi)
                 if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
                 if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
                 
-                // Then by priority
+                // 3. Potem priorytet (Pilne > Normalne > Niski)
                 const priorityDiff = Utils.getPriorityOrder(a.priority) - Utils.getPriorityOrder(b.priority);
                 if (priorityDiff !== 0) return priorityDiff;
                 
-                // Then by sort_order
+                // 4. Na końcu kolejność ręczna (sort_order)
                 return (a.sort_order || 999) - (b.sort_order || 999);
             });
         },
@@ -1188,12 +1190,13 @@ async load() {
             this.attachTaskEventListeners();
         },
 
-        renderTaskCard(task) {
-            const isMyTask = task.assigned_to === state.currentUser.id || 
-                             (task.drivers && task.drivers.includes(state.currentUser.id));
+                renderTaskCard(task) {
+            const isMyTask = task.assigned_to === state.currentUser.id;
+            const isJoined = task.additional_drivers && task.additional_drivers.some(d => d.id === state.currentUser.id);
+            const isParticipating = isMyTask || isJoined;
+            
             const isInProgress = task.status === 'in_progress';
-            const isLocked = isInProgress && !isMyTask;
-            const canJoin = isInProgress && !isMyTask;
+            const isLocked = isInProgress && !isParticipating;
 
             let taskDescription = '';
             if (task.task_type === 'transport') {
@@ -1227,15 +1230,30 @@ async load() {
                 </div>
             ` : '';
 
-            // Drivers info
-            const driversHtml = task.assigned_name ? `
-                <span class="task-meta-item">
-                    <span>👤</span>
-                    <span>${Utils.escapeHtml(task.assigned_name)}</span>
-                </span>
-            ` : '';
+            // Obsługa wielu kierowców
+            let driversHtml = '';
+            const allDrivers = [];
+            
+            if (task.assigned_name) allDrivers.push(task.assigned_name);
+            if (task.additional_drivers) {
+                task.additional_drivers.forEach(d => allDrivers.push(d.name));
+            }
 
-            // Action buttons based on status and ownership
+            if (allDrivers.length > 0) {
+                const driversList = allDrivers.join(', ');
+                const icon = allDrivers.length > 1 ? '👥' : '👤';
+                const label = allDrivers.length > 1 ? 'Współdzielone' : '';
+                
+                driversHtml = `
+                    <span class="task-meta-item" title="${Utils.escapeHtml(driversList)}">
+                        <span>${icon}</span>
+                        <span>${Utils.escapeHtml(driversList)}</span>
+                        ${label ? `<span class="task-drivers-badge">${label}</span>` : ''}
+                    </span>
+                `;
+            }
+
+            // Przyciski akcji
             let actionButtons = '';
             if (task.status === 'pending') {
                 actionButtons = `
@@ -1244,7 +1262,7 @@ async load() {
                     </button>
                 `;
             } else if (task.status === 'in_progress') {
-                if (isMyTask) {
+                if (isParticipating) {
                     actionButtons = `
                         <button class="task-action-btn" data-action="add-log" data-id="${task.id}" title="Dodaj uwagę">
                             📝
@@ -1326,6 +1344,7 @@ async load() {
         },
 
         async startTask(taskId) {
+        Notifications.markRelatedRead(taskId);
     Modal.confirm(
         'Rozpocząć zadanie?',
         'Czy chcesz rozpocząć wykonywanie tego zadania?',
@@ -1394,7 +1413,7 @@ async load() {
 
         async joinTask() {
     const taskId = Utils.$('#join-task-id').value;
-    
+    Notifications.markRelatedRead(taskId);
     // Natychmiast zamknij modal i pokaż sukces
     Modal.close('modal-join-task');
     Toast.success('Dołączyłeś do zadania!');
@@ -1468,6 +1487,7 @@ async load() {
 },
 
         async openTaskDetails(taskId) {
+            Notifications.markRelatedRead(taskId);
             try {
                 const task = await API.getTask(taskId);
                 this.renderTaskDetails(task);
@@ -1519,8 +1539,8 @@ async load() {
                                         }
                                         ${Utils.escapeHtml(log.message || '')}
                                     </div>
-                                    <div class="task-log-meta">
-                                        ${Utils.escapeHtml(log.user_name || 'Nieznany')} • ${Utils.formatRelativeTime(log.created_at)}
+                                                                        <div class="task-log-meta">
+                                        ${Utils.escapeHtml(log.user_name || 'Nieznany')} • ${Utils.formatTime(log.created_at)}
                                     </div>
                                 </div>
                             </div>
@@ -1865,21 +1885,21 @@ async load() {
     }
         },
 
-        sortTasks() {
+                sortTasks() {
             state.tasks.sort((a, b) => {
-                // Completed last
+                // 1. Zakończone na dole
                 if (a.status === 'completed' && b.status !== 'completed') return 1;
                 if (b.status === 'completed' && a.status !== 'completed') return -1;
                 
-                // In progress first
+                // 2. W trakcie na górze
                 if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
                 if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
                 
-                // Then by priority
+                // 3. Priorytet
                 const priorityDiff = Utils.getPriorityOrder(a.priority) - Utils.getPriorityOrder(b.priority);
                 if (priorityDiff !== 0) return priorityDiff;
                 
-                // Then by sort_order
+                // 4. Kolejność
                 return (a.sort_order || 999) - (b.sort_order || 999);
             });
         },
@@ -1985,10 +2005,10 @@ async load() {
                 </span>
             ` : '';
             
-            const creatorHtml = task.creator_name ? `
+                        const creatorHtml = task.creator_name ? `
                 <span class="task-meta-item" title="Utworzył">
                     <span>✏️</span>
-                    <span>${Utils.escapeHtml(task.creator_name)}</span>
+                    <span>${Utils.escapeHtml(task.creator_name)} (${Utils.formatTime(task.created_at)})</span>
                 </span>
             ` : '';
 
@@ -2619,7 +2639,7 @@ async load() {
             }
         },
 
-        renderReports(data) {
+                renderReports(data) {
             const container = Utils.$('#report-drivers-list');
             const statsContainer = Utils.$('#report-stats');
 
@@ -2647,23 +2667,38 @@ async load() {
                 </div>
             `;
 
-            // Lista kierowców z wykresami
-            container.innerHTML = data.drivers.map(driver => {
+            container.innerHTML = data.drivers.map((driver, index) => {
                 const kpiColor = driver.kpi >= 80 ? 'high' : driver.kpi >= 50 ? 'medium' : 'low';
-                
-                // Wybierz odpowiedni wykres
                 let chartHtml = '';
                 let labelsHtml = '';
+                let detailsHtml = '';
 
                 if (driver.isSingleDay) {
                     chartHtml = this.generateTimeline(driver.timeline);
                     labelsHtml = `
                         <div class="timeline-labels">
-                            <span>07:00</span>
-                            <span>11:00</span>
-                            <span>15:00</span>
+                            <span>${driver.workStart || '07:00'}</span>
+                            <span>${driver.workEnd || '15:00'}</span>
                         </div>
                     `;
+                    
+                    // Generuj tabelę szczegółów tylko dla widoku dnia
+                    if (driver.details && driver.details.length > 0) {
+                        detailsHtml = `
+                            <button class="btn btn-small btn-toggle-details" onclick="TransportTracker.AdminPanel.toggleDetails(${index})">
+                                ▼ Pokaż szczegóły
+                            </button>
+                            <div id="details-${index}" class="details-container">
+                                ${driver.details.map(d => `
+                                    <div class="details-row type-${d.type}">
+                                        <span class="details-time">${d.time}</span>
+                                        <span class="details-desc">${Utils.escapeHtml(d.desc)}</span>
+                                        <span class="details-duration">${d.duration}m</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }
                 } else {
                     chartHtml = this.generateBarChart(driver.timeline);
                 }
@@ -2701,9 +2736,23 @@ async load() {
                             ${chartHtml}
                         </div>
                         ${labelsHtml}
+                        ${detailsHtml}
                     </div>
                 `;
             }).join('');
+        },
+
+        // Dodaj tę funkcję do obiektu AdminPanel:
+        toggleDetails(index) {
+            const el = Utils.$(`#details-${index}`);
+            const btn = el.previousElementSibling;
+            if (el.classList.contains('visible')) {
+                el.classList.remove('visible');
+                btn.textContent = '▼ Pokaż szczegóły';
+            } else {
+                el.classList.add('visible');
+                btn.textContent = '▲ Ukryj szczegóły';
+            }
         },
 
         formatDuration(minutes) {
@@ -2731,41 +2780,84 @@ async load() {
             `;
         },
 
-        generateTimeline(events) {
+                generateTimeline(events) {
             if (!events || events.length === 0) return '';
             
+            const startHour = 6; 
+            const endHour = 18;
+            const totalMinutes = (endHour - startHour) * 60;
             const dayStart = new Date();
-            dayStart.setHours(7, 0, 0, 0);
-            const totalMinutes = 480; 
+            dayStart.setHours(startHour, 0, 0, 0);
 
-            return events.map(event => {
+            // Sortuj eventy chronologicznie
+            events.sort((a, b) => new Date(a.start) - new Date(b.start));
+
+            // Algorytm pakowania w rzędy (jak Tetris)
+            let rows = []; 
+
+            events.forEach(event => {
                 const start = new Date(event.start);
                 const end = new Date(event.end);
                 
-                const startDiff = (start - dayStart) / 1000 / 60;
-                const duration = (end - start) / 1000 / 60;
-                
-                let left = (startDiff / totalMinutes) * 100;
-                let width = (duration / totalMinutes) * 100;
-                
-                if (left < 0) { width += left; left = 0; }
-                if (left + width > 100) width = 100 - left;
-                if (width <= 0) return '';
+                // Znajdź pierwszy wolny rząd
+                let rowIndex = -1;
+                for (let i = 0; i < rows.length; i++) {
+                    const lastEventInRow = rows[i][rows[i].length - 1];
+                    if (new Date(lastEventInRow.end) <= start) {
+                        rowIndex = i;
+                        break;
+                    }
+                }
 
-                return `
-                    <div class="timeline-bar ${event.type}" 
-                         style="left: ${left}%; width: ${width}%"
-                         data-title="${Utils.escapeHtml(event.desc)} (${Math.round(duration)} min)">
-                    </div>
-                `;
+                if (rowIndex === -1) {
+                    // Nowy rząd
+                    rows.push([event]);
+                } else {
+                    // Dodaj do istniejącego
+                    rows[rowIndex].push(event);
+                }
+            });
+
+            // Renderowanie
+            return rows.map((row, rowIndex) => {
+                const height = 100 / rows.length; // Dzielimy wysokość na rzędy
+                const top = rowIndex * height;
+                
+                return row.map(event => {
+                    const start = new Date(event.start);
+                    const end = new Date(event.end);
+                    
+                    const startDiff = (start - dayStart) / 1000 / 60;
+                    const duration = (end - start) / 1000 / 60;
+                    
+                    let left = (startDiff / totalMinutes) * 100;
+                    let width = (duration / totalMinutes) * 100;
+                    
+                    if (left < 0) { width += left; left = 0; }
+                    if (left + width > 100) width = 100 - left;
+                    if (width <= 0) return '';
+
+                    return `
+                        <div class="timeline-bar ${event.type}" 
+                             style="left: ${left}%; width: ${width}%; height: ${height - 2}%; top: ${top}%;"
+                             data-title="${Utils.escapeHtml(event.desc)} (${Math.round(duration)} min)">
+                        </div>
+                    `;
+                }).join('');
             }).join('');
         },
 
         // TABS
-                switchTab(tabId) {
+            switchTab(tabId) {
             // Blokada zakładki użytkownicy dla zwykłych kierowników
             if (tabId === 'users' && state.currentUser.id !== 1) {
                 Toast.warning('Brak uprawnień do zarządzania użytkownikami');
+                
+                // Jeśli już jesteśmy na innej zakładce, zostańmy tam.
+                // Jeśli nie (np. start aplikacji), idź do tasks.
+                if (state.currentTab === 'users' || !state.currentTab) {
+                    this.switchTab('tasks');
+                }
                 return;
             }
 

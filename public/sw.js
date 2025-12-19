@@ -8,11 +8,11 @@ self.addEventListener('push', function(event) {
     // Opcje powiadomienia
     const options = {
         body: data.body,
-        icon: '/icon.png', // Upewnij się że masz ikonę, albo usuń tę linię
-        badge: '/badge.png', // Mała ikona na pasku (opcjonalnie)
+        icon: '/icon.png', // Upewnij się że masz ikonę
+        badge: '/badge.png', 
         vibrate: [100, 50, 100],
         data: {
-            url: data.url || '/',
+            url: '/', // Zawsze otwieraj główną stronę
             taskId: data.taskId
         },
         tag: data.tag || 'default', // Kluczowe dla nadpisywania!
@@ -27,23 +27,22 @@ self.addEventListener('push', function(event) {
 self.addEventListener('notificationclick', function(event) {
     event.notification.close();
 
-    const urlToOpen = event.notification.data.url;
-
+    // Szukamy otwartej karty
     event.waitUntil(
         clients.matchAll({
             type: 'window',
             includeUncontrolled: true
-        }).then(function(windowClients) {
-            // Jeśli apka otwarta - skup na niej
-            for (let i = 0; i < windowClients.length; i++) {
-                const client = windowClients[i];
-                if (client.url === urlToOpen && 'focus' in client) {
+        }).then(function(clientList) {
+            // Jeśli karta jest otwarta, skup się na niej
+            for (let i = 0; i < clientList.length; i++) {
+                const client = clientList[i];
+                if (client.url.includes(self.registration.scope) && 'focus' in client) {
                     return client.focus();
                 }
             }
             // Jeśli nie - otwórz nową
             if (clients.openWindow) {
-                return clients.openWindow(urlToOpen);
+                return clients.openWindow('/');
             }
         })
     );

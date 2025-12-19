@@ -374,15 +374,35 @@ async function getTaskLogs(id, env, corsHeaders) {
 
 async function createTaskLog(id, request, env, corsHeaders) {
     const { userId, logType, message, delayReason, delayMinutes } = await request.json();
-    await env.DB.prepare('INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes) VALUES (?, ?, ?, ?, ?, ?)').bind(id, userId, logType, message, delayReason, delayMinutes).run();
+    
+    // NAPRAWA: Zamiana undefined na null
+    const safeMessage = message || null;
+    const safeReason = delayReason || null;
+    const safeMinutes = delayMinutes || null;
+
+    await env.DB.prepare(`
+        INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes) 
+        VALUES (?, ?, ?, ?, ?, ?)
+    `).bind(id, userId, logType, safeMessage, safeReason, safeMinutes).run();
+    
     if (logType === 'delay' || logType === 'problem') {
         const task = await env.DB.prepare('SELECT description FROM tasks WHERE id = ?').bind(id).first();
         const user = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first();
         const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
+        
         const title = logType === 'delay' ? '⏱️ Przestój' : '⚠️ Problem';
-        const delayLabels = { 'no_access': 'Brak dojazdu', 'waiting': 'Oczekiwanie', 'traffic': 'Korki', 'equipment': 'Problem ze sprzętem', 'weather': 'Pogoda', 'break': 'Przerwa', 'other': 'Inny' };
-        const msgText = logType === 'delay' ? `${user.name}: ${delayLabels[delayReason] || delayReason} (${delayMinutes || 0} min)` : `${user.name}: ${message}`;
-        for (const a of admins.results) await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, logType, title, msgText, id).run();
+        const delayLabels = { 
+            'no_access': 'Brak dojazdu', 'waiting': 'Oczekiwanie', 'traffic': 'Korki', 
+            'equipment': 'Problem ze sprzętem', 'weather': 'Pogoda', 'break': 'Przerwa', 'other': 'Inny' 
+        };
+        
+        const msgText = logType === 'delay' 
+            ? `${user.name}: ${delayLabels[safeReason] || safeReason} (${safeMinutes || 0} min)` 
+            : `${user.name}: ${safeMessage}`;
+        
+        for (const a of admins.results) {
+            await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, logType, title, msgText, id).run();
+        }
     }
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
@@ -427,80 +447,133 @@ async function getReports(period, env, corsHeaders) {
     `).all();
 
     const driversStats = [];
+    const now = new Date(); // Do zadań w trakcie
 
     for (const driver of drivers.results) {
+        // Pobierz zadania (również te w trakcie!)
         const tasks = await env.DB.prepare(`
             SELECT t.id, t.description, t.status, t.started_at, t.completed_at, t.scheduled_date
             FROM tasks t LEFT JOIN task_drivers td ON t.id = td.task_id
             WHERE (t.assigned_to = ? OR td.user_id = ?) ${dateCondition}
-            AND t.started_at IS NOT NULL AND t.completed_at IS NOT NULL
+            AND t.started_at IS NOT NULL
             ORDER BY t.started_at
         `).bind(driver.id, driver.id).all();
 
+        // Pobierz przestoje z dokładnym czasem
         const delays = await env.DB.prepare(`
-            SELECT tl.delay_minutes, tl.created_at FROM task_logs tl
+            SELECT tl.delay_minutes, tl.delay_reason, tl.created_at, t.id as task_id 
+            FROM task_logs tl
             LEFT JOIN tasks t ON tl.task_id = t.id
             WHERE tl.user_id = ? AND tl.log_type = 'delay' ${dateCondition}
+            ORDER BY tl.created_at
         `).bind(driver.id).all();
 
         let workMinutes = 0;
         let delayMinutes = 0;
         let timeline = [];
-        
-        if (isSingleDay) {
-            timeline = tasks.results.map(t => ({
-                type: 'work',
-                start: t.started_at,
-                end: t.completed_at,
-                desc: t.description
-            }));
-        } else {
-            const dailyStats = {};
-            tasks.results.forEach(t => {
-                const date = t.scheduled_date;
-                if (!dailyStats[date]) dailyStats[date] = 0;
-                const start = new Date(t.started_at);
-                const end = new Date(t.completed_at);
-                const minutes = (end - start) / 1000 / 60;
-                dailyStats[date] += minutes;
-            });
-            timeline = Object.keys(dailyStats).sort().map(date => ({
-                type: 'bar',
-                date: date,
-                minutes: Math.round(dailyStats[date]),
-                percent: Math.min(100, Math.round((dailyStats[date] / 480) * 100))
-            }));
-        }
+        let details = []; // Nowa lista szczegółowa
 
+        // Przetwarzanie zadań
         tasks.results.forEach(t => {
             const start = new Date(t.started_at);
-            const end = new Date(t.completed_at);
-            workMinutes += Math.max(0, (end - start) / 1000 / 60);
+            // Jeśli w trakcie -> koniec to TERAZ
+            const end = t.completed_at ? new Date(t.completed_at) : now;
+            const duration = Math.max(0, (end - start) / 1000 / 60);
+            
+            // Kolor: niebieski (w trakcie) lub zielony (zakończone)
+            const type = t.status === 'in_progress' ? 'work-live' : 'work';
+            
+            if (isSingleDay) {
+                // Sprawdź czy w tym zadaniu był przestój
+                const taskDelays = delays.results.filter(d => d.task_id === t.id);
+                
+                // Jeśli były przestoje, musimy je "wyciąć" z paska pracy
+                // Uproszczenie: Pokażmy pasek pracy, a na nim czerwone paski przestojów
+                
+                timeline.push({
+                    type: type,
+                    start: t.started_at,
+                    end: end.toISOString(),
+                    desc: t.description,
+                    duration: Math.round(duration)
+                });
+
+                details.push({
+                    time: start.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}),
+                    desc: t.description,
+                    duration: Math.round(duration),
+                    type: type
+                });
+
+                taskDelays.forEach(d => {
+                    const delayStart = new Date(d.created_at);
+                    const delayEnd = new Date(delayStart.getTime() + d.delay_minutes * 60000);
+                    
+                    timeline.push({
+                        type: 'delay',
+                        start: d.created_at,
+                        end: delayEnd.toISOString(),
+                        desc: d.delay_reason,
+                        duration: d.delay_minutes
+                    });
+
+                    details.push({
+                        time: delayStart.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}),
+                        desc: `Przestój: ${d.delay_reason}`,
+                        duration: d.delay_minutes,
+                        type: 'delay'
+                    });
+                });
+            } else {
+                // Logika dla tygodnia/miesiąca (słupki) - bez zmian
+                // (Kod skrócony, ale tu powinna być logika dailyStats z poprzedniej wersji)
+                // Przywracam logikę dailyStats:
+                const date = t.scheduled_date;
+                const existingBar = timeline.find(x => x.date === date);
+                if (existingBar) {
+                    existingBar.minutes += Math.round(duration);
+                    existingBar.percent = Math.min(100, Math.round((existingBar.minutes / 480) * 100));
+                } else {
+                    timeline.push({
+                        type: 'bar',
+                        date: date,
+                        minutes: Math.round(duration),
+                        percent: Math.min(100, Math.round(duration / 480 * 100))
+                    });
+                }
+            }
+
+            workMinutes += duration;
         });
 
         delays.results.forEach(d => delayMinutes += (d.delay_minutes || 0));
 
+        // KPI
         let targetMinutes = 0;
         if (isSingleDay) {
             const [startH, startM] = (driver.work_start || '07:00').split(':');
             const [endH, endM] = (driver.work_end || '15:00').split(':');
             targetMinutes = Math.max(0, ((parseInt(endH) * 60 + parseInt(endM)) - (parseInt(startH) * 60 + parseInt(startM))) - 20);
         } else {
+            // Unikalne dni pracy
             const activeDays = new Set(tasks.results.map(t => t.scheduled_date)).size;
             targetMinutes = activeDays * (480 - 20); 
         }
         
-        const efficiency = targetMinutes > 0 ? Math.min(100, Math.round((workMinutes / targetMinutes) * 100)) : 0;
+        // Od workMinutes odejmujemy przestoje (bo one były wliczone w czas trwania zadania)
+        const realWorkMinutes = Math.max(0, workMinutes - delayMinutes);
+        const efficiency = targetMinutes > 0 ? Math.min(100, Math.round((realWorkMinutes / targetMinutes) * 100)) : 0;
 
         driversStats.push({
             id: driver.id,
             name: driver.name,
             tasksCount: tasks.results.length,
-            workTime: Math.round(workMinutes),
+            workTime: Math.round(realWorkMinutes),
             delayTime: Math.round(delayMinutes),
             kpi: efficiency,
             isSingleDay: isSingleDay,
-            timeline: timeline
+            timeline: timeline,
+            details: details.sort((a,b) => a.time.localeCompare(b.time)) // Sortuj szczegóły po godzinie
         });
     }
     

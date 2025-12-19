@@ -2546,7 +2546,7 @@ textarea:focus-visible {
 /* Timeline */
 .timeline-container {
     position: relative;
-    height: 40px;
+    height: 60px; /* ZMIENIONE Z 40px */
     background: var(--bg-tertiary);
     border-radius: var(--border-radius-md);
     overflow: hidden;
@@ -2594,4 +2594,114 @@ textarea:focus-visible {
     font-size: 12px;
     white-space: nowrap;
     z-index: 10;
+}
+/* =============================================
+   32. IOS FIXES
+   ============================================= */
+/* Naprawa rozciągniętych inputów daty na iOS */
+input[type="date"],
+input[type="time"],
+input[type="datetime-local"] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-height: 44px; /* Lepszy dotyk */
+    background-color: var(--bg-tertiary);
+    display: block;
+    width: 100%;
+    box-sizing: border-box; /* Ważne! */
+}
+
+/* Wymuszenie, żeby formularze w rzędzie nie wypadały */
+.form-row .form-group {
+    min-width: 0; /* Zapobiega wypychaniu flexa */
+}
+
+/* Wyśrodkowanie tekstu w dacie na iOS */
+input[type="date"] {
+    text-align: center;
+}
+/* Nowy kolor dla zadań w trakcie */
+.timeline-bar.work-live {
+    background: var(--info); /* Niebieski */
+    opacity: 0.9;
+    background-image: linear-gradient(45deg,rgba(255,255,255,.15) 25%,transparent 25%,transparent 50%,rgba(255,255,255,.15) 50%,rgba(255,255,255,.15) 75%,transparent 75%,transparent);
+    background-size: 1rem 1rem;
+    animation: progress-stripes 1s linear infinite;
+}
+
+@keyframes progress-stripes {
+    0% { background-position: 1rem 0; }
+    100% { background-position: 0 0; }
+}
+
+/* Przestoje na wykresie - muszą być na wierzchu */
+.timeline-bar.delay {
+    background: var(--danger);
+    opacity: 1;
+    z-index: 2;
+    border: 1px solid white;
+}
+
+/* Tabela szczegółów */
+.details-container {
+    margin-top: 15px;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    padding: 10px;
+    display: none; /* Domyślnie ukryte */
+}
+
+.details-container.visible {
+    display: block;
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.details-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 13px;
+}
+
+.details-row:last-child {
+    border-bottom: none;
+}
+
+.details-time {
+    font-weight: bold;
+    color: var(--text-secondary);
+    width: 50px;
+}
+
+.details-desc {
+    flex: 1;
+    padding: 0 10px;
+}
+
+.details-duration {
+    font-weight: bold;
+}
+
+.details-row.type-delay {
+    color: var(--danger);
+}
+
+.details-row.type-work-live {
+    color: var(--info);
+}
+
+.btn-toggle-details {
+    width: 100%;
+    margin-top: 10px;
+    font-size: 12px;
+    padding: 5px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-secondary);
 }
