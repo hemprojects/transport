@@ -135,6 +135,8 @@ async function handleAPI(request, env, path, corsHeaders) {
 
     // PUSH SUBSCRIPTION
     if (path === '/api/push/subscribe' && method === 'POST') return await subscribePush(request, env, corsHeaders, userId);
+        // PUSHY
+    if (path === '/api/pushy/register' && method === 'POST') return await registerPushyToken(request, env, corsHeaders, userId);
 
     // USERS
     if (path === '/api/users' && method === 'GET') return await getUsers(env, corsHeaders);
@@ -308,6 +310,7 @@ async function createTask(request, env, corsHeaders, userId) {
     for (const d of drivers.results) {
         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(d.id, 'new_task', 'Nowe zadanie', `Dodano: ${data.description}`, taskId).run();
         await sendPush(d.id, { title: 'Nowe zadanie', body: data.description, tag: `task-${taskId}` }, env);
+        await sendPushyNotification(driver.id, 'Nowe zadanie', `Dodano: ${data.description}`, { taskId }, env);
     }
     return new Response(JSON.stringify({ id: taskId, success: true }), { headers: corsHeaders });
 }
@@ -343,6 +346,7 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     const statusText = status === 'in_progress' ? 'rozpoczęte' : status === 'completed' ? 'zakończone' : status;
     for (const a of admins.results) {
         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, 'status_change', 'Zmiana statusu', `"${task.description}" - ${statusText}`, id).run();
+        await sendPushyNotification(a.id, 'Zmiana statusu', `"${task.description}" - ${statusText}`, { taskId: id }, env);
     }
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
@@ -402,6 +406,7 @@ async function createTaskLog(id, request, env, corsHeaders) {
         
         for (const a of admins.results) {
             await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, logType, title, msgText, id).run();
+            await sendPushyNotification(task.assigned_to, 'Ktoś dołączył', `${user.name} dołączył do zadania`, { taskId: id }, env);
         }
     }
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
@@ -579,4 +584,59 @@ async function getReports(period, env, corsHeaders) {
     
     driversStats.sort((a, b) => b.kpi - a.kpi);
     return new Response(JSON.stringify({ drivers: driversStats }), { headers: corsHeaders });
+}
+// =============================================
+// PUSHY SERVICE
+// =============================================
+
+async function registerPushyToken(request, env, corsHeaders, userId) {
+    const { token } = await request.json();
+    // Zapisz token, usuń stare dla tego usera (opcjonalnie można trzymać wiele urządzeń)
+    await env.DB.prepare('INSERT OR REPLACE INTO pushy_tokens (user_id, token) VALUES (?, ?)').bind(userId, token).run();
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+}
+
+async function sendPushyNotification(userIds, title, message, data, env) {
+    // userIds może być pojedynczym ID lub tablicą
+    const ids = Array.isArray(userIds) ? userIds : [userIds];
+    if (ids.length === 0) return;
+
+    // Pobierz tokeny Pushy dla tych użytkowników
+    // D1 nie obsługuje "WHERE IN" z tablicą w prosty sposób, więc robimy pętlę (dla małej skali OK)
+    // Lub pobieramy tokeny pojedynczo.
+    
+    const tokens = [];
+    for (const uid of ids) {
+        const results = await env.DB.prepare('SELECT token FROM pushy_tokens WHERE user_id = ?').bind(uid).all();
+        results.results.forEach(r => tokens.push(r.token));
+    }
+
+    if (tokens.length === 0) return;
+
+    // Wyślij do API Pushy
+    const payload = {
+        to: tokens,
+        data: {
+            title: title,
+            message: message,
+            url: '/', // Otwórz apkę
+            ...data
+        },
+        notification: {
+            body: message,
+            badge: 1,
+            sound: "ping.aiff"
+        }
+    };
+
+    try {
+        await fetch(`https://api.pushy.me/push?api_key=${env.PUSHY_SECRET_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        console.log('Pushy sent to', tokens.length, 'devices');
+    } catch (e) {
+        console.error('Pushy error:', e);
+    }
 }

@@ -2983,6 +2983,7 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
 
         await new Promise(resolve => setTimeout(resolve, 500));
         await Auth.init();
+        PushyService.init(); 
 
         console.log('✅ TransportTracker ready!');
     }
@@ -2992,9 +2993,39 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
     } else {
         init();
     }
+    
+    // =============================================
+    // 16. PUSHY INTEGRATION
+    // =============================================
+    const PushyService = {
+        init() {
+            if (!window.Pushy) return;
+            
+            // Wpisz tutaj swój APP ID z Pushy.me!
+            const PUSHY_APP_ID = '6945736ee5ab0cc758910885'; 
+
+            Pushy.register({ appId: PUSHY_APP_ID }).then(async (deviceToken) => {
+                console.log('Pushy token:', deviceToken);
+                
+                if (state.currentUser) {
+                    try {
+                        await API.request('/pushy/register', {
+                            method: 'POST',
+                            body: { token: deviceToken }
+                        });
+                        console.log('Pushy registered with backend');
+                    } catch (e) {
+                        console.error('Pushy backend sync failed', e);
+                    }
+                }
+            }).catch((err) => {
+                console.error('Pushy registration failed:', err);
+            });
+        }
+    };
 
     // =============================================
-    // 16. EXPORT
+    // 17. EXPORT
     // =============================================
     window.TransportTracker = {
         state,
