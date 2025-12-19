@@ -3008,15 +3008,19 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
     // =============================================
     // 16. PUSHY INTEGRATION
     // =============================================
-    const PushyService = {
+        const PushyService = {
         init() {
-            if (!window.Pushy) return;
+            if (!window.Pushy) {
+                // alert('Pushy SDK not loaded!'); // Odkomentuj do testów
+                return;
+            }
             
-            // Wpisz tutaj swój APP ID z Pushy.me!
             const PUSHY_APP_ID = '6945736ee5ab0cc758910885'; 
 
-            Pushy.register({ appId: PUSHY_APP_ID }).then(async (deviceToken) => {
-                console.log('Pushy token:', deviceToken);
+            // Dodaj serviceWorkerUrl
+            Pushy.register({ appId: PUSHY_APP_ID, serviceWorkerUrl: '/service-worker.js' })
+            .then(async (deviceToken) => {
+                // alert('Pushy Token: ' + deviceToken); // DEBUG
                 
                 if (state.currentUser) {
                     try {
@@ -3024,13 +3028,13 @@ Utils.$('#next-day-btn')?.addEventListener('click', () => this.changeDate(1));
                             method: 'POST',
                             body: { token: deviceToken }
                         });
-                        console.log('Pushy registered with backend');
+                        // alert('Pushy zarejestrowane w bazie!');
                     } catch (e) {
-                        console.error('Pushy backend sync failed', e);
+                        alert('Błąd API Pushy: ' + e.message);
                     }
                 }
             }).catch((err) => {
-                console.error('Pushy registration failed:', err);
+                alert('Błąd Pushy Register: ' + err.message);
             });
         }
     };
