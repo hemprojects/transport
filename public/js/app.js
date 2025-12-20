@@ -3562,7 +3562,7 @@ const PushyService = {
         try {
             // 3. Zarejestruj Service Worker
             console.log('📱 Registering Service Worker...');
-            await navigator.serviceWorker.register('/sw.js');
+            await navigator.serviceWorker.register('/service-worker.js');
             await navigator.serviceWorker.ready;
             console.log('✅ Service Worker ready');
 
