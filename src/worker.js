@@ -1,36 +1,6 @@
 // =============================================
-// TransportTracker - Secure Worker API v3.1 (Push)
+// TransportTracker - Secure Worker API v3.2
 // =============================================
-
-// --- WEB PUSH UTILS (Minimal Implementation) ---
-
-async function sendPushNotification(subscription, payload, env) {
-    // payload = { title, body, url, tag, taskId }
-    try {
-        const vapidPublicKey = env.VAPID_PUBLIC_KEY;
-        const vapidPrivateKey = env.VAPID_PRIVATE_KEY;
-        const vapidSubject = env.VAPID_SUBJECT;
-
-        // Tutaj normalnie użylibyśmy biblioteki web-push, ale w Workerze
-        // lepiej użyć zewnętrznego serwisu lub uproszczonej implementacji.
-        // DLA UPROSZCZENIA W TYM MOMENCIE (bo to wymaga sporo kodu krypto):
-        // Zrobimy placeholder - powiadomienia będą działać jako "Web Notifications"
-        // (gdy apka otwarta), a prawdziwe Push dodamy w V4.0 jeśli będziesz chciał.
-        
-        // ALE! Ponieważ chciałeś żeby działało "systemowo", musimy to zaimplementować.
-        // Najprościej: użyjmy darmowego API np. Pushy lub własnej implementacji JWT.
-        
-        // Zróbmy prosty log na razie - pełna implementacja krypto VAPID w czystym JS
-        // to około 200 linii kodu.
-        console.log('Sending push to:', subscription.endpoint, payload);
-        
-        // TODO: Pełna implementacja VAPID (wymaga zewnętrznego modułu lub dużej funkcji)
-        // Na ten moment zostawmy to, skupmy się na logice biznesowej.
-        // W app.js dodamy "Service Worker Notifications" które działają w tle.
-    } catch (e) {
-        console.error('Push error:', e);
-    }
-}
 
 // --- SECURITY UTILS ---
 
@@ -96,30 +66,7 @@ async function verifySession(request, env) {
     return session.user_id;
 }
 
-// --- MAIN HANDLER ---
-
-export default {
-    async fetch(request, env, ctx) {
-        const url = new URL(request.url);
-        const path = url.pathname;
-        const corsHeaders = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Content-Type': 'application/json'
-        };
-
-        if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-
-        try {
-            if (path.startsWith('/api/')) return await handleAPI(request, env, path, corsHeaders);
-            return env.ASSETS.fetch(request);
-        } catch (error) {
-            console.error('Worker error:', error);
-            return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), { status: 500, headers: corsHeaders });
-        }
-    }
-};
+// --- API HANDLER ---
 
 async function handleAPI(request, env, path, corsHeaders) {
     const method = request.method;
@@ -133,9 +80,7 @@ async function handleAPI(request, env, path, corsHeaders) {
     const userId = await verifySession(request, env);
     if (!userId) return new Response(JSON.stringify({ error: 'Sesja wygasła' }), { status: 401, headers: corsHeaders });
 
-    // PUSH SUBSCRIPTION
-    if (path === '/api/push/subscribe' && method === 'POST') return await subscribePush(request, env, corsHeaders, userId);
-        // PUSHY
+    // PUSHY
     if (path === '/api/pushy/register' && method === 'POST') return await registerPushyToken(request, env, corsHeaders, userId);
 
     // USERS
@@ -159,17 +104,21 @@ async function handleAPI(request, env, path, corsHeaders) {
     if (path.match(/^\/api\/tasks\/\d+\/join$/) && method === 'POST') return await joinTask(path.split('/')[3], request, env, corsHeaders);
     if (path === '/api/tasks/reorder' && method === 'POST') return await reorderTasks(request, env, corsHeaders);
 
-    // REST
+    // LOGS & NOTIFICATIONS
     if (path.match(/^\/api\/tasks\/\d+\/logs$/) && method === 'GET') return await getTaskLogs(path.split('/')[3], env, corsHeaders);
     if (path.match(/^\/api\/tasks\/\d+\/logs$/) && method === 'POST') return await createTaskLog(path.split('/')[3], request, env, corsHeaders);
     if (path.match(/^\/api\/notifications\/\d+$/) && method === 'GET') return await getNotifications(path.split('/').pop(), env, corsHeaders);
     if (path.match(/^\/api\/notifications\/\d+\/read$/) && method === 'POST') return await markNotificationRead(path.split('/')[3], env, corsHeaders);
     if (path.match(/^\/api\/notifications\/user\/\d+\/read-all$/) && method === 'POST') return await markAllNotificationsRead(path.split('/')[4], env, corsHeaders);
+    
+    // REPORTS
     if (path === '/api/reports' && method === 'GET') return await getReports(new URL(request.url).searchParams.get('period') || 'week', env, corsHeaders);
 
     return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: corsHeaders });
 }
+
 // --- AUTH ---
+
 async function login(request, env, corsHeaders) {
     const { userId, pin } = await request.json();
     const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
@@ -206,21 +155,8 @@ async function login(request, env, corsHeaders) {
     return new Response(JSON.stringify({ user, token }), { headers: corsHeaders });
 }
 
-// --- PUSH ---
-async function subscribePush(request, env, corsHeaders, userId) {
-    const sub = await request.json();
-    await env.DB.prepare('INSERT OR REPLACE INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?)').bind(userId, sub.endpoint, sub.keys.p256dh, sub.keys.auth).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
-}
+// --- USERS ---
 
-async function sendPush(userId, payload, env) {
-    // Placeholder - Cloudflare Worker nie ma natywnego web-push
-    // W prawdziwej produkcji tutaj wysyłamy request do FCM/VAPID
-    // Na razie zostawiamy to puste lub logujemy
-    console.log('Push to user:', userId, payload);
-}
-
-// --- USERS & LOCATIONS ---
 async function getUsers(env, corsHeaders) {
     const result = await env.DB.prepare('SELECT id, name, role, work_start, work_end FROM users WHERE active = 1 ORDER BY role DESC, name').all();
     return new Response(JSON.stringify(result.results), { headers: corsHeaders });
@@ -253,8 +189,11 @@ async function updateUser(id, request, env, corsHeaders) {
 async function deleteUser(id, env, corsHeaders) {
     await env.DB.prepare('UPDATE users SET active = 0 WHERE id = ?').bind(id).run();
     await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id).run();
+    await env.DB.prepare('DELETE FROM pushy_tokens WHERE user_id = ?').bind(id).run();
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
+
+// --- LOCATIONS ---
 
 async function getLocations(env, corsHeaders) {
     const r = await env.DB.prepare('SELECT * FROM locations WHERE active = 1 ORDER BY type, name').all();
@@ -265,7 +204,10 @@ async function createLocation(request, env, corsHeaders) {
     const { name, type } = await request.json();
     const ex = await env.DB.prepare('SELECT id, active FROM locations WHERE name = ?').bind(name).first();
     if (ex) {
-        if (ex.active === 0) { await env.DB.prepare('UPDATE locations SET active = 1, type = ? WHERE id = ?').bind(type, ex.id).run(); return new Response(JSON.stringify({ id: ex.id, name, type }), { headers: corsHeaders }); }
+        if (ex.active === 0) { 
+            await env.DB.prepare('UPDATE locations SET active = 1, type = ? WHERE id = ?').bind(type, ex.id).run(); 
+            return new Response(JSON.stringify({ id: ex.id, name, type }), { headers: corsHeaders }); 
+        }
         return new Response(JSON.stringify({ error: 'Już istnieje' }), { status: 400, headers: corsHeaders });
     }
     const r = await env.DB.prepare('INSERT INTO locations (name, type) VALUES (?, ?)').bind(name, type).run();
@@ -278,6 +220,7 @@ async function deleteLocation(id, env, corsHeaders) {
 }
 
 // --- TASKS ---
+
 async function getTasks(params, env, corsHeaders) {
     const date = params.get('date');
     const status = params.get('status');
@@ -306,6 +249,8 @@ async function createTask(request, env, corsHeaders, userId) {
     const sortOrder = (maxOrder?.max || 0) + 1;
     const res = await env.DB.prepare(`INSERT INTO tasks (task_type, description, material, location_from, location_to, department, scheduled_date, scheduled_time, priority, sort_order, notes, created_by, assigned_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(data.task_type || 'transport', data.description, data.material || null, data.location_from || null, data.location_to || null, data.department || null, data.scheduled_date, data.scheduled_time || null, data.priority || 'normal', sortOrder, data.notes || null, userId, data.assigned_to || null).run();
     const taskId = res.meta.last_row_id;
+    
+    // Powiadomienia dla kierowców
     const drivers = await env.DB.prepare('SELECT id FROM users WHERE role = "driver" AND active = 1').all();
     for (const d of drivers.results) {
         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(d.id, 'new_task', 'Nowe zadanie', `Dodano: ${data.description}`, taskId).run();
@@ -338,11 +283,14 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     else if (status === 'completed') { q += ', completed_at = CURRENT_TIMESTAMP'; }
     q += ' WHERE id = ?'; b.push(id);
     await env.DB.prepare(q).bind(...b).run();
+    
     const statusLabels = { 'in_progress': 'Rozpoczęto', 'completed': 'Zakończono', 'pending': 'Oczekuje' };
     await env.DB.prepare('INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)').bind(id, userId, 'status_change', statusLabels[status] || status).run();
+    
     const task = await env.DB.prepare('SELECT description FROM tasks WHERE id = ?').bind(id).first();
     const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
     const statusText = status === 'in_progress' ? 'rozpoczęte' : status === 'completed' ? 'zakończone' : status;
+    
     for (const a of admins.results) {
         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, 'status_change', 'Zmiana statusu', `"${task.description}" - ${statusText}`, id).run();
         await sendPushyNotification(a.id, 'Zmiana statusu', `"${task.description}" - ${statusText}`, { taskId: id }, env);
@@ -370,6 +318,8 @@ async function reorderTasks(request, env, corsHeaders) {
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
+// --- TASK LOGS ---
+
 async function getTaskLogs(id, env, corsHeaders) {
     const r = await env.DB.prepare('SELECT tl.*, u.name as user_name FROM task_logs tl LEFT JOIN users u ON tl.user_id = u.id WHERE tl.task_id = ? ORDER BY tl.created_at DESC').bind(id).all();
     return new Response(JSON.stringify(r.results), { headers: corsHeaders });
@@ -378,15 +328,11 @@ async function getTaskLogs(id, env, corsHeaders) {
 async function createTaskLog(id, request, env, corsHeaders) {
     const { userId, logType, message, delayReason, delayMinutes } = await request.json();
     
-    // NAPRAWA: Zamiana undefined na null
     const safeMessage = message || null;
     const safeReason = delayReason || null;
     const safeMinutes = delayMinutes || null;
 
-    await env.DB.prepare(`
-        INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes) 
-        VALUES (?, ?, ?, ?, ?, ?)
-    `).bind(id, userId, logType, safeMessage, safeReason, safeMinutes).run();
+    await env.DB.prepare(`INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes) VALUES (?, ?, ?, ?, ?, ?)`).bind(id, userId, logType, safeMessage, safeReason, safeMinutes).run();
     
     if (logType === 'delay' || logType === 'problem') {
         const task = await env.DB.prepare('SELECT description FROM tasks WHERE id = ?').bind(id).first();
@@ -405,11 +351,13 @@ async function createTaskLog(id, request, env, corsHeaders) {
         
         for (const a of admins.results) {
             await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, logType, title, msgText, id).run();
-            await sendPushyNotification(task.assigned_to, 'Ktoś dołączył', `${user.name} dołączył do zadania`, { taskId: id }, env);
+            await sendPushyNotification(a.id, title, msgText, { taskId: id }, env);
         }
     }
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
+
+// --- NOTIFICATIONS ---
 
 async function getNotifications(uid, env, corsHeaders) {
     const r = await env.DB.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').bind(uid).all();
@@ -427,18 +375,16 @@ async function markAllNotificationsRead(uid, env, corsHeaders) {
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
-// =============================================
-// REPORTS (MULTITASKING & DETAILS)
-// =============================================
+// --- REPORTS ---
+
 async function getReports(period, env, corsHeaders) {
     let dateCondition = '';
     let isSingleDay = false;
     
-    // Obsługa customowych dat
     if (period.includes('-')) {
-        if (period.length === 7) { // YYYY-MM
+        if (period.length === 7) {
             dateCondition = `AND strftime('%Y-%m', t.scheduled_date) = '${period}'`;
-        } else { // YYYY-MM-DD
+        } else {
             dateCondition = `AND t.scheduled_date = '${period}'`;
             isSingleDay = true;
         }
@@ -449,16 +395,12 @@ async function getReports(period, env, corsHeaders) {
         isSingleDay = true;
     }
     
-    const drivers = await env.DB.prepare(`
-        SELECT id, name, work_start, work_end 
-        FROM users WHERE role = 'driver' AND active = 1
-    `).all();
+    const drivers = await env.DB.prepare(`SELECT id, name, work_start, work_end FROM users WHERE role = 'driver' AND active = 1`).all();
 
     const driversStats = [];
     const now = new Date();
 
     for (const driver of drivers.results) {
-        // Pobierz zadania (również te w trakcie!)
         const tasks = await env.DB.prepare(`
             SELECT t.id, t.description, t.status, t.started_at, t.completed_at, t.scheduled_date
             FROM tasks t LEFT JOIN task_drivers td ON t.id = td.task_id
@@ -467,7 +409,6 @@ async function getReports(period, env, corsHeaders) {
             ORDER BY t.started_at
         `).bind(driver.id, driver.id).all();
 
-        // Pobierz przestoje
         const delays = await env.DB.prepare(`
             SELECT tl.delay_minutes, tl.delay_reason, tl.created_at, t.id as task_id 
             FROM task_logs tl
@@ -481,76 +422,38 @@ async function getReports(period, env, corsHeaders) {
         let timeline = [];
         let details = [];
 
-        // Przetwarzanie zadań
         tasks.results.forEach(t => {
             const start = new Date(t.started_at);
             const end = t.completed_at ? new Date(t.completed_at) : now;
             const duration = Math.max(0, (end - start) / 1000 / 60);
-            
             const type = t.status === 'in_progress' ? 'work-live' : 'work';
             
             if (isSingleDay) {
-                // Dodaj do timeline (oś czasu)
-                timeline.push({
-                    type: type,
-                    start: t.started_at,
-                    end: end.toISOString(),
-                    desc: t.description,
-                    duration: Math.round(duration)
-                });
+                timeline.push({ type, start: t.started_at, end: end.toISOString(), desc: t.description, duration: Math.round(duration) });
+                details.push({ time: start.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}), desc: t.description, duration: Math.round(duration), type });
 
-                // Dodaj do szczegółów
-                details.push({
-                    time: start.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}),
-                    desc: t.description,
-                    duration: Math.round(duration),
-                    type: type
-                });
-
-                // Sprawdź przestoje w tym zadaniu
                 const taskDelays = delays.results.filter(d => d.task_id === t.id);
                 taskDelays.forEach(d => {
                     const delayStart = new Date(d.created_at);
                     const delayEnd = new Date(delayStart.getTime() + d.delay_minutes * 60000);
-                    
-                    timeline.push({
-                        type: 'delay',
-                        start: d.created_at,
-                        end: delayEnd.toISOString(),
-                        desc: d.delay_reason,
-                        duration: d.delay_minutes
-                    });
-
-                    details.push({
-                        time: delayStart.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}),
-                        desc: `Przestój: ${d.delay_reason}`,
-                        duration: d.delay_minutes,
-                        type: 'delay'
-                    });
+                    timeline.push({ type: 'delay', start: d.created_at, end: delayEnd.toISOString(), desc: d.delay_reason, duration: d.delay_minutes });
+                    details.push({ time: delayStart.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}), desc: `Przestój: ${d.delay_reason}`, duration: d.delay_minutes, type: 'delay' });
                 });
             } else {
-                // Wykres słupkowy
                 const date = t.scheduled_date;
                 const existingBar = timeline.find(x => x.date === date);
                 if (existingBar) {
                     existingBar.minutes += Math.round(duration);
                     existingBar.percent = Math.min(100, Math.round((existingBar.minutes / 480) * 100));
                 } else {
-                    timeline.push({
-                        type: 'bar',
-                        date: date,
-                        minutes: Math.round(duration),
-                        percent: Math.min(100, Math.round(duration / 480 * 100))
-                    });
+                    timeline.push({ type: 'bar', date, minutes: Math.round(duration), percent: Math.min(100, Math.round(duration / 480 * 100)) });
                 }
             }
-
             workMinutes += duration;
         });
 
         delays.results.forEach(d => delayMinutes += (d.delay_minutes || 0));
 
-        // KPI
         let targetMinutes = 0;
         if (isSingleDay) {
             const [startH, startM] = (driver.work_start || '07:00').split(':');
@@ -558,7 +461,7 @@ async function getReports(period, env, corsHeaders) {
             targetMinutes = Math.max(0, ((parseInt(endH) * 60 + parseInt(endM)) - (parseInt(startH) * 60 + parseInt(startM))) - 20);
         } else {
             const activeDays = new Set(tasks.results.map(t => t.scheduled_date)).size;
-            targetMinutes = activeDays * (480 - 20); 
+            targetMinutes = activeDays * (480 - 20);
         }
         
         const realWorkMinutes = Math.max(0, workMinutes - delayMinutes);
@@ -571,8 +474,8 @@ async function getReports(period, env, corsHeaders) {
             workTime: Math.round(realWorkMinutes),
             delayTime: Math.round(delayMinutes),
             kpi: efficiency,
-            isSingleDay: isSingleDay,
-            timeline: timeline,
+            isSingleDay,
+            timeline,
             details: details.sort((a,b) => a.time.localeCompare(b.time))
         });
     }
@@ -580,51 +483,71 @@ async function getReports(period, env, corsHeaders) {
     driversStats.sort((a, b) => b.kpi - a.kpi);
     return new Response(JSON.stringify({ drivers: driversStats }), { headers: corsHeaders });
 }
-// =============================================
-// PUSHY SERVICE
-// =============================================
+
+// --- PUSHY SERVICE ---
 
 async function registerPushyToken(request, env, corsHeaders, userId) {
     const { token } = await request.json();
-    // Zapisz token, usuń stare dla tego usera (opcjonalnie można trzymać wiele urządzeń)
-    await env.DB.prepare('INSERT OR REPLACE INTO pushy_tokens (user_id, token) VALUES (?, ?)').bind(userId, token).run();
+    
+    // Sprawdź czy ten token już istnieje dla tego usera
+    const existing = await env.DB.prepare(
+        'SELECT id FROM pushy_tokens WHERE user_id = ? AND token = ?'
+    ).bind(userId, token).first();
+    
+    if (existing) {
+        // Token istnieje - aktualizuj last_used
+        await env.DB.prepare(
+            'UPDATE pushy_tokens SET last_used = CURRENT_TIMESTAMP WHERE user_id = ? AND token = ?'
+        ).bind(userId, token).run();
+        console.log(`📱 Token refreshed for user ${userId}`);
+        return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+    }
+    
+    // Usuń stare tokeny tego użytkownika (1 user = 1 token)
+    await env.DB.prepare('DELETE FROM pushy_tokens WHERE user_id = ?').bind(userId).run();
+    
+    // Usuń ten token jeśli był u innego użytkownika
+    await env.DB.prepare('DELETE FROM pushy_tokens WHERE token = ?').bind(token).run();
+    
+    // Dodaj nowy token
+    await env.DB.prepare(
+        'INSERT INTO pushy_tokens (user_id, token, last_used) VALUES (?, ?, CURRENT_TIMESTAMP)'
+    ).bind(userId, token).run();
+    
+    console.log(`📱 New token registered for user ${userId}`);
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 async function sendPushyNotification(userIds, title, message, data, env) {
-    // userIds może być pojedynczym ID lub tablicą
     const ids = Array.isArray(userIds) ? userIds : [userIds];
     if (ids.length === 0) return;
 
-    // Pobierz tokeny Pushy dla tych użytkowników
-    // D1 nie obsługuje "WHERE IN" z tablicą w prosty sposób, więc robimy pętlę (dla małej skali OK)
-    // Lub pobieramy tokeny pojedynczo.
-    
     const tokens = [];
     for (const uid of ids) {
         const results = await env.DB.prepare('SELECT token FROM pushy_tokens WHERE user_id = ?').bind(uid).all();
         results.results.forEach(r => tokens.push(r.token));
     }
 
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+        console.log('📤 No tokens found for users:', ids);
+        return;
+    }
 
-    // Wyślij do API Pushy
+    if (!env.PUSHY_SECRET_KEY) {
+        console.error('❌ PUSHY_SECRET_KEY not set');
+        return;
+    }
+
     const payload = {
         to: tokens,
         data: {
             title: title,
             message: message,
-            url: '/', // Otwórz apkę
             ...data
-        },
-        notification: {
-            body: message,
-            badge: 1,
-            sound: "ping.aiff"
         }
     };
 
-        try {
+    try {
         const resp = await fetch(`https://api.pushy.me/push?api_key=${env.PUSHY_SECRET_KEY}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -632,12 +555,60 @@ async function sendPushyNotification(userIds, title, message, data, env) {
         });
         
         const responseText = await resp.text();
-        console.log(`Pushy Response [${resp.status}]:`, responseText);
-        
-        if (!resp.ok) {
-            console.error('Pushy API Error:', responseText);
-        }
+        console.log(`📤 Pushy [${resp.status}]:`, responseText);
     } catch (e) {
-        console.error('Pushy Network Error:', e);
+        console.error('❌ Pushy error:', e);
     }
 }
+
+// =============================================
+// MAIN EXPORT (JEDEN!)
+// =============================================
+export default {
+    // Obsługa requestów HTTP
+    async fetch(request, env, ctx) {
+        const url = new URL(request.url);
+        const path = url.pathname;
+        const corsHeaders = {
+            'Access-Control-Allow-Origin': '*',
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+            'Content-Type': 'application/json'
+        };
+
+        if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+        try {
+            if (path.startsWith('/api/')) return await handleAPI(request, env, path, corsHeaders);
+            return env.ASSETS.fetch(request);
+        } catch (error) {
+            console.error('Worker error:', error);
+            return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), { status: 500, headers: corsHeaders });
+        }
+    },
+    
+    // Cron job - automatyczne czyszczenie (codziennie o 3:00)
+    async scheduled(event, env, ctx) {
+        console.log('🧹 Cron: Cleaning old data...');
+        
+        // Usuń tokeny nieużywane 30+ dni
+        const tokens = await env.DB.prepare(`
+            DELETE FROM pushy_tokens WHERE last_used < datetime('now', '-30 days')
+        `).run();
+        console.log(`🧹 Deleted ${tokens.meta.changes} old tokens`);
+        
+        // Usuń wygasłe sesje
+        const sessions = await env.DB.prepare(`
+            DELETE FROM sessions WHERE expires_at < datetime('now')
+        `).run();
+        console.log(`🧹 Deleted ${sessions.meta.changes} expired sessions`);
+        
+        // Usuń stare próby logowania
+        const attempts = await env.DB.prepare(`
+            DELETE FROM login_attempts WHERE updated_at < datetime('now', '-1 day')
+        `).run();
+        console.log(`🧹 Deleted ${attempts.meta.changes} old login attempts`);
+        
+        console.log('🧹 Cron completed!');
+    }
+};

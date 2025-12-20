@@ -3502,17 +3502,42 @@
     TaskForm.initEventListeners();
     AdminPanel.initEventListeners();
 
+    // DODAJ TO: Nasłuchuj wiadomości z Service Workera
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.addEventListener('message', (event) => {
+            console.log('📬 Message from SW:', event.data);
+            
+            if (event.data.type === 'PUSH_RECEIVED') {
+                // Pokaż toast
+                Toast.info(event.data.data.message || event.data.data.title || 'Nowe powiadomienie');
+                
+                // Odśwież powiadomienia i badge
+                Notifications.load();
+                
+                // Odśwież listę zadań
+                if (state.currentUser?.role === 'driver') {
+                    DriverPanel.loadTasks(true);
+                } else if (state.currentUser?.role === 'admin') {
+                    AdminPanel.loadTasks(true);
+                }
+            }
+            
+            if (event.data.type === 'NOTIFICATION_CLICK' && event.data.taskId) {
+                // Otwórz szczegóły zadania
+                if (state.currentUser?.role === 'driver') {
+                    DriverPanel.openTaskDetails(event.data.taskId);
+                } else if (state.currentUser?.role === 'admin') {
+                    AdminPanel.openTaskDetails(event.data.taskId);
+                }
+            }
+        });
+    }
+
     await new Promise((resolve) => setTimeout(resolve, 500));
     await Auth.init();
 
     console.log("✅ TransportTracker ready!");
-  }
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
+}
 
 // =============================================
 // 16. PUSHY INTEGRATION (SIMPLIFIED)
