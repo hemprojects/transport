@@ -656,26 +656,42 @@
   // =============================================
   const Notifications = {
     async requestPermission() {
-      if (!("Notification" in window)) return false;
+    if (!("Notification" in window)) {
+        Toast.warning('Twoja przeglądarka nie obsługuje powiadomień');
+        return false;
+    }
 
-      // Zawsze próbuj zarejestrować Pushy, jeśli jest zgoda
-      if (Notification.permission === "granted") {
-        console.log("Permission already granted, registering Pushy...");
-        PushyService.init(); // <--- TO JEST KLUCZOWE
+    // Już mamy zgodę - rejestruj
+    if (Notification.permission === "granted") {
+        const token = await PushyService.init();
+        if (token) {
+            Toast.success('Powiadomienia włączone! 🔔');
+        }
         return true;
-      }
+    }
 
-      // Jeśli nie ma zgody, zapytaj
-      if (Notification.permission !== "denied") {
+    // Zablokowane - poinstruuj użytkownika
+    if (Notification.permission === "denied") {
+        Toast.warning('Powiadomienia zablokowane. Włącz je w ustawieniach przeglądarki, potem kliknij dzwoneczek ponownie.');
+        return false;
+    }
+
+    // Brak decyzji - zapytaj
+    if (Notification.permission === "default") {
         const permission = await Notification.requestPermission();
         if (permission === "granted") {
-          PushyService.init();
-          return true;
+            const token = await PushyService.init();
+            if (token) {
+                Toast.success('Powiadomienia włączone! 🔔');
+            }
+            return true;
+        } else {
+            Toast.warning('Powiadomienia zablokowane. Możesz je włączyć w ustawieniach przeglądarki.');
         }
-      }
+    }
 
-      return false;
-    },
+    return false;
+},
 
     async load() {
       if (!state.currentUser) return;
@@ -1094,13 +1110,20 @@
         this.initDriverPanel();
     }
 
-    // WAŻNE: Zawsze próbuj zarejestrować Pushy po zalogowaniu
-    // (z małym opóźnieniem żeby UI się załadował)
-    setTimeout(() => {
+    // Powiadomienia push
+    setTimeout(async () => {
         console.log('🔔 Initializing push notifications...');
-        PushyService.init();
+        
+        if (Notification.permission === 'granted') {
+            // Już mamy zgodę - rejestruj
+            PushyService.init();
+        } else if (Notification.permission === 'default') {
+            // Brak zgody - poinformuj użytkownika
+            Toast.info('🔔 Kliknij dzwoneczek aby włączyć powiadomienia');
+        }
+        // Jeśli 'denied' - nic nie robimy (user zablokował)
     }, 1500);
-    },
+},
 
     showChangePinModal() {
       // Ukryj ekran logowania, ale nie pokazuj jeszcze panelu
