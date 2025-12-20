@@ -3592,80 +3592,62 @@ const PushyService = {
     },
 
     async _doInit() {
-        console.log('🔔 PushyService: Starting...');
+    console.log('🔔 PushyService: Starting...');
 
-        // Sprawdzenia
-        if (!('serviceWorker' in navigator)) {
-            console.warn('❌ Service Worker not supported');
-            return null;
-        }
-        
-        if (!('PushManager' in window)) {
-            console.warn('❌ Push API not supported');
-            return null;
-        }
+    // Wykryj Androida - na razie pomijamy (nie działa)
+    const isAndroid = /Android/i.test(navigator.userAgent);
+    if (isAndroid) {
+        console.log('📱 Android detected - skipping Pushy (using polling instead)');
+        return null;  // Nie rejestruj, nie zużywaj limitu
+    }
 
-        // Czekaj na SDK
-        let retries = 0;
-        while (!window.Pushy && retries < 10) {
-            await new Promise(r => setTimeout(r, 500));
-            retries++;
-        }
-        
-        if (!window.Pushy) {
-            console.error('❌ Pushy SDK not loaded');
-            return null;
-        }
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        console.warn('❌ Push not supported');
+        return null;
+    }
 
-        // Uprawnienia
-        if (Notification.permission === 'denied') {
-            console.warn('❌ Notifications blocked by user');
-            return null;
-        }
+    // Czekaj na SDK
+    let retries = 0;
+    while (!window.Pushy && retries < 10) {
+        await new Promise(r => setTimeout(r, 500));
+        retries++;
+    }
+    
+    if (!window.Pushy) {
+        console.error('❌ Pushy SDK not loaded');
+        return null;
+    }
 
-        try {
-            // Rejestruj SW (NIE wyrejestrowuj starych!)
-            console.log('📱 Registering SW...');
-            const swReg = await navigator.serviceWorker.register('/sw.js');
-            await navigator.serviceWorker.ready;
-            console.log('✅ SW ready');
+    if (Notification.permission === 'denied') {
+        console.warn('❌ Notifications blocked');
+        return null;
+    }
 
-            // Rejestruj Pushy
-            console.log('📱 Registering Pushy...');
-            const deviceToken = await Pushy.register({
-                appId: '6945736ee5ab0cc758910885',
-                serviceWorkerPath: '/sw.js'
-            });
+    try {
+        console.log('📱 Registering Pushy...');
+        const deviceToken = await Pushy.register({
+            appId: '6945736ee5ab0cc758910885'
+        });
 
-            this.deviceToken = deviceToken;
-            console.log('✅ Pushy Token:', deviceToken);
+        this.deviceToken = deviceToken;
+        console.log('✅ Pushy Token:', deviceToken);
 
-            // Sync z backendem
-            await this.syncToken(deviceToken);
+        await this.syncToken(deviceToken);
 
-            // Foreground listener
-            Pushy.setNotificationListener((data) => {
-                console.log('🔔 Foreground push:', data);
-                Toast.info(data.message || data.title || 'Nowe powiadomienie');
-                Notifications.load();
-                
-                // Odśwież zadania
-                if (state.currentUser?.role === 'driver') {
-                    DriverPanel.loadTasks(true);
-                } else if (state.currentUser?.role === 'admin') {
-                    AdminPanel.loadTasks(true);
-                }
-            });
+        Pushy.setNotificationListener((data) => {
+            console.log('🔔 Foreground push:', data);
+            Toast.info(data.message || data.title || 'Nowe powiadomienie');
+            Notifications.load();
+        });
 
-            return deviceToken;
+        return deviceToken;
 
-        } catch (err) {
-            console.error('❌ Pushy error:', err.message);
-            this.deviceToken = null;
-            this.initPromise = null;
-            return null;
-        }
-    },
+    } catch (err) {
+        console.error('❌ Pushy error:', err.message);
+        this.deviceToken = null;
+        return null;
+    }
+},
 
     async syncToken(token) {
         if (!state.currentUser) return;

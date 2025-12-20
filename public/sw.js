@@ -1,8 +1,8 @@
 // TransportTracker Service Worker
-importScripts('https://sdk.pushy.me/web/1.0.24/pushy-service-worker.js');
+// NIE importujemy pushy-service-worker - sami obsługujemy
 
 self.addEventListener('push', function(event) {
-    console.log('📬 Push received in SW');
+    console.log('📬 Push received');
     
     if (!event.data) return;
 
@@ -13,16 +13,14 @@ self.addEventListener('push', function(event) {
         data = { message: event.data.text() };
     }
 
-    console.log('📬 Push data:', data);
-
     const title = data.title || 'Transport Tracker';
     const body = data.message || data.body || 'Nowe powiadomienie';
     const taskId = data.taskId || (data.data && data.data.taskId);
 
     // Powiadom otwarte okna
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-        .then(function(clientList) {
-            clientList.forEach(function(client) {
+        .then(clients => {
+            clients.forEach(client => {
                 client.postMessage({
                     type: 'PUSH_RECEIVED',
                     data: { title, message: body, taskId }
@@ -30,48 +28,35 @@ self.addEventListener('push', function(event) {
             });
         });
 
-    // Pokaż powiadomienie systemowe
-    const options = {
-        body: body,
-        icon: '/icon.png',
-        badge: '/icon.png',
-        vibrate: [200, 100, 200],
-        tag: taskId ? 'task-' + taskId : 'notif-' + Date.now(),
-        renotify: true,
-        data: { taskId }
-    };
-
+    // Pokaż powiadomienie
     event.waitUntil(
-        self.registration.showNotification(title, options)
+        self.registration.showNotification(title, {
+            body: body,
+            icon: '/icon.png',
+            badge: '/icon.png',
+            vibrate: [200, 100, 200],
+            tag: taskId ? 'task-' + taskId : 'notif-' + Date.now(),
+            renotify: true,
+            data: { taskId }
+        })
     );
 });
 
 self.addEventListener('notificationclick', function(event) {
     event.notification.close();
-    
-    const taskId = event.notification.data && event.notification.data.taskId;
-    
     event.waitUntil(
-        self.clients.matchAll({ type: 'window', includeUncontrolled: true })
-            .then(function(clientList) {
-                for (var i = 0; i < clientList.length; i++) {
-                    var client = clientList[i];
-                    if ('focus' in client) {
-                        client.postMessage({ type: 'NOTIFICATION_CLICK', taskId: taskId });
-                        return client.focus();
-                    }
-                }
-                return self.clients.openWindow('/');
-            })
+        self.clients.matchAll({ type: 'window' }).then(clients => {
+            if (clients.length > 0) {
+                clients[0].postMessage({ 
+                    type: 'NOTIFICATION_CLICK', 
+                    taskId: event.notification.data?.taskId 
+                });
+                return clients[0].focus();
+            }
+            return self.clients.openWindow('/');
+        })
     );
 });
 
-self.addEventListener('install', function(event) {
-    console.log('📬 SW installed');
-    self.skipWaiting();
-});
-
-self.addEventListener('activate', function(event) {
-    console.log('📬 SW activated');
-    event.waitUntil(self.clients.claim());
-});
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', event => event.waitUntil(self.clients.claim()));
