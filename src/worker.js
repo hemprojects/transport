@@ -110,7 +110,8 @@ async function handleAPI(request, env, path, corsHeaders) {
     if (path.match(/^\/api\/notifications\/\d+$/) && method === 'GET') return await getNotifications(path.split('/').pop(), env, corsHeaders);
     if (path.match(/^\/api\/notifications\/\d+\/read$/) && method === 'POST') return await markNotificationRead(path.split('/')[3], env, corsHeaders);
     if (path.match(/^\/api\/notifications\/user\/\d+\/read-all$/) && method === 'POST') return await markAllNotificationsRead(path.split('/')[4], env, corsHeaders);
-    
+    if (path.match(/^\/api\/notifications\/user\/\d+\/delete-read$/) && method === 'DELETE') return await deleteReadNotifications(path.split('/')[4], env, corsHeaders);
+
     // REPORTS
     if (path === '/api/reports' && method === 'GET') return await getReports(new URL(request.url).searchParams.get('period') || 'week', env, corsHeaders);
 
@@ -272,6 +273,7 @@ async function deleteTask(id, env, corsHeaders) {
     await env.DB.prepare('DELETE FROM task_drivers WHERE task_id = ?').bind(id).run();
     await env.DB.prepare('DELETE FROM notifications WHERE task_id = ?').bind(id).run();
     await env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(id).run();
+    
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
@@ -372,6 +374,11 @@ async function markNotificationRead(id, env, corsHeaders) {
 
 async function markAllNotificationsRead(uid, env, corsHeaders) {
     await env.DB.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').bind(uid).run();
+    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+}
+
+async function deleteReadNotifications(uid, env, corsHeaders) {
+    await env.DB.prepare('DELETE FROM notifications WHERE user_id = ? AND is_read = 1').bind(uid).run();
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
@@ -529,7 +536,7 @@ async function sendPushyNotification(userIds, title, message, data, env) {
     }
 
     if (tokens.length === 0) {
-        console.log('📤 No tokens found for users:', ids);
+        console.log('📤 No tokens found');
         return;
     }
 
@@ -538,6 +545,7 @@ async function sendPushyNotification(userIds, title, message, data, env) {
         return;
     }
 
+    // TYLKO data - BEZ notification (naprawia podwójne powiadomienia!)
     const payload = {
         to: tokens,
         data: {
@@ -553,7 +561,6 @@ async function sendPushyNotification(userIds, title, message, data, env) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        
         const responseText = await resp.text();
         console.log(`📤 Pushy [${resp.status}]:`, responseText);
     } catch (e) {

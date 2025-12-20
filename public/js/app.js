@@ -425,10 +425,36 @@
       });
     },
 
+    async deleteReadNotifications(userId) {
+    return await this.request(`/notifications/user/${userId}/delete-read`, {
+        method: "DELETE",
+    });
+},
+
+async deleteRead() {
+    if (!state.currentUser) return;
+    
+    const readCount = state.notifications.filter(n => n.is_read).length;
+    if (readCount === 0) {
+        Toast.info("Brak przeczytanych powiadomień do usunięcia");
+        return;
+    }
+    
+    try {
+        await API.deleteReadNotifications(state.currentUser.id);
+        state.notifications = state.notifications.filter(n => !n.is_read);
+        this.renderList();
+        Toast.success(`Usunięto ${readCount} przeczytanych`);
+    } catch (error) {
+        Toast.error("Nie udało się usunąć");
+    }
+},
+
     // REPORTS
     async getReports(period = "week") {
-      return await this.request(`/reports?period=${period}`);
-    },
+    const timestamp = new Date().getTime();
+    return await this.request(`/reports?period=${period}&t=${timestamp}`);
+},
   };
 
   // =============================================
@@ -661,14 +687,10 @@
         return false;
     }
 
-    // Już mamy zgodę
+    // Już mamy zgodę - nie pokazuj toast
     if (Notification.permission === "granted") {
-        const token = await PushyService.init();
-        if (token && !PushyService._toastShown) {
-            Toast.success('Powiadomienia włączone! 🔔');
-            PushyService._toastShown = true;
-        }
-        return true;
+        PushyService.init().catch(() => {});
+        return true;  // Bez toast!
     }
 
     // Zablokowane
@@ -677,14 +699,11 @@
         return false;
     }
 
-    // Pytamy o zgodę
+    // Pytamy o zgodę - tylko tu pokazujemy toast
     const permission = await Notification.requestPermission();
     if (permission === "granted") {
-        const token = await PushyService.init();
-        if (token) {
-            Toast.success('Powiadomienia włączone! 🔔');
-            PushyService._toastShown = true;
-        }
+        PushyService.init().catch(() => {});
+        Toast.success('Powiadomienia włączone! 🔔');  // Toast tylko przy pierwszym włączeniu
         return true;
     } else {
         Toast.warning('Powiadomienia zablokowane.');
@@ -915,6 +934,7 @@
       Utils.$("#mark-all-read-btn")?.addEventListener("click", () =>
         this.markAllRead()
       );
+      Utils.$("#delete-read-btn")?.addEventListener("click", () => this.deleteRead());
     },
   };
 
@@ -1110,17 +1130,19 @@
         this.initDriverPanel();
     }
 
-    // Powiadomienia push - TYLKO jeśli mamy zgodę
-    if (Notification.permission === 'granted') {
-        setTimeout(() => {
-            console.log('🔔 Initializing push notifications...');
-            PushyService.init();
-        }, 1500);
-    } else if (Notification.permission === 'default') {
-        setTimeout(() => {
-            Toast.info('🔔 Kliknij dzwoneczek aby włączyć powiadomienia');
-        }, 2000);
-    }
+    // Pushy - w osobnym try/catch żeby nie zepsuć reszty
+    setTimeout(() => {
+        try {
+            if (Notification.permission === 'granted') {
+                console.log('🔔 Initializing push notifications...');
+                PushyService.init().catch(() => {});  // Ignoruj błędy
+            } else if (Notification.permission === 'default') {
+                Toast.info('🔔 Kliknij dzwoneczek aby włączyć powiadomienia');
+            }
+        } catch (e) {
+            console.log('Pushy init skipped');
+        }
+    }, 1500);
 },
 
     showChangePinModal() {
@@ -3090,15 +3112,15 @@
 
     // REPORTS
     async loadReports(period = "week") {
-      try {
-        const data = await API.getReports(period);
+    try {
+        // Dodaj timestamp żeby nie było cache
+        const data = await API.getReports(period + '&t=' + Date.now());
         this.renderReports(data);
-      } catch (error) {
+    } catch (error) {
         console.error("Failed to load reports:", error);
-        Utils.$("#report-stats").innerHTML =
-          '<p class="text-muted">Błąd ładowania</p>';
-      }
-    },
+        Utils.$("#report-stats").innerHTML = '<p class="text-muted">Błąd ładowania</p>';
+    }
+},
 
     renderReports(data) {
       const container = Utils.$("#report-drivers-list");
@@ -3566,88 +3588,63 @@
 const PushyService = {
     initPromise: null,
     deviceToken: null,
-    isInitializing: false,
 
     async init() {
-        // Zapobiega wielokrotnemu wywołaniu
-        if (this.deviceToken) {
-            console.log('✅ Pushy already registered');
-            return this.deviceToken;
-        }
-        
-        if (this.isInitializing) {
-            console.log('⏳ Pushy init already in progress...');
-            return this.initPromise;
+        // Na Androidzie - nie rób NIC
+        if (/Android/i.test(navigator.userAgent)) {
+            console.log('📱 Android - skip Pushy, using polling');
+            return null;
         }
 
-        this.isInitializing = true;
+        if (this.deviceToken) return this.deviceToken;
+        if (this.initPromise) return this.initPromise;
+
         this.initPromise = this._doInit();
-        
-        try {
-            const result = await this.initPromise;
-            return result;
-        } finally {
-            this.isInitializing = false;
-        }
+        return this.initPromise;
     },
 
     async _doInit() {
-    console.log('🔔 PushyService: Starting...');
+        try {
+            console.log('🔔 PushyService: Starting...');
 
-    // Wykryj Androida - na razie pomijamy (nie działa)
-    const isAndroid = /Android/i.test(navigator.userAgent);
-    if (isAndroid) {
-        console.log('📱 Android detected - skipping Pushy (using polling instead)');
-        return null;  // Nie rejestruj, nie zużywaj limitu
-    }
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                return null;
+            }
 
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        console.warn('❌ Push not supported');
-        return null;
-    }
+            let retries = 0;
+            while (!window.Pushy && retries < 10) {
+                await new Promise(r => setTimeout(r, 500));
+                retries++;
+            }
+            if (!window.Pushy) return null;
 
-    // Czekaj na SDK
-    let retries = 0;
-    while (!window.Pushy && retries < 10) {
-        await new Promise(r => setTimeout(r, 500));
-        retries++;
-    }
-    
-    if (!window.Pushy) {
-        console.error('❌ Pushy SDK not loaded');
-        return null;
-    }
+            if (Notification.permission === 'denied') return null;
 
-    if (Notification.permission === 'denied') {
-        console.warn('❌ Notifications blocked');
-        return null;
-    }
+            console.log('📱 Registering Pushy...');
+            const deviceToken = await Pushy.register({
+                appId: '6945736ee5ab0cc758910885'
+            });
 
-    try {
-        console.log('📱 Registering Pushy...');
-        const deviceToken = await Pushy.register({
-            appId: '6945736ee5ab0cc758910885'
-        });
+            this.deviceToken = deviceToken;
+            console.log('✅ Pushy Token:', deviceToken);
 
-        this.deviceToken = deviceToken;
-        console.log('✅ Pushy Token:', deviceToken);
+            await this.syncToken(deviceToken);
 
-        await this.syncToken(deviceToken);
+            Pushy.setNotificationListener((data) => {
+                console.log('🔔 Foreground push:', data);
+                Toast.info(data.message || data.title || 'Nowe powiadomienie');
+                Notifications.load();
+            });
 
-        Pushy.setNotificationListener((data) => {
-            console.log('🔔 Foreground push:', data);
-            Toast.info(data.message || data.title || 'Nowe powiadomienie');
-            Notifications.load();
-        });
+            return deviceToken;
 
-        return deviceToken;
-
-    } catch (err) {
-        console.error('❌ Pushy error:', err.message);
-        this.deviceToken = null;
-        return null;
-    }
-},
+        } catch (err) {
+            // WAŻNE: Nie pozwól żeby błąd zepsuł resztę aplikacji
+            console.error('❌ Pushy error (ignored):', err.message);
+            this.initPromise = null;
+            return null;
+        }
+    },
 
     async syncToken(token) {
         if (!state.currentUser) return;
@@ -3658,15 +3655,8 @@ const PushyService = {
             });
             console.log('✅ Token synced');
         } catch (e) {
-            console.error('Token sync failed:', e);
+            // Ignoruj błędy
         }
-    },
-
-    async retry() {
-        this.deviceToken = null;
-        this.initPromise = null;
-        this.isInitializing = false;
-        return this.init();
     }
 };
 

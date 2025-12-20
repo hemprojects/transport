@@ -1,5 +1,5 @@
-// TransportTracker Service Worker
-// NIE importujemy pushy-service-worker - sami obsługujemy
+// Import Pushy SDK
+importScripts('https://sdk.pushy.me/web/1.0.24/pushy-service-worker.js');
 
 self.addEventListener('push', function(event) {
     console.log('📬 Push received');
@@ -17,7 +17,7 @@ self.addEventListener('push', function(event) {
     const body = data.message || data.body || 'Nowe powiadomienie';
     const taskId = data.taskId || (data.data && data.data.taskId);
 
-    // Powiadom otwarte okna
+    // Powiadom otwartą aplikację
     self.clients.matchAll({ type: 'window', includeUncontrolled: true })
         .then(clients => {
             clients.forEach(client => {
@@ -28,7 +28,7 @@ self.addEventListener('push', function(event) {
             });
         });
 
-    // Pokaż powiadomienie
+    // Pokaż powiadomienie systemowe
     event.waitUntil(
         self.registration.showNotification(title, {
             body: body,
