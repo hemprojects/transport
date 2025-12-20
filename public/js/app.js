@@ -3514,151 +3514,123 @@
     init();
   }
 
- // =============================================
-// 16. PUSHY INTEGRATION (FIXED)
+// =============================================
+// 16. PUSHY INTEGRATION (SIMPLIFIED)
 // =============================================
 const PushyService = {
     initPromise: null,
     deviceToken: null,
 
     async init() {
-        // Singleton - nie inicjuj wielokrotnie
-        if (this.initPromise) {
-            return this.initPromise;
-        }
-
+        if (this.initPromise) return this.initPromise;
         this.initPromise = this._doInit();
         return this.initPromise;
     },
 
     async _doInit() {
-        console.log('🔔 PushyService: Starting initialization...');
+        console.log('🔔 PushyService: Starting...');
 
-        // 1. Sprawdź podstawowe wymagania
-        if (!('serviceWorker' in navigator)) {
-            console.warn('❌ Service Workers not supported');
+        // Podstawowe sprawdzenia
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+            console.warn('❌ Push not supported');
             return null;
         }
 
-        if (!('PushManager' in window)) {
-            console.warn('❌ Push API not supported');
-            return null;
-        }
-
-        // 2. Czekaj na Pushy SDK
+        // Czekaj na SDK
         let retries = 0;
         while (!window.Pushy && retries < 10) {
-            console.log('⏳ Waiting for Pushy SDK...', retries);
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(r => setTimeout(r, 500));
             retries++;
         }
-
         if (!window.Pushy) {
-            console.error('❌ Pushy SDK failed to load');
-            this.initPromise = null;
+            console.error('❌ Pushy SDK not loaded');
             return null;
+        }
+
+        // Uprawnienia
+        if (Notification.permission === 'denied') {
+            console.warn('❌ Notifications blocked');
+            return null;
+        }
+
+        if (Notification.permission === 'default') {
+            const perm = await Notification.requestPermission();
+            if (perm !== 'granted') return null;
         }
 
         try {
-            // 3. Zarejestruj Service Worker
-            console.log('📱 Registering Service Worker...');
-            await navigator.serviceWorker.register('/service-worker.js');
-            await navigator.serviceWorker.ready;
-            console.log('✅ Service Worker ready');
-
-            // 4. Sprawdź/poproś o uprawnienia
-            if (Notification.permission === 'default') {
-                console.log('🔔 Requesting notification permission...');
-                const permission = await Notification.requestPermission();
-                console.log('🔔 Permission result:', permission);
-                if (permission !== 'granted') {
-                    console.warn('❌ Notification permission denied');
-                    Toast.warning('Powiadomienia zostały zablokowane');
-                    return null;
+            // Najpierw wyrejestruj wszystkie stare SW (jednorazowo)
+            const regs = await navigator.serviceWorker.getRegistrations();
+            for (const reg of regs) {
+                if (!reg.active?.scriptURL?.includes('sw.js')) {
+                    await reg.unregister();
+                    console.log('🧹 Unregistered old SW');
                 }
-            } else if (Notification.permission === 'denied') {
-                console.warn('❌ Notifications blocked by user');
-                return null;
             }
 
-            // 5. Rejestracja w Pushy
-            console.log('📱 Registering with Pushy...');
+            // Zarejestruj nasz SW
+            console.log('📱 Registering SW...');
+            const swReg = await navigator.serviceWorker.register('/sw.js', {
+                scope: '/'
+            });
+            
+            // Czekaj aż SW będzie aktywny
+            if (swReg.installing) {
+                await new Promise(resolve => {
+                    swReg.installing.addEventListener('statechange', e => {
+                        if (e.target.state === 'activated') resolve();
+                    });
+                });
+            }
+            await navigator.serviceWorker.ready;
+            console.log('✅ SW ready');
+
+            // Teraz rejestruj Pushy
+            console.log('📱 Registering Pushy...');
             const deviceToken = await Pushy.register({
-                appId: '6945736ee5ab0cc758910885'
+                appId: '6945736ee5ab0cc758910885',
+                serviceWorkerPath: '/sw.js'
             });
 
             this.deviceToken = deviceToken;
-            console.log('✅ Pushy registered! Token:', deviceToken);
+            console.log('✅ Pushy Token:', deviceToken);
 
-            // 6. Wyślij token do backendu
+            // Sync z backendem
             await this.syncToken(deviceToken);
 
-            // 7. Ustaw listener dla powiadomień w foreground
+            // Foreground listener
             Pushy.setNotificationListener((data) => {
-                console.log('🔔 Foreground notification received:', data);
-                
-                // Pokaż toast w aplikacji
-                if (data.message || data.title) {
-                    Toast.info(data.message || data.title);
-                }
-                
-                // Odśwież listę powiadomień
-                if (typeof Notifications !== 'undefined') {
-                    Notifications.load();
-                }
-                
-                // Odśwież zadania
-                if (state.currentUser?.role === 'driver') {
-                    DriverPanel.loadTasks(true);
-                } else if (state.currentUser?.role === 'admin') {
-                    AdminPanel.loadTasks(true);
-                }
+                console.log('🔔 Push received:', data);
+                Toast.info(data.message || data.title || 'Nowe powiadomienie');
+                Notifications.load();
             });
 
-            console.log('✅ PushyService fully initialized!');
-            Toast.success('Powiadomienia push włączone! 🔔');
+            Toast.success('Powiadomienia włączone! 🔔');
             return deviceToken;
 
         } catch (err) {
-            console.error('❌ Pushy registration error:', err);
-            console.error('Error details:', err.message, err.stack);
-            
-            // Reset promise żeby można było spróbować ponownie
+            console.error('❌ Pushy error:', err.message);
             this.initPromise = null;
-            
-            // Nie pokazuj błędu użytkownikowi przy pierwszym ładowaniu
-            // Toast.warning('Nie udało się włączyć powiadomień push');
             return null;
         }
     },
 
-    async syncToken(deviceToken) {
-        if (!state.currentUser) {
-            console.log('⏳ No user logged in, skipping token sync');
-            return;
-        }
-
+    async syncToken(token) {
+        if (!state.currentUser) return;
         try {
-            const response = await API.request('/pushy/register', {
+            await API.request('/pushy/register', {
                 method: 'POST',
-                body: {
-                    token: deviceToken,
-                    platform: 'web',
-                    userAgent: navigator.userAgent
-                }
+                body: { token }
             });
-            console.log('✅ Token synced with backend:', response);
+            console.log('✅ Token synced');
         } catch (e) {
-            console.error('❌ Token sync failed:', e);
+            console.error('Token sync failed:', e);
         }
     },
 
-    // Metoda do ręcznego ponowienia rejestracji
     async retry() {
-        console.log('🔄 Retrying Pushy registration...');
         this.initPromise = null;
-        this.deviceToken = null;
-        return await this.init();
+        return this.init();
     }
 };
 
