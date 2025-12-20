@@ -6,6 +6,7 @@
 (function () {
   "use strict";
 
+
   // =============================================
   // 1. KONFIGURACJA
   // =============================================
@@ -236,6 +237,14 @@
       const order = { high: 1, normal: 2, low: 3 };
       return order[priority] || 2;
     },
+
+    isSamsungBrowser() {
+      return /SamsungBrowser/i.test(navigator.userAgent);
+    },
+
+    isChrome() {
+      return /Chrome/i.test(navigator.userAgent) && !this.isSamsungBrowser();
+    }
   };
 
   // =============================================
@@ -398,7 +407,10 @@
 
     // NOTIFICATIONS
     async getNotifications(userId) {
-      return await this.request(`/notifications/${userId}`);
+      // Dodaj timestamp, żeby wykluczyć cache na Androidzie
+      const timestamp = new Date().getTime();
+      const id = parseInt(userId);
+      return await this.request(`/notifications/${id}?t=${timestamp}`);
     },
 
     async markNotificationRead(notificationId) {
@@ -752,6 +764,8 @@
         } else {
           Utils.hide(badge);
         }
+      } else {
+        console.warn("❌ Badge element NOT FOUND in updateBadge");
       }
     },
 
@@ -1065,24 +1079,27 @@
     },
 
     async onLoginSuccess() {
-      Utils.$("#login-form")?.reset();
+    Utils.$("#login-form")?.reset();
 
-      // Sprawdź czy wymuszona zmiana PIN
-      if (state.currentUser.force_pin_change) {
+    if (state.currentUser.force_pin_change) {
         this.showChangePinModal();
         return;
-      }
+    }
 
-      await this.loadCommonData();
+    await this.loadCommonData();
 
-      if (state.currentUser.role === "admin") {
+    if (state.currentUser.role === "admin") {
         this.initAdminPanel();
-      } else {
+    } else {
         this.initDriverPanel();
-      }
-      if (Notification.permission === "granted") {
+    }
+
+    // WAŻNE: Zawsze próbuj zarejestrować Pushy po zalogowaniu
+    // (z małym opóźnieniem żeby UI się załadował)
+    setTimeout(() => {
+        console.log('🔔 Initializing push notifications...');
         PushyService.init();
-      }
+    }, 1500);
     },
 
     showChangePinModal() {
@@ -1237,6 +1254,17 @@
       Utils.$("#admin-logout-btn")?.addEventListener("click", () =>
         this.logout()
       );
+
+      // Naprawa powiadomień (Manualny wyzwalacz)
+      const repairAction = () => {
+        Toast.info("Próbuję naprawić powiadomienia...");
+        // Resetujemy promise, żeby wymusić nową próbę
+        PushyService.initPromise = null;
+        PushyService.init();
+      };
+
+      Utils.$("#driver-repair-btn")?.addEventListener("click", repairAction);
+      Utils.$("#admin-repair-btn")?.addEventListener("click", repairAction);
     },
   };
 
@@ -2193,8 +2221,7 @@
         btn.classList.toggle("active", isActive);
       });
 
-      // Debug - możesz usunąć po testach
-      console.log("Today:", today, "Current:", state.currentDate);
+      // Log removed
     },
 
     renderTasks() {
@@ -3487,100 +3514,153 @@
     init();
   }
 
-  // =============================================
-  // 16. PUSHY INTEGRATION
-  // =============================================
-  const PushyService = {
+ // =============================================
+// 16. PUSHY INTEGRATION (FIXED)
+// =============================================
+const PushyService = {
     initPromise: null,
+    deviceToken: null,
 
     async init() {
-      // Prevent multiple initializations (Singleton pattern)
-      if (this.initPromise) {
+        // Singleton - nie inicjuj wielokrotnie
+        if (this.initPromise) {
+            return this.initPromise;
+        }
+
+        this.initPromise = this._doInit();
         return this.initPromise;
-      }
+    },
 
-      this.initPromise = (async () => {
-        // Check for Service Worker support
-        if (!("serviceWorker" in navigator)) {
-          console.warn("Service workers are not supported on this device.");
-          return;
+    async _doInit() {
+        console.log('🔔 PushyService: Starting initialization...');
+
+        // 1. Sprawdź podstawowe wymagania
+        if (!('serviceWorker' in navigator)) {
+            console.warn('❌ Service Workers not supported');
+            return null;
         }
 
-        // Wait for Pushy SDK to load
+        if (!('PushManager' in window)) {
+            console.warn('❌ Push API not supported');
+            return null;
+        }
+
+        // 2. Czekaj na Pushy SDK
+        let retries = 0;
+        while (!window.Pushy && retries < 10) {
+            console.log('⏳ Waiting for Pushy SDK...', retries);
+            await new Promise(resolve => setTimeout(resolve, 500));
+            retries++;
+        }
+
         if (!window.Pushy) {
-          console.log("Pushy SDK not loaded yet, retrying in 500ms...");
-          this.initPromise = null; 
-          setTimeout(() => this.init(), 500);
-          return;
+            console.error('❌ Pushy SDK failed to load');
+            this.initPromise = null;
+            return null;
         }
-
-        const PUSHY_APP_ID = "6945736ee5ab0cc758910885";
 
         try {
-            // Check if already registered to avoid error logs
-            const isRegistered = await Pushy.isRegistered();
-            if (isRegistered) {
-                console.log("Pushy already registered");
+            // 3. Zarejestruj Service Worker
+            console.log('📱 Registering Service Worker...');
+            await navigator.serviceWorker.register('/sw.js');
+            await navigator.serviceWorker.ready;
+            console.log('✅ Service Worker ready');
+
+            // 4. Sprawdź/poproś o uprawnienia
+            if (Notification.permission === 'default') {
+                console.log('🔔 Requesting notification permission...');
+                const permission = await Notification.requestPermission();
+                console.log('🔔 Permission result:', permission);
+                if (permission !== 'granted') {
+                    console.warn('❌ Notification permission denied');
+                    Toast.warning('Powiadomienia zostały zablokowane');
+                    return null;
+                }
+            } else if (Notification.permission === 'denied') {
+                console.warn('❌ Notifications blocked by user');
+                return null;
             }
 
-            // Attempt registration
+            // 5. Rejestracja w Pushy
+            console.log('📱 Registering with Pushy...');
             const deviceToken = await Pushy.register({
-                appId: PUSHY_APP_ID,
-                serviceWorkerUrl: "/service-worker.js",
+                appId: '6945736ee5ab0cc758910885'
             });
-            
-            console.log("Pushy device token:", deviceToken);
+
+            this.deviceToken = deviceToken;
+            console.log('✅ Pushy registered! Token:', deviceToken);
+
+            // 6. Wyślij token do backendu
             await this.syncToken(deviceToken);
 
-        } catch (err) {
-            console.warn("⚠️ Initial Pushy registration failed:", err);
-            console.log("🔄 Attempting Smart Recovery (unregister & retry)...");
-            
-            try {
-                // Smart Recovery: Unregister bad Service Workers
-                const registrations = await navigator.serviceWorker.getRegistrations();
-                for (const registration of registrations) {
-                    console.log("🧹 Unregistering conflicting SW:", registration);
-                    await registration.unregister();
+            // 7. Ustaw listener dla powiadomień w foreground
+            Pushy.setNotificationListener((data) => {
+                console.log('🔔 Foreground notification received:', data);
+                
+                // Pokaż toast w aplikacji
+                if (data.message || data.title) {
+                    Toast.info(data.message || data.title);
                 }
+                
+                // Odśwież listę powiadomień
+                if (typeof Notifications !== 'undefined') {
+                    Notifications.load();
+                }
+                
+                // Odśwież zadania
+                if (state.currentUser?.role === 'driver') {
+                    DriverPanel.loadTasks(true);
+                } else if (state.currentUser?.role === 'admin') {
+                    AdminPanel.loadTasks(true);
+                }
+            });
 
-                // Wait a moment for cleanup
-                await new Promise(resolve => setTimeout(resolve, 1000));
+            console.log('✅ PushyService fully initialized!');
+            Toast.success('Powiadomienia push włączone! 🔔');
+            return deviceToken;
 
-                // Retry registration
-                console.log("🔄 Retrying Pushy registration...");
-                const deviceToken = await Pushy.register({
-                    appId: PUSHY_APP_ID,
-                    serviceWorkerUrl: "/service-worker.js",
-                });
-
-                console.log("✅ Smart Recovery successful! Token:", deviceToken);
-                await this.syncToken(deviceToken);
-
-            } catch (retryErr) {
-                console.error("❌ Fatal: Pushy registration failed after recovery:", retryErr);
-                this.initPromise = null; // Allow retry on next app launch/interaction
-            }
+        } catch (err) {
+            console.error('❌ Pushy registration error:', err);
+            console.error('Error details:', err.message, err.stack);
+            
+            // Reset promise żeby można było spróbować ponownie
+            this.initPromise = null;
+            
+            // Nie pokazuj błędu użytkownikowi przy pierwszym ładowaniu
+            // Toast.warning('Nie udało się włączyć powiadomień push');
+            return null;
         }
-      })();
-
-      return this.initPromise;
     },
 
     async syncToken(deviceToken) {
-        if (state.currentUser) {
-            try {
-                await API.request("/pushy/register", {
-                    method: "POST",
-                    body: { token: deviceToken },
-                });
-                console.log("✅ Pushy verified with backend");
-            } catch (e) {
-                console.log("Pushy backend sync info:", e); 
-            }
+        if (!state.currentUser) {
+            console.log('⏳ No user logged in, skipping token sync');
+            return;
         }
+
+        try {
+            const response = await API.request('/pushy/register', {
+                method: 'POST',
+                body: {
+                    token: deviceToken,
+                    platform: 'web',
+                    userAgent: navigator.userAgent
+                }
+            });
+            console.log('✅ Token synced with backend:', response);
+        } catch (e) {
+            console.error('❌ Token sync failed:', e);
+        }
+    },
+
+    // Metoda do ręcznego ponowienia rejestracji
+    async retry() {
+        console.log('🔄 Retrying Pushy registration...');
+        this.initPromise = null;
+        this.deviceToken = null;
+        return await this.init();
     }
-  };
+};
 
   // =============================================
   // 17. EXPORT

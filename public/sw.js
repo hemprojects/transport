@@ -1,8 +1,9 @@
 // 1. Import Pushy Logic (Musi być na górze)
-importScripts('https://sdk.pushy.me/web/1.0.8/pushy-service-worker.js');
+importScripts('https://sdk.pushy.me/web/1.0.24/pushy-service-worker.js');
 
 // 2. Nasza własna obsługa powiadomienia (Nadpisuje domyślną Pushy)
 self.addEventListener('push', function(event) {
+    console.log('📬 SW: Received push event', event);
     // Pushy wysyła dane w event.data
     if (!event.data) return;
 

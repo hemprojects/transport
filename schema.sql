@@ -134,3 +134,51 @@ INSERT INTO locations (name, type) VALUES
     ('Dział Pakowania', 'department'),
     ('Dział Wysyłki', 'department'),
     ('Dział Przyjęć', 'department');
+
+-- Tabela tokenów Pushy (push notifications)
+DROP TABLE IF EXISTS pushy_tokens;
+CREATE TABLE pushy_tokens (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL,
+    platform TEXT DEFAULT 'web',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, token),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_pushy_user ON pushy_tokens(user_id);
+
+-- Tabela sesji (jeśli jeszcze nie ma)
+DROP TABLE IF EXISTS sessions;
+CREATE TABLE sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Tabela rate limiting
+DROP TABLE IF EXISTS login_attempts;
+CREATE TABLE login_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    identifier TEXT NOT NULL UNIQUE,
+    attempts INTEGER DEFAULT 0,
+    blocked_until DATETIME,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Tabela dodatkowych kierowców do zadania
+DROP TABLE IF EXISTS task_drivers;
+CREATE TABLE task_drivers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(task_id, user_id),
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);
