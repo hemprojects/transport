@@ -737,6 +737,25 @@ async deleteRead() {
       }
     },
 
+     async deleteRead() {
+        if (!state.currentUser) return;
+        
+        const readCount = state.notifications.filter(n => n.is_read).length;
+        if (readCount === 0) {
+            Toast.info("Brak przeczytanych powiadomień do usunięcia");
+            return;
+        }
+        
+        try {
+            await API.deleteReadNotifications(state.currentUser.id);
+            state.notifications = state.notifications.filter(n => !n.is_read);
+            this.renderList();
+            Toast.success(`Usunięto ${readCount} przeczytanych`);
+        } catch (error) {
+            Toast.error("Nie udało się usunąć");
+        }
+    },
+
     showSystemNotification(title, body, taskId) {
       if (!("Notification" in window) || Notification.permission !== "granted")
         return;
