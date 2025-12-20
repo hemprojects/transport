@@ -661,33 +661,33 @@
         return false;
     }
 
-    // Już mamy zgodę - rejestruj
+    // Już mamy zgodę
     if (Notification.permission === "granted") {
         const token = await PushyService.init();
-        if (token) {
+        if (token && !PushyService._toastShown) {
             Toast.success('Powiadomienia włączone! 🔔');
+            PushyService._toastShown = true;
         }
         return true;
     }
 
-    // Zablokowane - poinstruuj użytkownika
+    // Zablokowane
     if (Notification.permission === "denied") {
-        Toast.warning('Powiadomienia zablokowane. Włącz je w ustawieniach przeglądarki, potem kliknij dzwoneczek ponownie.');
+        Toast.warning('Powiadomienia zablokowane. Włącz je w ustawieniach przeglądarki.');
         return false;
     }
 
-    // Brak decyzji - zapytaj
-    if (Notification.permission === "default") {
-        const permission = await Notification.requestPermission();
-        if (permission === "granted") {
-            const token = await PushyService.init();
-            if (token) {
-                Toast.success('Powiadomienia włączone! 🔔');
-            }
-            return true;
-        } else {
-            Toast.warning('Powiadomienia zablokowane. Możesz je włączyć w ustawieniach przeglądarki.');
+    // Pytamy o zgodę
+    const permission = await Notification.requestPermission();
+    if (permission === "granted") {
+        const token = await PushyService.init();
+        if (token) {
+            Toast.success('Powiadomienia włączone! 🔔');
+            PushyService._toastShown = true;
         }
+        return true;
+    } else {
+        Toast.warning('Powiadomienia zablokowane.');
     }
 
     return false;
@@ -1110,19 +1110,17 @@
         this.initDriverPanel();
     }
 
-    // Powiadomienia push
-    setTimeout(async () => {
-        console.log('🔔 Initializing push notifications...');
-        
-        if (Notification.permission === 'granted') {
-            // Już mamy zgodę - rejestruj
+    // Powiadomienia push - TYLKO jeśli mamy zgodę
+    if (Notification.permission === 'granted') {
+        setTimeout(() => {
+            console.log('🔔 Initializing push notifications...');
             PushyService.init();
-        } else if (Notification.permission === 'default') {
-            // Brak zgody - poinformuj użytkownika
+        }, 1500);
+    } else if (Notification.permission === 'default') {
+        setTimeout(() => {
             Toast.info('🔔 Kliknij dzwoneczek aby włączyć powiadomienia');
-        }
-        // Jeśli 'denied' - nic nie robimy (user zablokował)
-    }, 1500);
+        }, 2000);
+    }
 },
 
     showChangePinModal() {
@@ -3563,24 +3561,47 @@
 }
 
 // =============================================
-// 16. PUSHY INTEGRATION (SIMPLIFIED)
+// 16. PUSHY INTEGRATION (FIXED)
 // =============================================
 const PushyService = {
     initPromise: null,
     deviceToken: null,
+    isInitializing: false,
 
     async init() {
-        if (this.initPromise) return this.initPromise;
+        // Zapobiega wielokrotnemu wywołaniu
+        if (this.deviceToken) {
+            console.log('✅ Pushy already registered');
+            return this.deviceToken;
+        }
+        
+        if (this.isInitializing) {
+            console.log('⏳ Pushy init already in progress...');
+            return this.initPromise;
+        }
+
+        this.isInitializing = true;
         this.initPromise = this._doInit();
-        return this.initPromise;
+        
+        try {
+            const result = await this.initPromise;
+            return result;
+        } finally {
+            this.isInitializing = false;
+        }
     },
 
     async _doInit() {
         console.log('🔔 PushyService: Starting...');
 
-        // Podstawowe sprawdzenia
-        if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-            console.warn('❌ Push not supported');
+        // Sprawdzenia
+        if (!('serviceWorker' in navigator)) {
+            console.warn('❌ Service Worker not supported');
+            return null;
+        }
+        
+        if (!('PushManager' in window)) {
+            console.warn('❌ Push API not supported');
             return null;
         }
 
@@ -3590,6 +3611,7 @@ const PushyService = {
             await new Promise(r => setTimeout(r, 500));
             retries++;
         }
+        
         if (!window.Pushy) {
             console.error('❌ Pushy SDK not loaded');
             return null;
@@ -3597,43 +3619,18 @@ const PushyService = {
 
         // Uprawnienia
         if (Notification.permission === 'denied') {
-            console.warn('❌ Notifications blocked');
+            console.warn('❌ Notifications blocked by user');
             return null;
         }
 
-        if (Notification.permission === 'default') {
-            const perm = await Notification.requestPermission();
-            if (perm !== 'granted') return null;
-        }
-
         try {
-            // Najpierw wyrejestruj wszystkie stare SW (jednorazowo)
-            const regs = await navigator.serviceWorker.getRegistrations();
-            for (const reg of regs) {
-                if (!reg.active?.scriptURL?.includes('sw.js')) {
-                    await reg.unregister();
-                    console.log('🧹 Unregistered old SW');
-                }
-            }
-
-            // Zarejestruj nasz SW
+            // Rejestruj SW (NIE wyrejestrowuj starych!)
             console.log('📱 Registering SW...');
-            const swReg = await navigator.serviceWorker.register('/sw.js', {
-                scope: '/'
-            });
-            
-            // Czekaj aż SW będzie aktywny
-            if (swReg.installing) {
-                await new Promise(resolve => {
-                    swReg.installing.addEventListener('statechange', e => {
-                        if (e.target.state === 'activated') resolve();
-                    });
-                });
-            }
+            const swReg = await navigator.serviceWorker.register('/sw.js');
             await navigator.serviceWorker.ready;
             console.log('✅ SW ready');
 
-            // Teraz rejestruj Pushy
+            // Rejestruj Pushy
             console.log('📱 Registering Pushy...');
             const deviceToken = await Pushy.register({
                 appId: '6945736ee5ab0cc758910885',
@@ -3648,16 +3645,23 @@ const PushyService = {
 
             // Foreground listener
             Pushy.setNotificationListener((data) => {
-                console.log('🔔 Push received:', data);
+                console.log('🔔 Foreground push:', data);
                 Toast.info(data.message || data.title || 'Nowe powiadomienie');
                 Notifications.load();
+                
+                // Odśwież zadania
+                if (state.currentUser?.role === 'driver') {
+                    DriverPanel.loadTasks(true);
+                } else if (state.currentUser?.role === 'admin') {
+                    AdminPanel.loadTasks(true);
+                }
             });
 
-            Toast.success('Powiadomienia włączone! 🔔');
             return deviceToken;
 
         } catch (err) {
             console.error('❌ Pushy error:', err.message);
+            this.deviceToken = null;
             this.initPromise = null;
             return null;
         }
@@ -3677,12 +3681,14 @@ const PushyService = {
     },
 
     async retry() {
+        this.deviceToken = null;
         this.initPromise = null;
+        this.isInitializing = false;
         return this.init();
     }
 };
 
-  // =============================================
+    // =============================================
   // 17. EXPORT
   // =============================================
   window.TransportTracker = {
@@ -3698,5 +3704,16 @@ const PushyService = {
     DriverPanel,
     TaskForm,
     AdminPanel,
+    PushyService,  // ← Dodaj też PushyService do exportu
   };
+
+  // =============================================
+  // 18. URUCHOM APLIKACJĘ
+  // =============================================
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
 })();
