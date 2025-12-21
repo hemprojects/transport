@@ -219,8 +219,20 @@ async function login(request, env, corsHeaders) {
     );
 
   const user = await env.DB.prepare(
-    "SELECT id, name, role, pin, force_pin_change, work_start, work_end, perm_users, perm_locations, perm_reports FROM users WHERE id = ? AND active = 1"
-  )
+  `SELECT 
+    id, 
+    name, 
+    role, 
+    pin, 
+    force_pin_change, 
+    work_start, 
+    work_end, 
+    COALESCE(perm_users, 1) as perm_users,
+    COALESCE(perm_locations, 1) as perm_locations,
+    COALESCE(perm_reports, 1) as perm_reports
+  FROM users 
+  WHERE id = ? AND active = 1`
+)
     .bind(userId)
     .first();
   if (!user) {

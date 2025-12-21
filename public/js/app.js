@@ -1337,21 +1337,25 @@ async deleteRead() {
     // Ukryj zakładki bez uprawnień
     const user = state.currentUser;
     
+    const tabReports = document.querySelector('[data-tab="reports"]');
+    const tabUsers = document.querySelector('[data-tab="users"]');
+    const tabLocations = document.querySelector('[data-tab="locations"]');
+    
     // Pokaż wszystkie najpierw (reset)
-    Utils.show(document.querySelector('[data-tab="reports"]'));
-    Utils.show(document.querySelector('[data-tab="users"]'));
-    Utils.show(document.querySelector('[data-tab="locations"]'));
+    if (tabReports) tabReports.classList.remove('hidden');
+    if (tabUsers) tabUsers.classList.remove('hidden');
+    if (tabLocations) tabLocations.classList.remove('hidden');
     
     // Ukryj te bez uprawnień (ID 1 = główny admin - widzi wszystko)
     if (user.id !== 1) {
-        if (user.perm_reports === 0) {
-            Utils.hide(document.querySelector('[data-tab="reports"]'));
+        if (!user.perm_reports) {
+            if (tabReports) tabReports.classList.add('hidden');
         }
-        if (user.perm_users === 0) {
-            Utils.hide(document.querySelector('[data-tab="users"]'));
+        if (!user.perm_users) {
+            if (tabUsers) tabUsers.classList.add('hidden');
         }
-        if (user.perm_locations === 0) {
-            Utils.hide(document.querySelector('[data-tab="locations"]'));
+        if (!user.perm_locations) {
+            if (tabLocations) tabLocations.classList.add('hidden');
         }
     }
     
