@@ -3604,19 +3604,20 @@ initDriverPanel() {
 
     // TABS
     switchTab(tabId) {
-      // Blokada zakładki użytkownicy dla zwykłych kierowników
-      if (tabId === "users" && state.currentUser.id !== 1) {
-        Toast.warning("Brak uprawnień do zarządzania użytkownikami");
-
-        // Jeśli już jesteśmy na innej zakładce, zostańmy tam.
-        // Jeśli nie (np. start aplikacji), idź do tasks.
-        if (state.currentTab === "users" || !state.currentTab) {
-          this.switchTab("tasks");
-        }
-        return;
-      }
-      
-    },
+    state.currentTab = tabId;
+    
+    Utils.$$(".tab-btn").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.tab === tabId);
+    });
+    
+    Utils.$$(".tab-content").forEach((content) => {
+        content.classList.toggle("active", content.id === `tab-${tabId}`);
+    });
+    
+    if (tabId === "reports") {
+        this.loadReports();
+    }
+},
 
     // EVENT LISTENERS
     initEventListeners() {
