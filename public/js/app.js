@@ -19,6 +19,7 @@
       USER: "tt_user",
       THEME: "tt_theme",
     },
+    ONESIGNAL_APP_ID: "7080dabd-158d-471a-b5e4-00b620b33004",
   };
 
   // =============================================
@@ -687,29 +688,23 @@ async deleteRead() {
         return false;
     }
 
-    // Już mamy zgodę - nie pokazuj toast
+    // Już mamy zgodę
     if (Notification.permission === "granted") {
-        PushyService.init().catch(() => {});
-        return true;  // Bez toast!
+        OneSignalService.init();
+        return true;
     }
 
-    // Zablokowane
-    if (Notification.permission === "denied") {
-        Toast.warning('Powiadomienia zablokowane. Włącz je w ustawieniach przeglądarki.');
+    // Pytamy o zgodę (OneSignal Slidedown / Native)
+    try {
+        await OneSignal.Slidedown.promptPush();
+        // Jeśli użytkownik zaakceptował, OneSignal sam to obsłuży
+        // Toast.success('Jeśli zezwolono, powiadomienia będą działać! 🔔');
+        // Powyższy toast może mylić jeśli user zablokował, ale OneSignal obsłuży to UI.
+        return true;
+    } catch (e) {
+        console.error(e);
         return false;
     }
-
-    // Pytamy o zgodę - tylko tu pokazujemy toast
-    const permission = await Notification.requestPermission();
-    if (permission === "granted") {
-        PushyService.init().catch(() => {});
-        Toast.success('Powiadomienia włączone! 🔔');  // Toast tylko przy pierwszym włączeniu
-        return true;
-    } else {
-        Toast.warning('Powiadomienia zablokowane.');
-    }
-
-    return false;
 },
 
     async load() {
@@ -1143,26 +1138,17 @@ async deleteRead() {
 
     await this.loadCommonData();
 
-    if (state.currentUser.role === "admin") {
-        this.initAdminPanel();
-    } else {
-        this.initDriverPanel();
-    }
-
-    // Pushy - w osobnym try/catch żeby nie zepsuć reszty
-    setTimeout(() => {
-        try {
-            if (Notification.permission === 'granted') {
-                console.log('🔔 Initializing push notifications...');
-                PushyService.init().catch(() => {});  // Ignoruj błędy
-            } else if (Notification.permission === 'default') {
-                Toast.info('🔔 Kliknij dzwoneczek aby włączyć powiadomienia');
-            }
-        } catch (e) {
-            console.log('Pushy init skipped');
+        if (state.currentUser.role === "admin") {
+            this.initAdminPanel();
+        } else {
+            this.initDriverPanel();
         }
-    }, 1500);
-},
+
+        // OneSignal Init
+        setTimeout(() => {
+            OneSignalService.init();
+        }, 1000);
+    },
 
     showChangePinModal() {
       // Ukryj ekran logowania, ale nie pokazuj jeszcze panelu
@@ -1246,7 +1232,6 @@ async deleteRead() {
       AdminPanel.loadLocations();
       AdminPanel.updateDateButtons();
 
-      // --- DODAJ TO: ---
       // Załaduj domyślny raport (week)
       AdminPanel.loadReports("week");
 
@@ -1275,9 +1260,12 @@ async deleteRead() {
         state.currentFilter = "all"; // <-- DODAJ TO
 
         localStorage.removeItem(CONFIG.STORAGE_KEYS.USER);
-        Notifications.stopPolling();
-        this.showLoginScreen();
-      };
+    Notifications.stopPolling();
+    // OneSignal Logout
+    OneSignalService.logout();
+
+    this.showLoginScreen();
+  };
 
       if (force) {
         performLogout();
@@ -1316,17 +1304,6 @@ async deleteRead() {
       Utils.$("#admin-logout-btn")?.addEventListener("click", () =>
         this.logout()
       );
-
-      // Naprawa powiadomień (Manualny wyzwalacz)
-      const repairAction = () => {
-        Toast.info("Próbuję naprawić powiadomienia...");
-        // Resetujemy promise, żeby wymusić nową próbę
-        PushyService.initPromise = null;
-        PushyService.init();
-      };
-
-      Utils.$("#driver-repair-btn")?.addEventListener("click", repairAction);
-      Utils.$("#admin-repair-btn")?.addEventListener("click", repairAction);
     },
   };
 
@@ -2833,146 +2810,160 @@ async deleteRead() {
 
       list.innerHTML = state.users
         .map(
-          (user) => `
-                <div class="user-card" data-id="${user.id}">
-                    <div class="user-info">
-                        <div class="user-avatar ${
-                          user.role === "admin" ? "admin" : ""
-                        }">
-                            ${user.role === "admin" ? "👔" : "🚗"}
-                        </div>
-                        <div class="user-details">
-                            <h3>${Utils.escapeHtml(user.name)}</h3>
-                            <p>${
-                              user.role === "admin" ? "Kierownik" : "Kierowca"
-                            }</p>
-                        </div>
-                    </div>
-                    <div class="user-actions">
-                        <button class="task-action-btn" data-action="edit-user" data-id="${
-                          user.id
-                        }">✏️</button>
-                        <button class="task-action-btn btn-delete" data-action="delete-user" data-id="${
-                          user.id
-                        }">🗑️</button>
-                    </div>
-                </div>
-            `
-        )
-        .join("");
+            (user) => `
+              <div class="user-card" data-id="${user.id}">
+                  <div class="user-info">
+                      <div class="user-details">
+                          <h3>${Utils.escapeHtml(user.name)}</h3>
+                          <p class="user-role text-muted">
+                              ${user.role === "admin" ? "👔 Kierownik" : "🚗 Kierowca"}
+                              ${user.role === "admin" ? `<br><small style="font-size: 0.8em; opacity: 0.8;">
+                                  ${user.perm_reports !== 0 ? '📊' : ''} 
+                                  ${user.perm_users !== 0 ? '👥' : ''} 
+                                  ${user.perm_locations !== 0 ? '📍' : ''}
+                              </small>` : ''}
+                          </p>
+                      </div>
+                  </div>
+                  <div class="user-actions">
+                      <button class="task-action-btn btn-edit" data-action="edit-user" data-id="${user.id}">✏️</button>
+                      <button class="task-action-btn btn-delete" data-action="delete-user" data-id="${user.id}">🗑️</button>
+                  </div>
+              </div>
+          `
+          )
+          .join("") || '<p class="text-muted text-center">Brak użytkowników</p>';
 
       list.querySelectorAll("[data-action]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const action = btn.dataset.action;
           const userId = btn.dataset.id;
-          if (action === "edit-user") this.openUserModal(userId);
+          if (action === "edit-user") this.openEditUserModal(userId);
           else if (action === "delete-user") this.deleteUser(userId);
         });
       });
     },
 
-    openUserModal(userId = null) {
-      const isEdit = !!userId;
-
-      Utils.$("#modal-user-title").textContent = isEdit
-        ? "Edytuj użytkownika"
-        : "Nowy użytkownik";
-      Utils.$("#user-form").reset();
+    // --- USER MODAL LOGIC ---
+    openAddUserModal() {
       Utils.$("#user-id").value = "";
-      Utils.$("#pin-hint").classList.toggle("hidden", !isEdit);
-      Utils.$("#user-pin").required = !isEdit;
+      Utils.$("#user-form").reset();
+      Utils.$("#modal-user-title").textContent = "Nowy użytkownik";
+      
+      // Reset widoczności pól
+      Utils.hide(Utils.$("#driver-hours-fields"));
+      Utils.hide(Utils.$("#admin-permissions-fields"));
+      
+      // Reset checkboxów
+      Utils.$("#perm-reports").checked = true;
+      Utils.$("#perm-users").checked = true;
+      Utils.$("#perm-locations").checked = true;
 
-      // Domyślne godziny
-      Utils.$("#user-work-start").value = "07:00";
-      Utils.$("#user-work-end").value = "15:00";
-
-      // Pokaż/ukryj pola godzin
-      const toggleHours = () => {
-        const role = document.querySelector(
-          'input[name="user-role"]:checked'
-        ).value;
-        Utils.toggle("#driver-hours-fields", role === "driver");
-      };
-
-      Utils.$$('input[name="user-role"]').forEach((r) =>
-        r.addEventListener("change", toggleHours)
-      );
-
-      if (isEdit) {
-        const user = state.users.find((u) => u.id == userId);
-        if (user) {
-          Utils.$("#user-id").value = user.id;
-          Utils.$("#user-name").value = user.name;
-          document.querySelector(
-            `input[name="user-role"][value="${user.role}"]`
-          ).checked = true;
-          if (user.work_start)
-            Utils.$("#user-work-start").value = user.work_start;
-          if (user.work_end) Utils.$("#user-work-end").value = user.work_end;
-        }
-      }
-
-      toggleHours();
+      // Reset radio buttons (domyślnie driver)
+      const driverRadio = document.querySelector('input[name="user-role"][value="driver"]');
+      if(driverRadio) driverRadio.checked = true;
+      
+      this.setupUserRoleToggle(); // Ensure listeners attached
       Modal.open("modal-user");
     },
 
-    async handleUserSubmit(e) {
+    openEditUserModal(userId) {
+      const user = state.users.find((u) => u.id == userId);
+      if (!user) return;
+
+      Utils.$("#user-id").value = user.id;
+      Utils.$("#user-name").value = user.name;
+      Utils.$("#user-pin").value = ""; // PIN pusty przy edycji
+      Utils.$("#user-work-start").value = user.work_start || "07:00";
+      Utils.$("#user-work-end").value = user.work_end || "15:00";
+
+      // Ustaw rolę
+      const radio = document.querySelector(`input[name="user-role"][value="${user.role}"]`);
+      if (radio) radio.checked = true;
+
+      // Pokaż/ukryj odpowiednie pola w zależności od roli
+      if (user.role === 'admin') {
+          Utils.hide(Utils.$("#driver-hours-fields"));
+          Utils.show(Utils.$("#admin-permissions-fields"));
+          
+          // Ustaw checkboxy uprawnień (zakładamy 1 = ma, 0 = nie ma)
+          // Jeśli pole nie istnieje (stary rekord), traktujemy jako 1 (wsteczna kompatybilność)
+          Utils.$("#perm-reports").checked = user.perm_reports !== 0;
+          Utils.$("#perm-users").checked = user.perm_users !== 0;
+          Utils.$("#perm-locations").checked = user.perm_locations !== 0;
+      } else {
+          Utils.show(Utils.$("#driver-hours-fields"));
+          Utils.hide(Utils.$("#admin-permissions-fields"));
+      }
+      
+      this.setupUserRoleToggle();
+      
+      Utils.$("#modal-user-title").textContent = "Edycja użytkownika";
+      Modal.open("modal-user");
+    },
+    
+    setupUserRoleToggle() {
+        const roleRadios = document.querySelectorAll('input[name="user-role"]');
+        roleRadios.forEach(radio => {
+            // Remove old listener to avoid duplicates if called multiple times (though simple assignment is safer, addEventListener stacks)
+            // A better way is to set onchange property or ensure init only once. 
+            // For safety in this legacy code structure:
+            radio.onchange = (e) => {
+                if (e.target.value === 'admin') {
+                    Utils.hide(Utils.$("#driver-hours-fields"));
+                    Utils.show(Utils.$("#admin-permissions-fields"));
+                } else {
+                    Utils.show(Utils.$("#driver-hours-fields"));
+                    Utils.hide(Utils.$("#admin-permissions-fields"));
+                }
+            };
+        });
+    },
+
+    async handleSaveUser(e) {
       e.preventDefault();
+      
+      const form = e.target;
+      const id = Utils.$("#user-id").value;
+      const name = Utils.$("#user-name").value;
+      const pin = Utils.$("#user-pin").value;
+      const role = document.querySelector('input[name="user-role"]:checked').value;
+      
+      // Pobierz wartości uprawnień (tylko dla admina, ale wyślemy zawsze, backend zadba)
+      const permReports = Utils.$("#perm-reports").checked ? 1 : 0;
+      const permUsers = Utils.$("#perm-users").checked ? 1 : 0;
+      const permLocations = Utils.$("#perm-locations").checked ? 1 : 0;
 
-      const userId = Utils.$("#user-id").value;
-      const name = Utils.$("#user-name").value.trim();
-      const pin = Utils.$("#user-pin").value.trim();
-      const role = document.querySelector(
-        'input[name="user-role"]:checked'
-      ).value;
+      const userData = {
+        name,
+        role,
+        // Jeśli admin, wyślij uprawnienia
+        ...(role === 'admin' && {
+            perm_reports: permReports,
+            perm_users: permUsers,
+            perm_locations: permLocations
+        }),
+        ...(role === "driver" && {
+          work_start: Utils.$("#user-work-start").value,
+          work_end: Utils.$("#user-work-end").value,
+        }),
+      };
 
-      const work_start =
-        role === "driver" ? Utils.$("#user-work-start").value : null;
-      const work_end =
-        role === "driver" ? Utils.$("#user-work-end").value : null;
+      if (pin) userData.pin = pin;
 
-      if (!name) {
-        Toast.warning("Wpisz imię");
-        return;
-      }
-      if (!userId && !pin) {
-        Toast.warning("Wpisz PIN");
-        return;
-      }
-      if (pin && (pin.length < 4 || pin.length > 6)) {
-        Toast.warning("PIN musi mieć 4-6 cyfr");
-        return;
-      }
-
-      // Natychmiast zamknij i pokaż sukces
-      Modal.close("modal-user");
-      Toast.success(userId ? "Użytkownik zaktualizowany" : "Użytkownik dodany");
-
-      // Sync w tle
       try {
-        if (userId) {
-          await API.updateUser(userId, {
-            name,
-            pin: pin || undefined,
-            role,
-            work_start,
-            work_end,
-          });
+        if (id) {
+          await API.updateUser(id, userData);
+          Toast.success("Zapisano zmiany");
         } else {
-          // Domyślnie wymuś zmianę PIN dla nowych
-          await API.createUser({
-            name,
-            pin,
-            role,
-            work_start,
-            work_end,
-            force_pin_change: 1,
-          });
+          await API.createUser(userData);
+          Toast.success("Dodano użytkownika");
         }
-        await this.loadUsers();
+        Modal.close("modal-user");
+        this.loadUsers();
       } catch (error) {
-        Toast.error("Błąd synchronizacji");
-        await this.loadUsers();
+        Toast.error("Błąd zapisu");
+        console.error(error);
       }
     },
 
@@ -3495,10 +3486,10 @@ async deleteRead() {
 
       // Users
       Utils.$("#add-user-btn")?.addEventListener("click", () =>
-        this.openUserModal()
+        this.openAddUserModal()
       );
       Utils.$("#user-form")?.addEventListener("submit", (e) =>
-        this.handleUserSubmit(e)
+        this.handleSaveUser(e)
       );
 
       // Locations
@@ -3554,6 +3545,11 @@ async deleteRead() {
   async function init() {
     console.log("🚛 TransportTracker v2.0 initializing...");
 
+    // OneSignal Init (Global)
+    // Czekamy chwilę aż biblioteka się załaduje
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalService.init();
+
     Toast.init();
     Modal.init();
     Theme.init();
@@ -3563,6 +3559,38 @@ async deleteRead() {
     DriverPanel.initEventListeners();
     TaskForm.initEventListeners();
     AdminPanel.initEventListeners();
+
+    // Sprawdź uprawnienia i ukryj zakładki
+    const user = state.currentUser;
+    // Domyślnie (dla wstecznej kompatybilności) zakładamy że ma dostęp (1), chyba że wprost jest 0
+    const hasPermReports = user.perm_reports !== 0; 
+    const hasPermUsers = user.perm_users !== 0;
+    const hasPermLocations = user.perm_locations !== 0;
+
+    if (!hasPermReports) {
+        Utils.hide(document.querySelector('[data-tab="reports"]'));
+    }
+    if (!hasPermUsers) {
+        Utils.hide(document.querySelector('[data-tab="users"]'));
+    }
+    if (!hasPermLocations) {
+        Utils.hide(document.querySelector('[data-tab="locations"]'));
+    }
+
+    // Jeśli aktywna zakładka jest ukryta, przełącz na pierwszą dostępną (zwykle "tasks")
+    const activeTab = document.querySelector('.tab-btn.active');
+    if (activeTab && activeTab.classList.contains('hidden')) {
+        AdminPanel.switchTab('tasks');
+    }
+
+    // Deep Link Handling (TaskId z URL)
+    const urlParams = new URLSearchParams(window.location.search);
+    const DeepLinkTaskId = urlParams.get('taskId');
+
+    if (DeepLinkTaskId) {
+        console.log("🔗 Deep Link detected:", DeepLinkTaskId);
+        // Czekamy na logowanie...
+    }
 
     // DODAJ TO: Nasłuchuj wiadomości z Service Workera
     if ('serviceWorker' in navigator) {
@@ -3596,86 +3624,80 @@ async deleteRead() {
     }
 
     await new Promise((resolve) => setTimeout(resolve, 500));
-    await Auth.init();
+  await Auth.init();
 
-    console.log("✅ TransportTracker ready!");
+  // Jeśli mieliśmy Deep Link, otwórz zadanie po zalogowaniu
+  if (DeepLinkTaskId && state.currentUser) {
+       if (state.currentUser.role === 'driver') {
+          DriverPanel.openTaskDetails(DeepLinkTaskId);
+       } else {
+          AdminPanel.openTaskDetails(DeepLinkTaskId);
+       }
+       // Wyczyść URL
+       window.history.replaceState({}, document.title, "/");
+  }
+
+  console.log("✅ TransportTracker ready!");
 }
 
 // =============================================
-// 16. PUSHY INTEGRATION (FIXED)
+// 16. ONESIGNAL SERVICE
 // =============================================
-const PushyService = {
-    initPromise: null,
-    deviceToken: null,
+const OneSignalService = {
+    initialized: false,
 
     async init() {
-        // Na Androidzie - nie rób NIC
-        if (/Android/i.test(navigator.userAgent)) {
-            console.log('📱 Android - skip Pushy, using polling');
-            return null;
-        }
-
-        if (this.deviceToken) return this.deviceToken;
-        if (this.initPromise) return this.initPromise;
-
-        this.initPromise = this._doInit();
-        return this.initPromise;
-    },
-
-    async _doInit() {
+        if (this.initialized) return;
+        
         try {
-            console.log('🔔 PushyService: Starting...');
-
-            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                return null;
-            }
-
-            let retries = 0;
-            while (!window.Pushy && retries < 10) {
-                await new Promise(r => setTimeout(r, 500));
-                retries++;
-            }
-            if (!window.Pushy) return null;
-
-            if (Notification.permission === 'denied') return null;
-
-            console.log('📱 Registering Pushy...');
-            const deviceToken = await Pushy.register({
-                appId: '6945736ee5ab0cc758910885'
+            console.log('🔔 OneSignal: Initializing...');
+            await window.OneSignal.init({
+                appId: CONFIG.ONESIGNAL_APP_ID,
+                allowLocalhostAsSecureOrigin: true,
+                serviceWorker: {
+                    path: '/service-worker.js', // Używamy Twojego pliku
+                },
             });
 
-            this.deviceToken = deviceToken;
-            console.log('✅ Pushy Token:', deviceToken);
+            this.initialized = true;
+            console.log('✅ OneSignal: Ready');
 
-            await this.syncToken(deviceToken);
-
-            Pushy.setNotificationListener((data) => {
-                console.log('🔔 Foreground push:', data);
-                Toast.info(data.message || data.title || 'Nowe powiadomienie');
+            // Nasłuchuj na powiadomienia w aplikacji (Foreground)
+            window.OneSignal.Notifications.addEventListener('foregroundWillShow', (event) => {
+                console.log('🔔 Foreground notification received', event);
+                // Nie blokujemy (event.preventDefault()), więc pokaże się natywne powiadomienie też (zazwyczaj)
+                // Ale odświeżamy licznik
                 Notifications.load();
+                Toast.info("Nowe powiadomienie");
             });
 
-            return deviceToken;
+            // Jeśli użytkownik jest zalogowany, upewnij się że ma Login w OneSignal
+            if (state.currentUser) {
+                this.login(state.currentUser.id, state.currentUser.role);
+            }
 
-        } catch (err) {
-            // WAŻNE: Nie pozwól żeby błąd zepsuł resztę aplikacji
-            console.error('❌ Pushy error (ignored):', err.message);
-            this.initPromise = null;
-            return null;
+        } catch (e) {
+            console.error('❌ OneSignal Init Error:', e);
         }
     },
 
-    async syncToken(token) {
-        if (!state.currentUser) return;
+    async login(userId, role) {
+        if (!this.initialized) await this.init();
         try {
-            await API.request('/pushy/register', {
-                method: 'POST',
-                body: { token }
-            });
-            console.log('✅ Token synced');
+            // Logowanie External User ID
+            await window.OneSignal.login(String(userId));
+            // Tagowanie rolą (admin/driver)
+            await window.OneSignal.User.addTag("role", role);
+            console.log(`✅ OneSignal: User logged in (${userId}) with role (${role})`);
         } catch (e) {
-            // Ignoruj błędy
+            console.error('❌ OneSignal Login Error:', e);
         }
+    },
+
+    logout() {
+        if (!window.OneSignal) return;
+        window.OneSignal.logout();
+        console.log('👋 OneSignal: User logged out');
     }
 };
 

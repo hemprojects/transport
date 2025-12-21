@@ -19,7 +19,7 @@
       content="Transport Tracker - System zarządzania transportem wewnętrznym"
     />
     <title>Transport Tracker</title>
-    <script src="https://sdk.pushy.me/web/1.0.24/pushy-sdk.js"></script>
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <link rel="stylesheet" href="css/style.css" />
     <link
       rel="icon"
@@ -937,6 +937,25 @@
                   </span>
                 </label>
               </div>
+            </div>
+
+            <!-- PERMISSIONS CHECKBOXES (Only for Admin) -->
+            <div id="admin-permissions-fields" class="form-group hidden" style="margin-top: 15px; background: var(--bg-secondary); padding: 10px; border-radius: 8px;">
+                <label style="margin-bottom: 8px; display: block;">Uprawnienia Kierownika</label>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="perm-reports" checked>
+                        <span>📊 Raporty (Dostęp)</span>
+                    </label>
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="perm-users" checked>
+                        <span>👥 Użytkownicy (Dodawanie/Edycja)</span>
+                    </label>
+                    <label class="checkbox-label" style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="perm-locations" checked>
+                        <span>📍 Lokalizacje (Dodawanie/Edycja)</span>
+                    </label>
+                </div>
             </div>
             <div id="driver-hours-fields" class="hidden">
               <div class="form-group">

@@ -15,6 +15,11 @@ function generateToken() {
     return crypto.randomUUID();
 }
 
+// --- CONFIG ---
+// Keys are now in `env` (set via `wrangler secret put`)
+// env.ONESIGNAL_APP_ID
+// env.ONESIGNAL_API_KEY
+
 // --- RATE LIMITING ---
 
 async function checkLoginRateLimit(env, identifier) {
@@ -80,8 +85,8 @@ async function handleAPI(request, env, path, corsHeaders) {
     const userId = await verifySession(request, env);
     if (!userId) return new Response(JSON.stringify({ error: 'Sesja wygasła' }), { status: 401, headers: corsHeaders });
 
-    // PUSHY
-    if (path === '/api/pushy/register' && method === 'POST') return await registerPushyToken(request, env, corsHeaders, userId);
+    // PUSHY - Removed
+    // if (path === '/api/pushy/register' && method === 'POST') return await registerPushyToken(request, env, corsHeaders, userId);
 
     // USERS
     if (path === '/api/users' && method === 'GET') return await getUsers(env, corsHeaders);
@@ -128,7 +133,7 @@ async function login(request, env, corsHeaders) {
     const limit = await checkLoginRateLimit(env, identifier);
     if (limit.blocked) return new Response(JSON.stringify({ error: `Blokada na ${limit.minutesLeft} min.` }), { status: 429, headers: corsHeaders });
 
-    const user = await env.DB.prepare('SELECT id, name, role, pin, force_pin_change, work_start, work_end FROM users WHERE id = ? AND active = 1').bind(userId).first();
+    const user = await env.DB.prepare('SELECT id, name, role, pin, force_pin_change, work_start, work_end, perm_users, perm_locations, perm_reports FROM users WHERE id = ? AND active = 1').bind(userId).first();
     if (!user) {
         await recordLoginResult(env, identifier, false);
         return new Response(JSON.stringify({ error: 'Błędne dane' }), { status: 401, headers: corsHeaders });
@@ -159,19 +164,26 @@ async function login(request, env, corsHeaders) {
 // --- USERS ---
 
 async function getUsers(env, corsHeaders) {
-    const result = await env.DB.prepare('SELECT id, name, role, work_start, work_end FROM users WHERE active = 1 ORDER BY role DESC, name').all();
+    // Pobieramy też uprawnienia
+    const result = await env.DB.prepare('SELECT id, name, role, work_start, work_end, perm_users, perm_locations, perm_reports FROM users WHERE active = 1 ORDER BY role DESC, name').all();
     return new Response(JSON.stringify(result.results), { headers: corsHeaders });
 }
 
 async function createUser(request, env, corsHeaders) {
-    const { name, pin, role, work_start, work_end, force_pin_change } = await request.json();
+    const { name, pin, role, work_start, work_end, force_pin_change, perm_users, perm_locations, perm_reports } = await request.json();
     const hashedPin = await hashPin(pin);
-    const result = await env.DB.prepare('INSERT INTO users (name, pin, role, work_start, work_end, force_pin_change) VALUES (?, ?, ?, ?, ?, ?)').bind(name, hashedPin, role, work_start, work_end, force_pin_change || 1).run();
+    
+    // Domyślnie uprawnienia na 1 (jeśli nie podano), chyba że to nie admin - wtedy 0 (ale w bazie i tak integer)
+    const p_users = perm_users !== undefined ? perm_users : (role === 'admin' ? 1 : 0);
+    const p_loc = perm_locations !== undefined ? perm_locations : (role === 'admin' ? 1 : 0);
+    const p_rep = perm_reports !== undefined ? perm_reports : (role === 'admin' ? 1 : 0);
+
+    const result = await env.DB.prepare('INSERT INTO users (name, pin, role, work_start, work_end, force_pin_change, perm_users, perm_locations, perm_reports) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(name, hashedPin, role, work_start, work_end, force_pin_change || 1, p_users, p_loc, p_rep).run();
     return new Response(JSON.stringify({ id: result.meta.last_row_id, name, role }), { headers: corsHeaders });
 }
 
 async function updateUser(id, request, env, corsHeaders) {
-    const { name, pin, role, work_start, work_end, force_pin_change } = await request.json();
+    const { name, pin, role, work_start, work_end, force_pin_change, perm_users, perm_locations, perm_reports } = await request.json();
     let q = 'UPDATE users SET ';
     let p = [];
     let u = [];
@@ -180,12 +192,17 @@ async function updateUser(id, request, env, corsHeaders) {
     if (work_start) { u.push('work_start = ?'); p.push(work_start); }
     if (work_end) { u.push('work_end = ?'); p.push(work_end); }
     if (force_pin_change !== undefined) { u.push('force_pin_change = ?'); p.push(force_pin_change); }
+    if (perm_users !== undefined) { u.push('perm_users = ?'); p.push(perm_users); }
+    if (perm_locations !== undefined) { u.push('perm_locations = ?'); p.push(perm_locations); }
+    if (perm_reports !== undefined) { u.push('perm_reports = ?'); p.push(perm_reports); }
     if (pin) { u.push('pin = ?'); p.push(await hashPin(pin)); }
+    
     if (u.length === 0) return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
     q += u.join(', ') + ' WHERE id = ?'; p.push(id);
     await env.DB.prepare(q).bind(...p).run();
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
+
 
 async function deleteUser(id, env, corsHeaders) {
     await env.DB.prepare('UPDATE users SET active = 0 WHERE id = ?').bind(id).run();
@@ -253,9 +270,12 @@ async function createTask(request, env, corsHeaders, userId) {
     
     // Powiadomienia dla kierowców
     const drivers = await env.DB.prepare('SELECT id FROM users WHERE role = "driver" AND active = 1').all();
+    const origin = new URL(request.url).origin;
+    
     for (const d of drivers.results) {
         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(d.id, 'new_task', 'Nowe zadanie', `Dodano: ${data.description}`, taskId).run();
-        await sendPushyNotification(d.id, 'Nowe zadanie', `Dodano: ${data.description}`, { taskId }, env);
+        // OneSignal
+        await sendOneSignalNotification([d.id], 'Nowe zadanie', `Dodano: ${data.description}`, { taskId }, origin, env);
     }
     return new Response(JSON.stringify({ id: taskId, success: true }), { headers: corsHeaders });
 }
@@ -289,14 +309,35 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     const statusLabels = { 'in_progress': 'Rozpoczęto', 'completed': 'Zakończono', 'pending': 'Oczekuje' };
     await env.DB.prepare('INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)').bind(id, userId, 'status_change', statusLabels[status] || status).run();
     
-    const task = await env.DB.prepare('SELECT description FROM tasks WHERE id = ?').bind(id).first();
-    const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
+    const task = await env.DB.prepare('SELECT description, created_by, assigned_to FROM tasks WHERE id = ?').bind(id).first();
     const statusText = status === 'in_progress' ? 'rozpoczęte' : status === 'completed' ? 'zakończone' : status;
-    
-    for (const a of admins.results) {
-        await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, 'status_change', 'Zmiana statusu', `"${task.description}" - ${statusText}`, id).run();
-        await sendPushyNotification(a.id, 'Zmiana statusu', `"${task.description}" - ${statusText}`, { taskId: id }, env);
+    const origin = new URL(request.url).origin;
+
+    // 1. Powiadom KIEROWNIKA (Twórcę zadania), jeśli to nie on zmienił status
+    if (task.created_by && task.created_by != userId) {
+         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(task.created_by, 'status_change', 'Zmiana statusu', `"${task.description}" - ${statusText}`, id).run();
+         await sendOneSignalNotification([task.created_by], 'Zmiana statusu', `"${task.description}" - ${statusText}`, { taskId: id }, origin, env);
+    } else if (!task.created_by) {
+        // Fallback: Jeśli brak twórcy, powiadom wszystkich adminów (żeby nie zginęło)
+        const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
+        for (const a of admins.results) {
+             if (a.id == userId) continue; // Nie powiadamiaj sprawcy
+             await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, 'status_change', 'Zmiana statusu', `"${task.description}" - ${statusText}`, id).run();
+             await sendOneSignalNotification([a.id], 'Zmiana statusu', `"${task.description}" - ${statusText}`, { taskId: id }, origin, env);
+        }
     }
+
+    // 2. Powiadom KIEROWCĘ (Przypisanego), jeśli to nie on zmienił status (np. admin cofnął)
+    // Uwaga: przy statusie 'in_progress' właśnie przypisujemy userId, więc assigned_to w bazie może być stary/null,
+    // ale w argumencie funkcji updateTaskStatus userId to sprawca.
+    // Logika: Jeśli status zmienił ADMIN, a zadanie jest przypisane do KIEROWCY (lub właśnie zostało), powiadom go.
+    
+    // Jeśli zadanie JEST lub BYŁO przypisane
+    if (task.assigned_to && task.assigned_to != userId) {
+         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(task.assigned_to, 'status_change', 'Aktualizacja zadania', `"${task.description}" - ${statusText}`, id).run();
+         await sendOneSignalNotification([task.assigned_to], 'Aktualizacja zadania', `"${task.description}" - ${statusText}`, { taskId: id }, origin, env);
+    }
+
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
@@ -337,9 +378,8 @@ async function createTaskLog(id, request, env, corsHeaders) {
     await env.DB.prepare(`INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes) VALUES (?, ?, ?, ?, ?, ?)`).bind(id, userId, logType, safeMessage, safeReason, safeMinutes).run();
     
     if (logType === 'delay' || logType === 'problem') {
-        const task = await env.DB.prepare('SELECT description FROM tasks WHERE id = ?').bind(id).first();
+        const task = await env.DB.prepare('SELECT description, created_by FROM tasks WHERE id = ?').bind(id).first();
         const user = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first();
-        const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
         
         const title = logType === 'delay' ? '⏱️ Przestój' : '⚠️ Problem';
         const delayLabels = { 
@@ -351,9 +391,19 @@ async function createTaskLog(id, request, env, corsHeaders) {
             ? `${user.name}: ${delayLabels[safeReason] || safeReason} (${safeMinutes || 0} min)` 
             : `${user.name}: ${safeMessage}`;
         
-        for (const a of admins.results) {
-            await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, logType, title, msgText, id).run();
-            await sendPushyNotification(a.id, title, msgText, { taskId: id }, env);
+        const origin = new URL(request.url).origin;
+
+        // Powiadom TWÓRCĘ (Kierownika)
+        if (task.created_by) {
+            await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(task.created_by, logType, title, msgText, id).run();
+            await sendOneSignalNotification([task.created_by], title, msgText, { taskId: id }, origin, env);
+        } else {
+            // Fallback: Wszyscy admini
+            const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
+            for (const a of admins.results) {
+                await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, logType, title, msgText, id).run();
+                await sendOneSignalNotification([a.id], title, msgText, { taskId: id }, origin, env);
+            }
         }
     }
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
@@ -491,80 +541,48 @@ async function getReports(period, env, corsHeaders) {
     return new Response(JSON.stringify({ drivers: driversStats }), { headers: corsHeaders });
 }
 
-// --- PUSHY SERVICE ---
+// --- ONESIGNAL SERVICE ---
 
-async function registerPushyToken(request, env, corsHeaders, userId) {
-    const { token } = await request.json();
-    
-    // Sprawdź czy ten token już istnieje dla tego usera
-    const existing = await env.DB.prepare(
-        'SELECT id FROM pushy_tokens WHERE user_id = ? AND token = ?'
-    ).bind(userId, token).first();
-    
-    if (existing) {
-        // Token istnieje - aktualizuj last_used
-        await env.DB.prepare(
-            'UPDATE pushy_tokens SET last_used = CURRENT_TIMESTAMP WHERE user_id = ? AND token = ?'
-        ).bind(userId, token).run();
-        console.log(`📱 Token refreshed for user ${userId}`);
-        return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
-    }
-    
-    // Usuń stare tokeny tego użytkownika (1 user = 1 token)
-    await env.DB.prepare('DELETE FROM pushy_tokens WHERE user_id = ?').bind(userId).run();
-    
-    // Usuń ten token jeśli był u innego użytkownika
-    await env.DB.prepare('DELETE FROM pushy_tokens WHERE token = ?').bind(token).run();
-    
-    // Dodaj nowy token
-    await env.DB.prepare(
-        'INSERT INTO pushy_tokens (user_id, token, last_used) VALUES (?, ?, CURRENT_TIMESTAMP)'
-    ).bind(userId, token).run();
-    
-    console.log(`📱 New token registered for user ${userId}`);
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
-}
-
-async function sendPushyNotification(userIds, title, message, data, env) {
+async function sendOneSignalNotification(userIds, title, message, data, origin, env) {
     const ids = Array.isArray(userIds) ? userIds : [userIds];
     if (ids.length === 0) return;
 
-    const tokens = [];
-    for (const uid of ids) {
-        const results = await env.DB.prepare('SELECT token FROM pushy_tokens WHERE user_id = ?').bind(uid).all();
-        results.results.forEach(r => tokens.push(r.token));
-    }
+    // Convert IDs to strings just in case
+    const targetIds = ids.map(id => String(id));
 
-    if (tokens.length === 0) {
-        console.log('📤 No tokens found');
+    if (!env.ONESIGNAL_APP_ID || !env.ONESIGNAL_API_KEY) {
+        console.error('❌ OneSignal credentials not set in ENV');
         return;
     }
 
-    if (!env.PUSHY_SECRET_KEY) {
-        console.error('❌ PUSHY_SECRET_KEY not set');
-        return;
-    }
-
-    // TYLKO data - BEZ notification (naprawia podwójne powiadomienia!)
     const payload = {
-        to: tokens,
-        data: {
-            title: title,
-            message: message,
-            ...data
-        }
+        app_id: env.ONESIGNAL_APP_ID,
+        include_aliases: { 
+            external_id: targetIds 
+        },
+        target_channel: "push",
+        headings: { "en": title },
+        contents: { "en": message },
+        data: data,
+        // Kluczowe: URL z parametrem taskId, aby aplikacja otworzyła się na właściwym zadaniu
+        url: `${origin}/?taskId=${data.taskId}`,
+        // Collapse ID: zapobiega spamowi, aktualizuje istniejące powiadomienie dla tego samego zadania
+        collapse_id: `task-${data.taskId}`,
     };
 
     try {
-        const resp = await fetch(`https://api.pushy.me/push?api_key=${env.PUSHY_SECRET_KEY}`, {
+        const resp = await fetch('https://onesignal.com/api/v1/notifications', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Basic ${env.ONESIGNAL_API_KEY}`
+            },
             body: JSON.stringify(payload)
         });
-        const responseText = await resp.text();
-        console.log(`📤 Pushy [${resp.status}]:`, responseText);
+        const responseJson = await resp.json();
+        console.log(`📤 OneSignal:`, responseJson);
     } catch (e) {
-        console.error('❌ Pushy error:', e);
+        console.error('❌ OneSignal error:', e);
     }
 }
 
@@ -598,11 +616,13 @@ export default {
     async scheduled(event, env, ctx) {
         console.log('🧹 Cron: Cleaning old data...');
         
-        // Usuń tokeny nieużywane 30+ dni
+        // Usuń stare tokeny - PUSHY REMOVED
+        /*
         const tokens = await env.DB.prepare(`
             DELETE FROM pushy_tokens WHERE last_used < datetime('now', '-30 days')
         `).run();
         console.log(`🧹 Deleted ${tokens.meta.changes} old tokens`);
+        */
         
         // Usuń wygasłe sesje
         const sessions = await env.DB.prepare(`
