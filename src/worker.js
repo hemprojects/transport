@@ -1173,7 +1173,8 @@ async function sendOneSignalNotification(
     
     // Chrome na Android
     chrome_web_icon: `${origin}/icon.png`,
-    chrome_web_badge: `${origin}/icon.png`,
+    chrome_web_badge: `${origin}/badge.png`,
+    chrome_web_image: `${origin}/icon.png`,
   };
 
   try {
