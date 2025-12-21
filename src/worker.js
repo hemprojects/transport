@@ -269,14 +269,12 @@ async function createTask(request, env, corsHeaders, userId) {
     const taskId = res.meta.last_row_id;
     
     // Powiadomienia dla kierowców
+    // Send Notification to ALL Drivers
     const drivers = await env.DB.prepare('SELECT id FROM users WHERE role = "driver" AND active = 1').all();
+    const driverIds = drivers.results.map(u => u.id);
     const origin = new URL(request.url).origin;
-    
-    for (const d of drivers.results) {
-        await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(d.id, 'new_task', 'Nowe zadanie', `Dodano: ${data.description}`, taskId).run();
-        // OneSignal
-        await sendOneSignalNotification([d.id], 'Nowe zadanie', `Dodano: ${data.description}`, { taskId }, origin, env);
-    }
+    await sendOneSignalNotification(driverIds, 'Nowe zadanie', `Nowe zadanie: ${data.description}`, { taskId: taskId }, origin, env);
+
     return new Response(JSON.stringify({ id: taskId, success: true }), { headers: corsHeaders });
 }
 
@@ -336,6 +334,27 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     if (task.assigned_to && task.assigned_to != userId) {
          await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(task.assigned_to, 'status_change', 'Aktualizacja zadania', `"${task.description}" - ${statusText}`, id).run();
          await sendOneSignalNotification([task.assigned_to], 'Aktualizacja zadania', `"${task.description}" - ${statusText}`, { taskId: id }, origin, env);
+    }
+
+    // Powiadomienie
+    const assigned_to = task.assigned_to;
+    if (assigned_to) {
+        // ... (existing logic)
+        // Jeśli zadanie ma przypisanego kierowcę i status zmienił INNY użytkownik (np. admin), powiadom kierowcę
+        if (assigned_to && String(assigned_to) !== String(userId)) {
+             await sendOneSignalNotification([assigned_to], `Status zadania: ${status}`, `${status}: ${task.description}`, { taskId: id }, new URL(request.url).origin, env);
+        }
+        
+        // Jeśli status zmienił kierowca (albo ktokolwiek inny niż twórca), powiadom Twórcę (Kierownika)
+        // Ale tylko jeśli twórca istnieje
+        if (task.created_by && String(task.created_by) !== String(userId)) {
+             await sendOneSignalNotification([task.created_by], `Aktualizacja zadania`, `Status ${status}: ${task.description}`, { taskId: id }, new URL(request.url).origin, env);
+        } else if (!task.created_by) {
+             // Fallback: Notify all admins if no creator
+             const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
+             const adminIds = admins.results.map(u => u.id).filter(aid => String(aid) !== String(userId));
+             await sendOneSignalNotification(adminIds, `Aktualizacja zadania`, `Status ${status}: ${task.description}`, { taskId: id }, new URL(request.url).origin, env);
+        }
     }
 
     return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
@@ -566,6 +585,8 @@ async function sendOneSignalNotification(userIds, title, message, data, origin, 
         data: data,
         // Kluczowe: URL z parametrem taskId, aby aplikacja otworzyła się na właściwym zadaniu
         url: `${origin}/?taskId=${data.taskId}`,
+        web_url: `${origin}/?taskId=${data.taskId}`, // Dla pewności na niektórych wersjach Chrome
+        
         // Collapse ID: zapobiega spamowi, aktualizuje istniejące powiadomienie dla tego samego zadania
         collapse_id: `task-${data.taskId}`,
     };
