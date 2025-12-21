@@ -708,29 +708,50 @@ async deleteRead() {
 },
 
     async load() {
-      if (!state.currentUser) return;
-
-      try {
+    if (!state.currentUser) {
+        console.warn('⚠️ Notifications.load: No current user');
+        return;
+    }
+    
+    try {
+        console.log(`🔔 Notifications.load: Fetching for user ${state.currentUser.id}...`);
+        
         const response = await API.getNotifications(state.currentUser.id);
-
+        
+        console.log(`🔔 Notifications.load: Response:`, {
+            notificationsCount: response.notifications?.length || 0,
+            unreadCount: response.unreadCount,
+            firstNotification: response.notifications?.[0] || null
+        });
+        
+        // Sprawdź czy mamy nowe nieprzeczytane
         if (response.unreadCount > state.unreadNotifications) {
-          const latest = response.notifications[0];
-          if (latest && !latest.is_read) {
-            this.showSystemNotification(
-              latest.title,
-              latest.message,
-              latest.task_id
-            );
-          }
+            const latest = response.notifications[0];
+            if (latest && !latest.is_read) {
+                this.showSystemNotification(
+                    latest.title,
+                    latest.message,
+                    latest.task_id
+                );
+            }
         }
-
+        
         state.notifications = response.notifications || [];
         state.unreadNotifications = response.unreadCount || 0;
+        
+        console.log(`🔔 Notifications.load: State updated - ${state.unreadNotifications} unread`);
+        
         this.updateBadge();
-      } catch (error) {
-        console.error("Failed to load notifications:", error);
-      }
-    },
+        
+        // Jeśli modal z powiadomieniami jest otwarty, odśwież widok
+        const notifModal = Utils.$("#modal-notifications");
+        if (notifModal && !notifModal.classList.contains('hidden')) {
+            this.renderList();
+        }
+    } catch (error) {
+        console.error("❌ Notifications.load failed:", error);
+    }
+},
 
      async deleteRead() {
         if (!state.currentUser) return;
@@ -800,42 +821,64 @@ async deleteRead() {
     },
 
     updateBadge() {
-      const driverBadge = Utils.$("#driver-notification-badge");
-      const adminBadge = Utils.$("#admin-notification-badge");
-      const badge =
-        state.currentUser?.role === "admin" ? adminBadge : driverBadge;
-
-      if (badge) {
+    console.log(`🔔 updateBadge: unread = ${state.unreadNotifications}, role = ${state.currentUser?.role}`);
+    
+    const driverBadge = Utils.$("#driver-notification-badge");
+    const adminBadge = Utils.$("#admin-notification-badge");
+    
+    // Wybierz odpowiedni badge
+    const badge = state.currentUser?.role === "admin" ? adminBadge : driverBadge;
+    
+    console.log(`🔔 updateBadge: badge element =`, badge, `exists = ${!!badge}`);
+    
+    if (badge) {
         if (state.unreadNotifications > 0) {
-          badge.textContent =
-            state.unreadNotifications > 99 ? "99+" : state.unreadNotifications;
-          Utils.show(badge);
+            badge.textContent = state.unreadNotifications > 99 ? "99+" : state.unreadNotifications;
+            badge.classList.remove('hidden');
+            console.log(`🔔 updateBadge: Showing badge with ${state.unreadNotifications}`);
         } else {
-          Utils.hide(badge);
+            badge.classList.add('hidden');
+            console.log(`🔔 updateBadge: Hiding badge`);
         }
-      } else {
-        console.warn("❌ Badge element NOT FOUND in updateBadge");
-      }
-
-      // PWA Icon Badge (Native)
-      if ('setAppBadge' in navigator) {
-          if (state.unreadNotifications > 0) {
-              navigator.setAppBadge(state.unreadNotifications).catch((e) => console.log("Badge error:", e));
-          } else {
-              navigator.clearAppBadge().catch(() => {});
-          }
-      }
-    },
+    } else {
+        console.error("❌ updateBadge: Badge element NOT FOUND!");
+    }
+    
+    // PWA Icon Badge (Native)
+    if ('setAppBadge' in navigator) {
+        if (state.unreadNotifications > 0) {
+            navigator.setAppBadge(state.unreadNotifications).catch((e) => console.log("Badge error:", e));
+        } else {
+            navigator.clearAppBadge().catch(() => {});
+        }
+    }
+},
 
     startPolling() {
-      this.load();
-      state.notificationInterval = setInterval(() => {
+    console.log('🔔 startPolling: Starting notification polling...');
+    
+    // Natychmiast załaduj powiadomienia
+    this.load();
+    
+    // Zatrzymaj stary interval jeśli istnieje
+    if (state.notificationInterval) {
+        clearInterval(state.notificationInterval);
+    }
+    
+    // Ustaw nowy interval
+    state.notificationInterval = setInterval(() => {
         this.load();
-        if (state.currentUser?.role === "driver") DriverPanel.loadTasks(true);
-        else if (state.currentUser?.role === "admin")
-          AdminPanel.loadTasks(true);
-      }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
-    },
+        
+        // Odśwież też zadania w tle
+        if (state.currentUser?.role === "driver") {
+            DriverPanel.loadTasks(true);
+        } else if (state.currentUser?.role === "admin") {
+            AdminPanel.loadTasks(true);
+        }
+    }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
+    
+    console.log(`🔔 startPolling: Polling every ${CONFIG.NOTIFICATION_CHECK_INTERVAL}ms`);
+},
 
     stopPolling() {
       if (state.notificationInterval) {
@@ -1139,25 +1182,33 @@ async deleteRead() {
 
     async onLoginSuccess() {
     Utils.$("#login-form")?.reset();
-
+    
     if (state.currentUser.force_pin_change) {
         this.showChangePinModal();
         return;
     }
-
+    
     await this.loadCommonData();
-
-        if (state.currentUser.role === "admin") {
-            this.initAdminPanel();
-        } else {
-            this.initDriverPanel();
-        }
-
-        // OneSignal Init
-        setTimeout(() => {
-            OneSignalService.init();
-        }, 1000);
-    },
+    
+    if (state.currentUser.role === "admin") {
+        this.initAdminPanel();
+    } else {
+        this.initDriverPanel();
+    }
+    
+    // OneSignal - inicjalizuj SDK (nie blokuje UI)
+    OneSignalService.init().then(() => {
+        // Po 2 sekundach poproś o zgodę (jeśli jeszcze nie mamy)
+        setTimeout(async () => {
+            const hasPermission = await OneSignalService.requestPermission();
+            if (hasPermission && state.currentUser) {
+                await OneSignalService.login(state.currentUser.id, state.currentUser.role);
+            }
+        }, 2000);
+    }).catch(err => {
+        console.warn("OneSignal setup failed:", err);
+    });
+},
 
     showChangePinModal() {
       // Ukryj ekran logowania, ale nie pokazuj jeszcze panelu
@@ -1229,23 +1280,33 @@ async deleteRead() {
     },
 
     initAdminPanel() {
-      Utils.$("#admin-user-name").textContent = state.currentUser.name;
-      state.currentDate = Utils.getToday();
-      Utils.$("#admin-date-picker").value = state.currentDate;
+    Utils.$("#admin-user-name").textContent = state.currentUser.name;
+    state.currentDate = Utils.getToday();
+    Utils.$("#admin-date-picker").value = state.currentDate;
+    Screen.show("admin");
+    AdminPanel.switchTab("tasks");
+    AdminPanel.loadTasks();
+    AdminPanel.loadUsers();
+    AdminPanel.loadLocations();
+    AdminPanel.updateDateButtons();
+    AdminPanel.loadReports("week");
+    
+    console.log('🚀 Admin panel initialized for user:', state.currentUser.id, state.currentUser.name);
+    
+    Notifications.startPolling();
+},
 
-      Screen.show("admin");
-      // Wymuś zakładkę Tasks na starcie
-      AdminPanel.switchTab("tasks");
-      AdminPanel.loadTasks();
-      AdminPanel.loadUsers();
-      AdminPanel.loadLocations();
-      AdminPanel.updateDateButtons();
-
-      // Załaduj domyślny raport (week)
-      AdminPanel.loadReports("week");
-
-      Notifications.startPolling();
-    },
+initDriverPanel() {
+    Utils.$("#driver-user-name").textContent = state.currentUser.name;
+    state.currentDate = Utils.getToday();
+    Utils.$("#driver-date-text").textContent = Utils.formatDate(state.currentDate);
+    Screen.show("driver");
+    
+    console.log('🚀 Driver panel initialized for user:', state.currentUser.id, state.currentUser.name);
+    
+    DriverPanel.loadTasks();
+    Notifications.startPolling();
+},
 
     initDriverPanel() {
       Utils.$("#driver-user-name").textContent = state.currentUser.name;
@@ -1683,7 +1744,7 @@ async deleteRead() {
       // Sync w tle
       try {
         await API.joinTask(taskId, state.currentUser.id);
-        await this.loadTasks(true);
+        await this.loadTasks(); // silent refresh
       } catch (error) {
         Toast.error("Błąd synchronizacji");
         await this.loadTasks();
@@ -3647,6 +3708,18 @@ async deleteRead() {
        // Wyczyść URL
        window.history.replaceState({}, document.title, "/");
   }
+  // Diagnostyka
+console.log('📱 Device Info:', {
+    userAgent: navigator.userAgent.substring(0, 100),
+    platform: navigator.platform,
+    serviceWorker: 'serviceWorker' in navigator,
+    pushManager: 'PushManager' in window,
+    notification: 'Notification' in window,
+    notificationPermission: 'Notification' in window ? Notification.permission : 'N/A',
+    isAndroid: /Android/i.test(navigator.userAgent),
+    isChrome: /Chrome/i.test(navigator.userAgent),
+    isSamsung: /SamsungBrowser/i.test(navigator.userAgent)
+});
 
   console.log("✅ TransportTracker ready!");
 }
@@ -3656,65 +3729,161 @@ async deleteRead() {
 // =============================================
 const OneSignalService = {
     initialized: false,
+    initPromise: null,
 
     async init() {
-        if (this.initialized) return;
+        // Prevent multiple initializations
+        if (this.initPromise) return this.initPromise;
         
-        try {
-            console.log('🔔 OneSignal: Initializing...');
+        this.initPromise = new Promise((resolve) => {
+            window.OneSignalDeferred = window.OneSignalDeferred || [];
             
-            // Używamy OneSignalDeferred, aby uniknąć problemu "OneSignal is not defined"
             window.OneSignalDeferred.push(async function(OneSignal) {
-                await OneSignal.init({
-                    appId: CONFIG.ONESIGNAL_APP_ID,
-                    allowLocalhostAsSecureOrigin: true,
-                    serviceWorker: {
-                        path: '/service-worker.js', // Używamy Twojego pliku
-                    },
-                });
-                console.log('✅ OneSignal: Ready');
+                try {
+                    console.log('🔔 OneSignal: Initializing...');
+                    
+                    await OneSignal.init({
+                        appId: CONFIG.ONESIGNAL_APP_ID,
+                        allowLocalhostAsSecureOrigin: true,
+                        serviceWorkerPath: '/OneSignalSDKWorker.js',
+                        serviceWorkerParam: { scope: '/' },
+                    });
+                    
+                    console.log('✅ OneSignal: SDK Initialized');
+                    OneSignalService.initialized = true;
+                    
+                    // Event: Foreground notification
+                    OneSignal.Notifications.addEventListener('foregroundWillDisplay', (event) => {
+                        console.log('🔔 Foreground push:', event.notification);
+                        // Odśwież powiadomienia w dzwoneczku
+                        Notifications.load();
+                        Toast.info(event.notification.body || "Nowe powiadomienie");
+                    });
+                    
+                    // Event: Notification click
+                    OneSignal.Notifications.addEventListener('click', (event) => {
+                        console.log('🔔 Notification clicked:', event);
+                        const taskId = event.notification?.data?.taskId;
+                        if (taskId && state.currentUser) {
+                            if (state.currentUser.role === 'driver') {
+                                DriverPanel.openTaskDetails(taskId);
+                            } else {
+                                AdminPanel.openTaskDetails(taskId);
+                            }
+                        }
+                    });
+                    
+                    resolve(true);
+                } catch (e) {
+                    console.error('❌ OneSignal Init Error:', e);
+                    resolve(false);
+                }
             });
-
-            this.initialized = true;
-
-            // Nasłuchuj na powiadomienia w aplikacji (Foreground)
-            window.OneSignalDeferred.push(function(OneSignal) {
-                OneSignal.Notifications.addEventListener('foregroundWillShow', (event) => {
-                    console.log('🔔 Foreground notification received', event);
-                    Notifications.load();
-                    Toast.info("Nowe powiadomienie");
-                });
-            });
-
-            // Jeśli użytkownik jest zalogowany, upewnij się że ma Login w OneSignal
-            if (state.currentUser) {
-                this.login(state.currentUser.id, state.currentUser.role);
-            }
-
-        } catch (e) {
-            console.error('❌ OneSignal Init Error:', e);
-        }
+        });
+        
+        return this.initPromise;
     },
 
     async login(userId, role) {
-        if (!this.initialized) await this.init();
-        try {
-            window.OneSignalDeferred.push(async function(OneSignal) {
-                // Logowanie External User ID
-                await OneSignal.login(String(userId));
-                // Tagowanie rolą (admin/driver)
-                await OneSignal.User.addTag("role", role);
-                console.log(`✅ OneSignal: User logged in (${userId}) with role (${role})`);
-            });
-        } catch (e) {
-            console.error('❌ OneSignal Login Error:', e);
+        if (!this.initialized) {
+            console.warn('⚠️ OneSignal not initialized, skipping login');
+            return;
         }
+        
+        window.OneSignalDeferred.push(async function(OneSignal) {
+            try {
+                // Sprawdź czy mamy zgodę na push
+                const permission = await OneSignal.Notifications.permissionNative;
+                console.log('🔔 Push permission:', permission);
+                
+                if (permission !== 'granted') {
+                    console.log('⚠️ No push permission, skipping OneSignal login');
+                    return;
+                }
+                
+                // Sprawdź czy jest subskrypcja
+                const pushSubscription = await OneSignal.User.PushSubscription.id;
+                console.log('🔔 Push subscription ID:', pushSubscription);
+                
+                if (!pushSubscription) {
+                    console.log('⚠️ No push subscription, skipping OneSignal login');
+                    return;
+                }
+                
+                const externalId = String(userId);
+                console.log('🔔 OneSignal: Logging in user:', externalId);
+                
+                await OneSignal.login(externalId);
+                
+                await OneSignal.User.addTags({
+                    "role": role,
+                    "user_id": externalId
+                });
+                
+                console.log('✅ OneSignal: User logged in successfully');
+                
+            } catch (e) {
+                console.error('❌ OneSignal Login Error:', e);
+            }
+        });
+    },
+
+    async requestPermission() {
+        if (!this.initialized) {
+            await this.init();
+        }
+        
+        return new Promise((resolve) => {
+            window.OneSignalDeferred.push(async function(OneSignal) {
+                try {
+                    const currentPermission = await OneSignal.Notifications.permissionNative;
+                    console.log('🔔 Current native permission:', currentPermission);
+                    
+                    if (currentPermission === 'granted') {
+                        resolve(true);
+                        return;
+                    }
+                    
+                    if (currentPermission === 'denied') {
+                        Toast.warning('Powiadomienia zostały zablokowane w ustawieniach przeglądarki');
+                        resolve(false);
+                        return;
+                    }
+                    
+                    // Poproś o zgodę
+                    console.log('🔔 Requesting push permission...');
+                    const result = await OneSignal.Notifications.requestPermission();
+                    console.log('🔔 Permission result:', result);
+                    
+                    if (result) {
+                        Toast.success('Powiadomienia włączone! 🔔');
+                        // Teraz możemy zalogować użytkownika
+                        if (state.currentUser) {
+                            await OneSignalService.login(state.currentUser.id, state.currentUser.role);
+                        }
+                    }
+                    
+                    resolve(result);
+                } catch (e) {
+                    console.error('❌ OneSignal Permission Error:', e);
+                    resolve(false);
+                }
+            });
+        });
     },
 
     logout() {
-        if (!window.OneSignal) return;
-        window.OneSignal.logout();
-        console.log('👋 OneSignal: User logged out');
+        if (!this.initialized) return;
+        
+        window.OneSignalDeferred.push(async function(OneSignal) {
+            try {
+                await OneSignal.logout();
+                console.log('👋 OneSignal: User logged out');
+            } catch (e) {
+                // Ignoruj błędy logout - to nie jest krytyczne
+                console.warn('⚠️ OneSignal Logout:', e);
+            }
+        });
     }
 };
 

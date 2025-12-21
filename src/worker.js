@@ -531,34 +531,27 @@ async function createTask(request, env, corsHeaders, userId) {
     .run();
   const taskId = res.meta.last_row_id;
 
-  // Powiadomienia dla kierowców
-  // Send Notification to ALL Drivers
+  // Zbierz ID użytkowników do powiadomienia
   const drivers = await env.DB.prepare(
     'SELECT id FROM users WHERE role = "driver" AND active = 1'
   ).all();
-  const driverIds = drivers.results.map((u) => u.id);
-
-  // INSERT NOTIFICATIONS TO DB
-  for (const driverId of driverIds) {
-    await env.DB.prepare(
-      "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
-    )
-      .bind(
-        driverId,
-        "new_task",
-        "Nowe zadanie",
-        `Nowe zadanie: ${data.description}`,
-        taskId
-      )
-      .run();
+  
+  const driverIds = new Set(drivers.results.map((u) => u.id));
+  
+  // Jeśli zadanie jest przypisane do konkretnej osoby, dodaj ją
+  if (data.assigned_to) {
+    driverIds.add(data.assigned_to);
   }
 
   const origin = new URL(request.url).origin;
-  await sendOneSignalNotification(
-    driverIds,
+  
+  // ✅ TYLKO JEDNO wywołanie - notifyUsers zajmuje się WSZYSTKIM (DB + Push)
+  await notifyUsers(
+    Array.from(driverIds),
+    "new_task",
     "Nowe zadanie",
     `Nowe zadanie: ${data.description}`,
-    { taskId: taskId },
+    taskId,
     origin,
     env
   );
@@ -899,16 +892,22 @@ async function createTaskLog(id, request, env, corsHeaders) {
 // --- NOTIFICATIONS ---
 
 async function getNotifications(uid, env, corsHeaders) {
+  console.log(`📬 getNotifications called for user: ${uid}`);
+  
   const r = await env.DB.prepare(
     "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50"
   )
     .bind(uid)
     .all();
+    
   const c = await env.DB.prepare(
     "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0"
   )
     .bind(uid)
     .first();
+    
+  console.log(`📬 getNotifications result: ${r.results.length} notifications, ${c.count} unread`);
+  
   return new Response(
     JSON.stringify({ notifications: r.results, unreadCount: c.count }),
     { headers: corsHeaders }
@@ -1115,58 +1114,85 @@ async function getReports(period, env, corsHeaders) {
 
 // --- ONESIGNAL SERVICE ---
 
+// --- NOTIFICATION HELPERS ---
+
+async function notifyUsers(userIds, type, title, message, taskId, origin, env) {
+    if (!userIds || userIds.length === 0) return;
+    
+    // Convert to Array if it's a Set or single value
+    const ids = Array.isArray(userIds) ? userIds : (userIds instanceof Set ? Array.from(userIds) : [userIds]);
+    
+    console.log(`📤 notifyUsers called for users: [${ids.join(', ')}]`);
+
+    // 1. Insert into DB (for the "bell" in-app notifications)
+    for (const userId of ids) {
+        try {
+            await env.DB.prepare(
+                "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+            )
+            .bind(userId, type, title, message, taskId || null)
+            .run();
+            console.log(`✅ DB notification inserted for user ${userId}`);
+        } catch (e) {
+            console.error(`❌ DB Notification error for user ${userId}:`, e);
+        }
+    }
+
+    // 2. Send Push via OneSignal
+    await sendOneSignalNotification(ids, title, message, { taskId }, origin, env);
+}
+
 async function sendOneSignalNotification(
-  userIds,
+  targetIds,
   title,
   message,
   data,
   origin,
   env
 ) {
-  const ids = Array.isArray(userIds) ? userIds : [userIds];
-  if (ids.length === 0) return;
-
-  // Convert IDs to strings just in case
-  const targetIds = ids.map((id) => String(id));
-
   if (!env.ONESIGNAL_APP_ID || !env.ONESIGNAL_API_KEY) {
-    console.error("❌ OneSignal credentials not set in ENV");
+    console.warn("⚠️ OneSignal credentials missing");
     return;
   }
 
   const payload = {
     app_id: env.ONESIGNAL_APP_ID,
-    include_aliases: {
-      external_id: targetIds,
-    },
-    target_channel: "push",
+    include_external_user_ids: targetIds.map((id) => String(id)),
     headings: { en: title, pl: title },
     contents: { en: message, pl: message },
     data: data,
-    // Kluczowe: URL z parametrem taskId, aby aplikacja otworzyła się na właściwym zadaniu
     url: `${origin}/?taskId=${data.taskId}`,
-    web_url: `${origin}/?taskId=${data.taskId}`, // Dla pewności na niektórych wersjach Chrome
-
-    // Konfiguracja dla Androida/iOS
+    web_url: `${origin}/?taskId=${data.taskId}`,
+    
+    // ❌ USUŃ TO (lub utwórz kanał w OneSignal Dashboard):
+    // android_channel_id: "transport_tracker_main",
+    
+    // ✅ Użyj domyślnego kanału:
     priority: 10,
-    android_channel_id: "transport_tracker_main", // Opcjonalne, jeśli utworzysz kanał
-    ios_sound: "default",
-
-    // Collapse ID: zapobiega spamowi, aktualizuje istniejące powiadomienie dla tego samego zadania
-    collapse_id: `task-${data.taskId}`,
+    ttl: 86400, // 24h
+    
+    // Chrome na Android
+    chrome_web_icon: `${origin}/icon.png`,
+    chrome_web_badge: `${origin}/icon.png`,
   };
 
   try {
     const resp = await fetch("https://onesignal.com/api/v1/notifications", {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
         Authorization: `Basic ${env.ONESIGNAL_API_KEY}`,
       },
       body: JSON.stringify(payload),
     });
     const responseJson = await resp.json();
-    console.log(`📤 OneSignal:`, responseJson);
+    console.log(`📤 OneSignal Response:`, JSON.stringify(responseJson, null, 2));
+    
+    if (responseJson.errors) {
+      console.error('❌ OneSignal API Errors:', responseJson.errors);
+    }
+    
+    return responseJson;
   } catch (e) {
     console.error("❌ OneSignal error:", e);
   }
