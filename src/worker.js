@@ -293,15 +293,17 @@ async function createUser(request, env, corsHeaders) {
     perm_locations,
     perm_reports,
   } = await request.json();
+  
   const hashedPin = await hashPin(pin);
 
-  // Domyślnie uprawnienia na 1 (jeśli nie podano), chyba że to nie admin - wtedy 0 (ale w bazie i tak integer)
-  const p_users =
-    perm_users !== undefined ? perm_users : role === "admin" ? 1 : 0;
-  const p_loc =
-    perm_locations !== undefined ? perm_locations : role === "admin" ? 1 : 0;
-  const p_rep =
-    perm_reports !== undefined ? perm_reports : role === "admin" ? 1 : 0;
+  // Domyślne uprawnienia
+  const p_users = perm_users !== undefined ? perm_users : (role === "admin" ? 1 : 0);
+  const p_loc = perm_locations !== undefined ? perm_locations : (role === "admin" ? 1 : 0);
+  const p_rep = perm_reports !== undefined ? perm_reports : (role === "admin" ? 1 : 0);
+
+  // Godziny pracy - null dla admina, domyślne dla kierowcy
+  const workStart = role === "driver" ? (work_start || "07:00") : null;
+  const workEnd = role === "driver" ? (work_end || "15:00") : null;
 
   const result = await env.DB.prepare(
     "INSERT INTO users (name, pin, role, work_start, work_end, force_pin_change, perm_users, perm_locations, perm_reports) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -310,14 +312,15 @@ async function createUser(request, env, corsHeaders) {
       name,
       hashedPin,
       role,
-      work_start,
-      work_end,
+      workStart,
+      workEnd,
       force_pin_change || 1,
       p_users,
       p_loc,
       p_rep
     )
     .run();
+    
   return new Response(
     JSON.stringify({ id: result.meta.last_row_id, name, role }),
     { headers: corsHeaders }

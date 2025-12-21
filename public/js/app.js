@@ -3060,31 +3060,45 @@ initDriverPanel() {
     if (this._savingUser) return;
     this._savingUser = true;
     
-    const form = e.target;
     const id = Utils.$("#user-id").value;
-    const name = Utils.$("#user-name").value;
+    const name = Utils.$("#user-name").value.trim();
     const pin = Utils.$("#user-pin").value;
     const role = document.querySelector('input[name="user-role"]:checked').value;
     
-    const permReports = Utils.$("#perm-reports").checked ? 1 : 0;
-    const permUsers = Utils.$("#perm-users").checked ? 1 : 0;
-    const permLocations = Utils.$("#perm-locations").checked ? 1 : 0;
+    if (!name) {
+        Toast.warning("Wpisz imię i nazwisko");
+        this._savingUser = false;
+        return;
+    }
+    
+    if (!id && !pin) {
+        Toast.warning("Wpisz PIN dla nowego użytkownika");
+        this._savingUser = false;
+        return;
+    }
     
     const userData = {
         name,
         role,
-        ...(role === 'admin' && {
-            perm_reports: permReports,
-            perm_users: permUsers,
-            perm_locations: permLocations
-        }),
-        ...(role === "driver" && {
-            work_start: Utils.$("#user-work-start").value,
-            work_end: Utils.$("#user-work-end").value,
-        }),
     };
     
-    if (pin) userData.pin = pin;
+    // Godziny pracy tylko dla kierowców
+    if (role === 'driver') {
+        userData.work_start = Utils.$("#user-work-start").value || "07:00";
+        userData.work_end = Utils.$("#user-work-end").value || "15:00";
+    }
+    
+    // Uprawnienia dla admina
+    if (role === 'admin') {
+        userData.perm_reports = Utils.$("#perm-reports").checked ? 1 : 0;
+        userData.perm_users = Utils.$("#perm-users").checked ? 1 : 0;
+        userData.perm_locations = Utils.$("#perm-locations").checked ? 1 : 0;
+    }
+    
+    // PIN tylko jeśli podany
+    if (pin) {
+        userData.pin = pin;
+    }
     
     // Instant - zamknij i pokaż sukces
     Modal.close("modal-user");
@@ -3099,7 +3113,7 @@ initDriverPanel() {
         }
         await this.loadUsers();
     } catch (error) {
-        Toast.error("Błąd zapisu");
+        Toast.error("Błąd zapisu - spróbuj ponownie");
         await this.loadUsers();
     } finally {
         this._savingUser = false;
@@ -3764,34 +3778,30 @@ initDriverPanel() {
 
     // DODAJ TO: Nasłuchuj wiadomości z Service Workera
     if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.addEventListener('message', (event) => {
-            console.log('📬 Message from SW:', event.data);
-            
-            if (event.data.type === 'PUSH_RECEIVED') {
-                // Pokaż toast
-                Toast.info(event.data.data.message || event.data.data.title || 'Nowe powiadomienie');
-                
-                // Odśwież powiadomienia i badge
-                Notifications.load();
-                
-                // Odśwież listę zadań
-                if (state.currentUser?.role === 'driver') {
-                    DriverPanel.loadTasks(true);
-                } else if (state.currentUser?.role === 'admin') {
-                    AdminPanel.loadTasks(true);
-                }
+    navigator.serviceWorker.addEventListener('message', (event) => {
+        // Ignoruj wiadomości z OneSignal SDK
+        if (!event.data || !event.data.type) return;
+        if (event.data.command) return; // Wiadomości wewnętrzne OneSignal
+        
+        if (event.data.type === 'PUSH_RECEIVED') {
+            Toast.info(event.data.data?.message || event.data.data?.title || 'Nowe powiadomienie');
+            Notifications.load();
+            if (state.currentUser?.role === 'driver') {
+                DriverPanel.loadTasks(true);
+            } else if (state.currentUser?.role === 'admin') {
+                AdminPanel.loadTasks(true);
             }
-            
-            if (event.data.type === 'NOTIFICATION_CLICK' && event.data.taskId) {
-                // Otwórz szczegóły zadania
-                if (state.currentUser?.role === 'driver') {
-                    DriverPanel.openTaskDetails(event.data.taskId);
-                } else if (state.currentUser?.role === 'admin') {
-                    AdminPanel.openTaskDetails(event.data.taskId);
-                }
+        }
+        
+        if (event.data.type === 'NOTIFICATION_CLICK' && event.data.taskId) {
+            if (state.currentUser?.role === 'driver') {
+                DriverPanel.openTaskDetails(event.data.taskId);
+            } else if (state.currentUser?.role === 'admin') {
+                AdminPanel.openTaskDetails(event.data.taskId);
             }
-        });
-    }
+        }
+    });
+}
 
     await new Promise((resolve) => setTimeout(resolve, 500));
   await Auth.init();
