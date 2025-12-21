@@ -1333,15 +1333,34 @@ async deleteRead() {
     state.currentDate = Utils.getToday();
     Utils.$("#admin-date-picker").value = state.currentDate;
     Screen.show("admin");
+    
+    // Ukryj zakładki bez uprawnień
+    const user = state.currentUser;
+    
+    // Pokaż wszystkie najpierw (reset)
+    Utils.show(document.querySelector('[data-tab="reports"]'));
+    Utils.show(document.querySelector('[data-tab="users"]'));
+    Utils.show(document.querySelector('[data-tab="locations"]'));
+    
+    // Ukryj te bez uprawnień (ID 1 = główny admin - widzi wszystko)
+    if (user.id !== 1) {
+        if (user.perm_reports === 0) {
+            Utils.hide(document.querySelector('[data-tab="reports"]'));
+        }
+        if (user.perm_users === 0) {
+            Utils.hide(document.querySelector('[data-tab="users"]'));
+        }
+        if (user.perm_locations === 0) {
+            Utils.hide(document.querySelector('[data-tab="locations"]'));
+        }
+    }
+    
     AdminPanel.switchTab("tasks");
     AdminPanel.loadTasks();
     AdminPanel.loadUsers();
     AdminPanel.loadLocations();
     AdminPanel.updateDateButtons();
     AdminPanel.loadReports("week");
-    
-    console.log('🚀 Admin panel initialized for user:', state.currentUser.id, state.currentUser.name);
-    
     Notifications.startPolling();
 },
 
@@ -3592,20 +3611,7 @@ initDriverPanel() {
         }
         return;
       }
-
-      state.currentTab = tabId;
-
-      Utils.$$(".tab-btn").forEach((btn) => {
-        btn.classList.toggle("active", btn.dataset.tab === tabId);
-      });
-
-      Utils.$$(".tab-content").forEach((content) => {
-        content.classList.toggle("active", content.id === `tab-${tabId}`);
-      });
-
-      if (tabId === "reports") {
-        this.loadReports();
-      }
+      
     },
 
     // EVENT LISTENERS
@@ -3741,31 +3747,6 @@ initDriverPanel() {
     DriverPanel.initEventListeners();
     TaskForm.initEventListeners();
     AdminPanel.initEventListeners();
-
-    // Sprawdź uprawnienia i ukryj zakładki
-    const user = state.currentUser;
-    if (user) {
-        // Domyślnie (dla wstecznej kompatybilności) zakładamy że ma dostęp (1), chyba że wprost jest 0
-        const hasPermReports = user.perm_reports !== 0; 
-        const hasPermUsers = user.perm_users !== 0;
-        const hasPermLocations = user.perm_locations !== 0;
-
-        if (!hasPermReports) {
-            Utils.hide(document.querySelector('[data-tab="reports"]'));
-        }
-        if (!hasPermUsers) {
-            Utils.hide(document.querySelector('[data-tab="users"]'));
-        }
-        if (!hasPermLocations) {
-            Utils.hide(document.querySelector('[data-tab="locations"]'));
-        }
-    }
-
-    // Jeśli aktywna zakładka jest ukryta, przełącz na pierwszą dostępną (zwykle "tasks")
-    const activeTab = document.querySelector('.tab-btn.active');
-    if (activeTab && activeTab.classList.contains('hidden')) {
-        AdminPanel.switchTab('tasks');
-    }
 
     // Deep Link Handling (TaskId z URL)
     const urlParams = new URLSearchParams(window.location.search);
