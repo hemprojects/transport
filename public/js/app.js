@@ -19,7 +19,7 @@
       USER: "tt_user",
       THEME: "tt_theme",
     },
-    ONESIGNAL_APP_ID: "7080dabd-158d-471a-b5e4-00b620b33004",
+    ONESIGNAL_APP_ID: "7080dabd-158d-471a-b5e4-00b620b33004", // Zmień to na swoje ID z OneSignal!
   };
 
   // =============================================
@@ -3562,19 +3562,21 @@ async deleteRead() {
 
     // Sprawdź uprawnienia i ukryj zakładki
     const user = state.currentUser;
-    // Domyślnie (dla wstecznej kompatybilności) zakładamy że ma dostęp (1), chyba że wprost jest 0
-    const hasPermReports = user.perm_reports !== 0; 
-    const hasPermUsers = user.perm_users !== 0;
-    const hasPermLocations = user.perm_locations !== 0;
+    if (user) {
+        // Domyślnie (dla wstecznej kompatybilności) zakładamy że ma dostęp (1), chyba że wprost jest 0
+        const hasPermReports = user.perm_reports !== 0; 
+        const hasPermUsers = user.perm_users !== 0;
+        const hasPermLocations = user.perm_locations !== 0;
 
-    if (!hasPermReports) {
-        Utils.hide(document.querySelector('[data-tab="reports"]'));
-    }
-    if (!hasPermUsers) {
-        Utils.hide(document.querySelector('[data-tab="users"]'));
-    }
-    if (!hasPermLocations) {
-        Utils.hide(document.querySelector('[data-tab="locations"]'));
+        if (!hasPermReports) {
+            Utils.hide(document.querySelector('[data-tab="reports"]'));
+        }
+        if (!hasPermUsers) {
+            Utils.hide(document.querySelector('[data-tab="users"]'));
+        }
+        if (!hasPermLocations) {
+            Utils.hide(document.querySelector('[data-tab="locations"]'));
+        }
     }
 
     // Jeśli aktywna zakładka jest ukryta, przełącz na pierwszą dostępną (zwykle "tasks")
@@ -3651,24 +3653,28 @@ const OneSignalService = {
         
         try {
             console.log('🔔 OneSignal: Initializing...');
-            await window.OneSignal.init({
-                appId: CONFIG.ONESIGNAL_APP_ID,
-                allowLocalhostAsSecureOrigin: true,
-                serviceWorker: {
-                    path: '/service-worker.js', // Używamy Twojego pliku
-                },
+            
+            // Używamy OneSignalDeferred, aby uniknąć problemu "OneSignal is not defined"
+            window.OneSignalDeferred.push(async function(OneSignal) {
+                await OneSignal.init({
+                    appId: CONFIG.ONESIGNAL_APP_ID,
+                    allowLocalhostAsSecureOrigin: true,
+                    serviceWorker: {
+                        path: '/service-worker.js', // Używamy Twojego pliku
+                    },
+                });
+                console.log('✅ OneSignal: Ready');
             });
 
             this.initialized = true;
-            console.log('✅ OneSignal: Ready');
 
             // Nasłuchuj na powiadomienia w aplikacji (Foreground)
-            window.OneSignal.Notifications.addEventListener('foregroundWillShow', (event) => {
-                console.log('🔔 Foreground notification received', event);
-                // Nie blokujemy (event.preventDefault()), więc pokaże się natywne powiadomienie też (zazwyczaj)
-                // Ale odświeżamy licznik
-                Notifications.load();
-                Toast.info("Nowe powiadomienie");
+            window.OneSignalDeferred.push(function(OneSignal) {
+                OneSignal.Notifications.addEventListener('foregroundWillShow', (event) => {
+                    console.log('🔔 Foreground notification received', event);
+                    Notifications.load();
+                    Toast.info("Nowe powiadomienie");
+                });
             });
 
             // Jeśli użytkownik jest zalogowany, upewnij się że ma Login w OneSignal
@@ -3684,11 +3690,13 @@ const OneSignalService = {
     async login(userId, role) {
         if (!this.initialized) await this.init();
         try {
-            // Logowanie External User ID
-            await window.OneSignal.login(String(userId));
-            // Tagowanie rolą (admin/driver)
-            await window.OneSignal.User.addTag("role", role);
-            console.log(`✅ OneSignal: User logged in (${userId}) with role (${role})`);
+            window.OneSignalDeferred.push(async function(OneSignal) {
+                // Logowanie External User ID
+                await OneSignal.login(String(userId));
+                // Tagowanie rolą (admin/driver)
+                await OneSignal.User.addTag("role", role);
+                console.log(`✅ OneSignal: User logged in (${userId}) with role (${role})`);
+            });
         } catch (e) {
             console.error('❌ OneSignal Login Error:', e);
         }
@@ -3717,7 +3725,7 @@ const OneSignalService = {
     DriverPanel,
     TaskForm,
     AdminPanel,
-    PushyService,  // ← Dodaj też PushyService do exportu
+    OneSignalService,
   };
 
   // =============================================
