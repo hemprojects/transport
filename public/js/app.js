@@ -816,6 +816,15 @@ async deleteRead() {
       } else {
         console.warn("❌ Badge element NOT FOUND in updateBadge");
       }
+
+      // PWA Icon Badge (Native)
+      if ('setAppBadge' in navigator) {
+          if (state.unreadNotifications > 0) {
+              navigator.setAppBadge(state.unreadNotifications).catch((e) => console.log("Badge error:", e));
+          } else {
+              navigator.clearAppBadge().catch(() => {});
+          }
+      }
     },
 
     startPolling() {

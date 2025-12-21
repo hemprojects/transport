@@ -5,14 +5,14 @@
 // --- SECURITY UTILS ---
 
 async function hashPin(pin) {
-    const msgBuffer = new TextEncoder().encode(pin);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  const msgBuffer = new TextEncoder().encode(pin);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function generateToken() {
-    return crypto.randomUUID();
+  return crypto.randomUUID();
 }
 
 // --- CONFIG ---
@@ -23,640 +23,1214 @@ function generateToken() {
 // --- RATE LIMITING ---
 
 async function checkLoginRateLimit(env, identifier) {
-    const record = await env.DB.prepare(
-        'SELECT attempts, blocked_until FROM login_attempts WHERE identifier = ?'
-    ).bind(identifier).first();
+  const record = await env.DB.prepare(
+    "SELECT attempts, blocked_until FROM login_attempts WHERE identifier = ?"
+  )
+    .bind(identifier)
+    .first();
 
-    if (record && record.blocked_until) {
-        const blockedUntil = new Date(record.blocked_until);
-        const now = new Date();
-        if (blockedUntil > now) {
-            const minutesLeft = Math.ceil((blockedUntil - now) / 60000);
-            return { blocked: true, minutesLeft };
-        }
+  if (record && record.blocked_until) {
+    const blockedUntil = new Date(record.blocked_until);
+    const now = new Date();
+    if (blockedUntil > now) {
+      const minutesLeft = Math.ceil((blockedUntil - now) / 60000);
+      return { blocked: true, minutesLeft };
     }
-    return { blocked: false, attempts: record?.attempts || 0 };
+  }
+  return { blocked: false, attempts: record?.attempts || 0 };
 }
 
 async function recordLoginResult(env, identifier, success) {
-    const now = new Date();
-    if (success) {
-        await env.DB.prepare('DELETE FROM login_attempts WHERE identifier = ?').bind(identifier).run();
-        return;
-    }
-    const record = await env.DB.prepare('SELECT attempts FROM login_attempts WHERE identifier = ?').bind(identifier).first();
-    const newAttempts = (record?.attempts || 0) + 1;
-    let blockedUntil = null;
-    if (newAttempts >= 5) {
-        const blockTime = new Date(now.getTime() + 15 * 60000);
-        blockedUntil = blockTime.toISOString();
-    }
-    if (record) {
-        await env.DB.prepare('UPDATE login_attempts SET attempts = ?, blocked_until = ?, updated_at = CURRENT_TIMESTAMP WHERE identifier = ?').bind(newAttempts, blockedUntil, identifier).run();
-    } else {
-        await env.DB.prepare('INSERT INTO login_attempts (identifier, attempts, blocked_until) VALUES (?, ?, ?)').bind(identifier, newAttempts, blockedUntil).run();
-    }
+  const now = new Date();
+  if (success) {
+    await env.DB.prepare("DELETE FROM login_attempts WHERE identifier = ?")
+      .bind(identifier)
+      .run();
+    return;
+  }
+  const record = await env.DB.prepare(
+    "SELECT attempts FROM login_attempts WHERE identifier = ?"
+  )
+    .bind(identifier)
+    .first();
+  const newAttempts = (record?.attempts || 0) + 1;
+  let blockedUntil = null;
+  if (newAttempts >= 5) {
+    const blockTime = new Date(now.getTime() + 15 * 60000);
+    blockedUntil = blockTime.toISOString();
+  }
+  if (record) {
+    await env.DB.prepare(
+      "UPDATE login_attempts SET attempts = ?, blocked_until = ?, updated_at = CURRENT_TIMESTAMP WHERE identifier = ?"
+    )
+      .bind(newAttempts, blockedUntil, identifier)
+      .run();
+  } else {
+    await env.DB.prepare(
+      "INSERT INTO login_attempts (identifier, attempts, blocked_until) VALUES (?, ?, ?)"
+    )
+      .bind(identifier, newAttempts, blockedUntil)
+      .run();
+  }
 }
 
 async function verifySession(request, env) {
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
-    const token = authHeader.split(' ')[1];
-    const session = await env.DB.prepare('SELECT user_id, expires_at FROM sessions WHERE token = ?').bind(token).first();
-    if (!session) return null;
-    if (new Date(session.expires_at) < new Date()) {
-        await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
-        return null;
-    }
-    return session.user_id;
+  const authHeader = request.headers.get("Authorization");
+  if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
+  const token = authHeader.split(" ")[1];
+  const session = await env.DB.prepare(
+    "SELECT user_id, expires_at FROM sessions WHERE token = ?"
+  )
+    .bind(token)
+    .first();
+  if (!session) return null;
+  if (new Date(session.expires_at) < new Date()) {
+    await env.DB.prepare("DELETE FROM sessions WHERE token = ?")
+      .bind(token)
+      .run();
+    return null;
+  }
+  return session.user_id;
 }
 
 // --- API HANDLER ---
 
 async function handleAPI(request, env, path, corsHeaders) {
-    const method = request.method;
+  const method = request.method;
 
-    if (path === '/api/auth/login' && method === 'POST') return await login(request, env, corsHeaders);
-    if (path === '/api/users' && method === 'GET' && !request.headers.get('Authorization')) {
-        const result = await env.DB.prepare('SELECT id, name, role FROM users WHERE active = 1 ORDER BY role DESC, name').all();
-        return new Response(JSON.stringify(result.results), { headers: corsHeaders });
-    }
+  if (path === "/api/auth/login" && method === "POST")
+    return await login(request, env, corsHeaders);
+  if (
+    path === "/api/users" &&
+    method === "GET" &&
+    !request.headers.get("Authorization")
+  ) {
+    const result = await env.DB.prepare(
+      "SELECT id, name, role FROM users WHERE active = 1 ORDER BY role DESC, name"
+    ).all();
+    return new Response(JSON.stringify(result.results), {
+      headers: corsHeaders,
+    });
+  }
 
-    const userId = await verifySession(request, env);
-    if (!userId) return new Response(JSON.stringify({ error: 'Sesja wygasła' }), { status: 401, headers: corsHeaders });
+  const userId = await verifySession(request, env);
+  if (!userId)
+    return new Response(JSON.stringify({ error: "Sesja wygasła" }), {
+      status: 401,
+      headers: corsHeaders,
+    });
 
-    // PUSHY - Removed
-    // if (path === '/api/pushy/register' && method === 'POST') return await registerPushyToken(request, env, corsHeaders, userId);
+  // PUSHY - Removed
+  // if (path === '/api/pushy/register' && method === 'POST') return await registerPushyToken(request, env, corsHeaders, userId);
 
-    // USERS
-    if (path === '/api/users' && method === 'GET') return await getUsers(env, corsHeaders);
-    if (path === '/api/users' && method === 'POST') return await createUser(request, env, corsHeaders);
-    if (path.match(/^\/api\/users\/\d+$/) && method === 'DELETE') return await deleteUser(path.split('/').pop(), env, corsHeaders);
-    if (path.match(/^\/api\/users\/\d+$/) && method === 'PUT') return await updateUser(path.split('/').pop(), request, env, corsHeaders);
+  // USERS
+  if (path === "/api/users" && method === "GET")
+    return await getUsers(env, corsHeaders);
+  if (path === "/api/users" && method === "POST")
+    return await createUser(request, env, corsHeaders);
+  if (path.match(/^\/api\/users\/\d+$/) && method === "DELETE")
+    return await deleteUser(path.split("/").pop(), env, corsHeaders);
+  if (path.match(/^\/api\/users\/\d+$/) && method === "PUT")
+    return await updateUser(path.split("/").pop(), request, env, corsHeaders);
 
-    // LOCATIONS
-    if (path === '/api/locations' && method === 'GET') return await getLocations(env, corsHeaders);
-    if (path === '/api/locations' && method === 'POST') return await createLocation(request, env, corsHeaders);
-    if (path.match(/^\/api\/locations\/\d+$/) && method === 'DELETE') return await deleteLocation(path.split('/').pop(), env, corsHeaders);
+  // LOCATIONS
+  if (path === "/api/locations" && method === "GET")
+    return await getLocations(env, corsHeaders);
+  if (path === "/api/locations" && method === "POST")
+    return await createLocation(request, env, corsHeaders);
+  if (path.match(/^\/api\/locations\/\d+$/) && method === "DELETE")
+    return await deleteLocation(path.split("/").pop(), env, corsHeaders);
 
-    // TASKS
-    if (path === '/api/tasks' && method === 'GET') return await getTasks(new URL(request.url).searchParams, env, corsHeaders);
-    if (path === '/api/tasks' && method === 'POST') return await createTask(request, env, corsHeaders, userId);
-    if (path.match(/^\/api\/tasks\/\d+$/) && method === 'GET') return await getTask(path.split('/').pop(), env, corsHeaders);
-    if (path.match(/^\/api\/tasks\/\d+$/) && method === 'PUT') return await updateTask(path.split('/').pop(), request, env, corsHeaders, userId);
-    if (path.match(/^\/api\/tasks\/\d+$/) && method === 'DELETE') return await deleteTask(path.split('/').pop(), env, corsHeaders);
-    if (path.match(/^\/api\/tasks\/\d+\/status$/) && method === 'PUT') return await updateTaskStatus(path.split('/')[3], request, env, corsHeaders);
-    if (path.match(/^\/api\/tasks\/\d+\/join$/) && method === 'POST') return await joinTask(path.split('/')[3], request, env, corsHeaders);
-    if (path === '/api/tasks/reorder' && method === 'POST') return await reorderTasks(request, env, corsHeaders);
+  // TASKS
+  if (path === "/api/tasks" && method === "GET")
+    return await getTasks(new URL(request.url).searchParams, env, corsHeaders);
+  if (path === "/api/tasks" && method === "POST")
+    return await createTask(request, env, corsHeaders, userId);
+  if (path.match(/^\/api\/tasks\/\d+$/) && method === "GET")
+    return await getTask(path.split("/").pop(), env, corsHeaders);
+  if (path.match(/^\/api\/tasks\/\d+$/) && method === "PUT")
+    return await updateTask(
+      path.split("/").pop(),
+      request,
+      env,
+      corsHeaders,
+      userId
+    );
+  if (path.match(/^\/api\/tasks\/\d+$/) && method === "DELETE")
+    return await deleteTask(path.split("/").pop(), env, corsHeaders);
+  if (path.match(/^\/api\/tasks\/\d+\/status$/) && method === "PUT")
+    return await updateTaskStatus(
+      path.split("/")[3],
+      request,
+      env,
+      corsHeaders
+    );
+  if (path.match(/^\/api\/tasks\/\d+\/join$/) && method === "POST")
+    return await joinTask(path.split("/")[3], request, env, corsHeaders);
+  if (path === "/api/tasks/reorder" && method === "POST")
+    return await reorderTasks(request, env, corsHeaders);
 
-    // LOGS & NOTIFICATIONS
-    if (path.match(/^\/api\/tasks\/\d+\/logs$/) && method === 'GET') return await getTaskLogs(path.split('/')[3], env, corsHeaders);
-    if (path.match(/^\/api\/tasks\/\d+\/logs$/) && method === 'POST') return await createTaskLog(path.split('/')[3], request, env, corsHeaders);
-    if (path.match(/^\/api\/notifications\/\d+$/) && method === 'GET') return await getNotifications(path.split('/').pop(), env, corsHeaders);
-    if (path.match(/^\/api\/notifications\/\d+\/read$/) && method === 'POST') return await markNotificationRead(path.split('/')[3], env, corsHeaders);
-    if (path.match(/^\/api\/notifications\/user\/\d+\/read-all$/) && method === 'POST') return await markAllNotificationsRead(path.split('/')[4], env, corsHeaders);
-    if (path.match(/^\/api\/notifications\/user\/\d+\/delete-read$/) && method === 'DELETE') return await deleteReadNotifications(path.split('/')[4], env, corsHeaders);
+  // LOGS & NOTIFICATIONS
+  if (path.match(/^\/api\/tasks\/\d+\/logs$/) && method === "GET")
+    return await getTaskLogs(path.split("/")[3], env, corsHeaders);
+  if (path.match(/^\/api\/tasks\/\d+\/logs$/) && method === "POST")
+    return await createTaskLog(path.split("/")[3], request, env, corsHeaders);
+  if (path.match(/^\/api\/notifications\/\d+$/) && method === "GET")
+    return await getNotifications(path.split("/").pop(), env, corsHeaders);
+  if (path.match(/^\/api\/notifications\/\d+\/read$/) && method === "POST")
+    return await markNotificationRead(path.split("/")[3], env, corsHeaders);
+  if (
+    path.match(/^\/api\/notifications\/user\/\d+\/read-all$/) &&
+    method === "POST"
+  )
+    return await markAllNotificationsRead(path.split("/")[4], env, corsHeaders);
+  if (
+    path.match(/^\/api\/notifications\/user\/\d+\/delete-read$/) &&
+    method === "DELETE"
+  )
+    return await deleteReadNotifications(path.split("/")[4], env, corsHeaders);
 
-    // REPORTS
-    if (path === '/api/reports' && method === 'GET') return await getReports(new URL(request.url).searchParams.get('period') || 'week', env, corsHeaders);
+  // REPORTS
+  if (path === "/api/reports" && method === "GET")
+    return await getReports(
+      new URL(request.url).searchParams.get("period") || "week",
+      env,
+      corsHeaders
+    );
 
-    return new Response(JSON.stringify({ error: 'Not Found' }), { status: 404, headers: corsHeaders });
+  return new Response(JSON.stringify({ error: "Not Found" }), {
+    status: 404,
+    headers: corsHeaders,
+  });
 }
 
 // --- AUTH ---
 
 async function login(request, env, corsHeaders) {
-    const { userId, pin } = await request.json();
-    const clientIP = request.headers.get('CF-Connecting-IP') || 'unknown';
-    const identifier = `${clientIP}:${userId}`;
-    
-    const limit = await checkLoginRateLimit(env, identifier);
-    if (limit.blocked) return new Response(JSON.stringify({ error: `Blokada na ${limit.minutesLeft} min.` }), { status: 429, headers: corsHeaders });
+  const { userId, pin } = await request.json();
+  const clientIP = request.headers.get("CF-Connecting-IP") || "unknown";
+  const identifier = `${clientIP}:${userId}`;
 
-    const user = await env.DB.prepare('SELECT id, name, role, pin, force_pin_change, work_start, work_end, perm_users, perm_locations, perm_reports FROM users WHERE id = ? AND active = 1').bind(userId).first();
-    if (!user) {
-        await recordLoginResult(env, identifier, false);
-        return new Response(JSON.stringify({ error: 'Błędne dane' }), { status: 401, headers: corsHeaders });
-    }
+  const limit = await checkLoginRateLimit(env, identifier);
+  if (limit.blocked)
+    return new Response(
+      JSON.stringify({ error: `Blokada na ${limit.minutesLeft} min.` }),
+      { status: 429, headers: corsHeaders }
+    );
 
-    const inputHash = await hashPin(pin);
-    let isValid = false;
-    let needsMigration = false;
+  const user = await env.DB.prepare(
+    "SELECT id, name, role, pin, force_pin_change, work_start, work_end, perm_users, perm_locations, perm_reports FROM users WHERE id = ? AND active = 1"
+  )
+    .bind(userId)
+    .first();
+  if (!user) {
+    await recordLoginResult(env, identifier, false);
+    return new Response(JSON.stringify({ error: "Błędne dane" }), {
+      status: 401,
+      headers: corsHeaders,
+    });
+  }
 
-    if (user.pin === pin) { isValid = true; needsMigration = true; }
-    else if (user.pin === inputHash) { isValid = true; }
+  const inputHash = await hashPin(pin);
+  let isValid = false;
+  let needsMigration = false;
 
-    if (!isValid) {
-        await recordLoginResult(env, identifier, false);
-        return new Response(JSON.stringify({ error: 'Błędny PIN' }), { status: 401, headers: corsHeaders });
-    }
+  if (user.pin === pin) {
+    isValid = true;
+    needsMigration = true;
+  } else if (user.pin === inputHash) {
+    isValid = true;
+  }
 
-    await recordLoginResult(env, identifier, true);
-    if (needsMigration) await env.DB.prepare('UPDATE users SET pin = ? WHERE id = ?').bind(inputHash, user.id).run();
+  if (!isValid) {
+    await recordLoginResult(env, identifier, false);
+    return new Response(JSON.stringify({ error: "Błędny PIN" }), {
+      status: 401,
+      headers: corsHeaders,
+    });
+  }
 
-    const token = generateToken();
-    const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
-    await env.DB.prepare('INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)').bind(user.id, token, expiresAt).run();
-    delete user.pin;
-    return new Response(JSON.stringify({ user, token }), { headers: corsHeaders });
+  await recordLoginResult(env, identifier, true);
+  if (needsMigration)
+    await env.DB.prepare("UPDATE users SET pin = ? WHERE id = ?")
+      .bind(inputHash, user.id)
+      .run();
+
+  const token = generateToken();
+  const expiresAt = new Date(
+    Date.now() + 30 * 24 * 60 * 60 * 1000
+  ).toISOString();
+  await env.DB.prepare(
+    "INSERT INTO sessions (user_id, token, expires_at) VALUES (?, ?, ?)"
+  )
+    .bind(user.id, token, expiresAt)
+    .run();
+  delete user.pin;
+  return new Response(JSON.stringify({ user, token }), {
+    headers: corsHeaders,
+  });
 }
 
 // --- USERS ---
 
 async function getUsers(env, corsHeaders) {
-    // Pobieramy też uprawnienia
-    const result = await env.DB.prepare('SELECT id, name, role, work_start, work_end, perm_users, perm_locations, perm_reports FROM users WHERE active = 1 ORDER BY role DESC, name').all();
-    return new Response(JSON.stringify(result.results), { headers: corsHeaders });
+  // Pobieramy też uprawnienia
+  const result = await env.DB.prepare(
+    "SELECT id, name, role, work_start, work_end, perm_users, perm_locations, perm_reports FROM users WHERE active = 1 ORDER BY role DESC, name"
+  ).all();
+  return new Response(JSON.stringify(result.results), { headers: corsHeaders });
 }
 
 async function createUser(request, env, corsHeaders) {
-    const { name, pin, role, work_start, work_end, force_pin_change, perm_users, perm_locations, perm_reports } = await request.json();
-    const hashedPin = await hashPin(pin);
-    
-    // Domyślnie uprawnienia na 1 (jeśli nie podano), chyba że to nie admin - wtedy 0 (ale w bazie i tak integer)
-    const p_users = perm_users !== undefined ? perm_users : (role === 'admin' ? 1 : 0);
-    const p_loc = perm_locations !== undefined ? perm_locations : (role === 'admin' ? 1 : 0);
-    const p_rep = perm_reports !== undefined ? perm_reports : (role === 'admin' ? 1 : 0);
+  const {
+    name,
+    pin,
+    role,
+    work_start,
+    work_end,
+    force_pin_change,
+    perm_users,
+    perm_locations,
+    perm_reports,
+  } = await request.json();
+  const hashedPin = await hashPin(pin);
 
-    const result = await env.DB.prepare('INSERT INTO users (name, pin, role, work_start, work_end, force_pin_change, perm_users, perm_locations, perm_reports) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').bind(name, hashedPin, role, work_start, work_end, force_pin_change || 1, p_users, p_loc, p_rep).run();
-    return new Response(JSON.stringify({ id: result.meta.last_row_id, name, role }), { headers: corsHeaders });
+  // Domyślnie uprawnienia na 1 (jeśli nie podano), chyba że to nie admin - wtedy 0 (ale w bazie i tak integer)
+  const p_users =
+    perm_users !== undefined ? perm_users : role === "admin" ? 1 : 0;
+  const p_loc =
+    perm_locations !== undefined ? perm_locations : role === "admin" ? 1 : 0;
+  const p_rep =
+    perm_reports !== undefined ? perm_reports : role === "admin" ? 1 : 0;
+
+  const result = await env.DB.prepare(
+    "INSERT INTO users (name, pin, role, work_start, work_end, force_pin_change, perm_users, perm_locations, perm_reports) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  )
+    .bind(
+      name,
+      hashedPin,
+      role,
+      work_start,
+      work_end,
+      force_pin_change || 1,
+      p_users,
+      p_loc,
+      p_rep
+    )
+    .run();
+  return new Response(
+    JSON.stringify({ id: result.meta.last_row_id, name, role }),
+    { headers: corsHeaders }
+  );
 }
 
 async function updateUser(id, request, env, corsHeaders) {
-    const { name, pin, role, work_start, work_end, force_pin_change, perm_users, perm_locations, perm_reports } = await request.json();
-    let q = 'UPDATE users SET ';
-    let p = [];
-    let u = [];
-    if (name) { u.push('name = ?'); p.push(name); }
-    if (role) { u.push('role = ?'); p.push(role); }
-    if (work_start) { u.push('work_start = ?'); p.push(work_start); }
-    if (work_end) { u.push('work_end = ?'); p.push(work_end); }
-    if (force_pin_change !== undefined) { u.push('force_pin_change = ?'); p.push(force_pin_change); }
-    if (perm_users !== undefined) { u.push('perm_users = ?'); p.push(perm_users); }
-    if (perm_locations !== undefined) { u.push('perm_locations = ?'); p.push(perm_locations); }
-    if (perm_reports !== undefined) { u.push('perm_reports = ?'); p.push(perm_reports); }
-    if (pin) { u.push('pin = ?'); p.push(await hashPin(pin)); }
-    
-    if (u.length === 0) return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
-    q += u.join(', ') + ' WHERE id = ?'; p.push(id);
-    await env.DB.prepare(q).bind(...p).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  const {
+    name,
+    pin,
+    role,
+    work_start,
+    work_end,
+    force_pin_change,
+    perm_users,
+    perm_locations,
+    perm_reports,
+  } = await request.json();
+  let q = "UPDATE users SET ";
+  let p = [];
+  let u = [];
+  if (name) {
+    u.push("name = ?");
+    p.push(name);
+  }
+  if (role) {
+    u.push("role = ?");
+    p.push(role);
+  }
+  if (work_start) {
+    u.push("work_start = ?");
+    p.push(work_start);
+  }
+  if (work_end) {
+    u.push("work_end = ?");
+    p.push(work_end);
+  }
+  if (force_pin_change !== undefined) {
+    u.push("force_pin_change = ?");
+    p.push(force_pin_change);
+  }
+  if (perm_users !== undefined) {
+    u.push("perm_users = ?");
+    p.push(perm_users);
+  }
+  if (perm_locations !== undefined) {
+    u.push("perm_locations = ?");
+    p.push(perm_locations);
+  }
+  if (perm_reports !== undefined) {
+    u.push("perm_reports = ?");
+    p.push(perm_reports);
+  }
+  if (pin) {
+    u.push("pin = ?");
+    p.push(await hashPin(pin));
+  }
+
+  if (u.length === 0)
+    return new Response(JSON.stringify({ success: true }), {
+      headers: corsHeaders,
+    });
+  q += u.join(", ") + " WHERE id = ?";
+  p.push(id);
+  await env.DB.prepare(q)
+    .bind(...p)
+    .run();
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
-
 async function deleteUser(id, env, corsHeaders) {
-    await env.DB.prepare('UPDATE users SET active = 0 WHERE id = ?').bind(id).run();
-    await env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id).run();
-    await env.DB.prepare('DELETE FROM pushy_tokens WHERE user_id = ?').bind(id).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  await env.DB.prepare("UPDATE users SET active = 0 WHERE id = ?")
+    .bind(id)
+    .run();
+  await env.DB.prepare("DELETE FROM sessions WHERE user_id = ?").bind(id).run();
+  await env.DB.prepare("DELETE FROM pushy_tokens WHERE user_id = ?")
+    .bind(id)
+    .run();
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 // --- LOCATIONS ---
 
 async function getLocations(env, corsHeaders) {
-    const r = await env.DB.prepare('SELECT * FROM locations WHERE active = 1 ORDER BY type, name').all();
-    return new Response(JSON.stringify(r.results), { headers: corsHeaders });
+  const r = await env.DB.prepare(
+    "SELECT * FROM locations WHERE active = 1 ORDER BY type, name"
+  ).all();
+  return new Response(JSON.stringify(r.results), { headers: corsHeaders });
 }
 
 async function createLocation(request, env, corsHeaders) {
-    const { name, type } = await request.json();
-    const ex = await env.DB.prepare('SELECT id, active FROM locations WHERE name = ?').bind(name).first();
-    if (ex) {
-        if (ex.active === 0) { 
-            await env.DB.prepare('UPDATE locations SET active = 1, type = ? WHERE id = ?').bind(type, ex.id).run(); 
-            return new Response(JSON.stringify({ id: ex.id, name, type }), { headers: corsHeaders }); 
-        }
-        return new Response(JSON.stringify({ error: 'Już istnieje' }), { status: 400, headers: corsHeaders });
+  const { name, type } = await request.json();
+  const ex = await env.DB.prepare(
+    "SELECT id, active FROM locations WHERE name = ?"
+  )
+    .bind(name)
+    .first();
+  if (ex) {
+    if (ex.active === 0) {
+      await env.DB.prepare(
+        "UPDATE locations SET active = 1, type = ? WHERE id = ?"
+      )
+        .bind(type, ex.id)
+        .run();
+      return new Response(JSON.stringify({ id: ex.id, name, type }), {
+        headers: corsHeaders,
+      });
     }
-    const r = await env.DB.prepare('INSERT INTO locations (name, type) VALUES (?, ?)').bind(name, type).run();
-    return new Response(JSON.stringify({ id: r.meta.last_row_id, name, type }), { headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Już istnieje" }), {
+      status: 400,
+      headers: corsHeaders,
+    });
+  }
+  const r = await env.DB.prepare(
+    "INSERT INTO locations (name, type) VALUES (?, ?)"
+  )
+    .bind(name, type)
+    .run();
+  return new Response(JSON.stringify({ id: r.meta.last_row_id, name, type }), {
+    headers: corsHeaders,
+  });
 }
 
 async function deleteLocation(id, env, corsHeaders) {
-    await env.DB.prepare('UPDATE locations SET active = 0 WHERE id = ?').bind(id).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  await env.DB.prepare("UPDATE locations SET active = 0 WHERE id = ?")
+    .bind(id)
+    .run();
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 // --- TASKS ---
 
 async function getTasks(params, env, corsHeaders) {
-    const date = params.get('date');
-    const status = params.get('status');
-    let q = `SELECT t.*, u.name as assigned_name, c.name as creator_name, t.created_by as creator_id FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id LEFT JOIN users c ON t.created_by = c.id WHERE 1=1`;
-    let b = [];
-    if (date) { q += ' AND t.scheduled_date = ?'; b.push(date); }
-    if (status && status !== 'all') { q += ' AND t.status = ?'; b.push(status); }
-    q += ` ORDER BY CASE t.status WHEN 'in_progress' THEN 1 WHEN 'pending' THEN 2 WHEN 'completed' THEN 3 END, CASE t.priority WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END, t.sort_order ASC, t.scheduled_time ASC`;
-    const r = await env.DB.prepare(q).bind(...b).all();
-    return new Response(JSON.stringify(r.results), { headers: corsHeaders });
+  const date = params.get("date");
+  const status = params.get("status");
+  let q = `SELECT t.*, u.name as assigned_name, c.name as creator_name, t.created_by as creator_id FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id LEFT JOIN users c ON t.created_by = c.id WHERE 1=1`;
+  let b = [];
+  if (date) {
+    q += " AND t.scheduled_date = ?";
+    b.push(date);
+  }
+  if (status && status !== "all") {
+    q += " AND t.status = ?";
+    b.push(status);
+  }
+  q += ` ORDER BY CASE t.status WHEN 'in_progress' THEN 1 WHEN 'pending' THEN 2 WHEN 'completed' THEN 3 END, CASE t.priority WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END, t.sort_order ASC, t.scheduled_time ASC`;
+  const r = await env.DB.prepare(q)
+    .bind(...b)
+    .all();
+  return new Response(JSON.stringify(r.results), { headers: corsHeaders });
 }
 
 async function getTask(id, env, corsHeaders) {
-    const task = await env.DB.prepare(`SELECT t.*, u.name as assigned_name, c.name as creator_name, t.created_by as creator_id FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id LEFT JOIN users c ON t.created_by = c.id WHERE t.id = ?`).bind(id).first();
-    if (!task) return new Response(JSON.stringify({ error: 'Nie znaleziono' }), { status: 404, headers: corsHeaders });
-    const logs = await env.DB.prepare(`SELECT tl.*, u.name as user_name FROM task_logs tl LEFT JOIN users u ON tl.user_id = u.id WHERE tl.task_id = ? ORDER BY tl.created_at DESC`).bind(id).all();
-    task.logs = logs.results;
-    const drivers = await env.DB.prepare(`SELECT u.id, u.name FROM task_drivers td JOIN users u ON td.user_id = u.id WHERE td.task_id = ?`).bind(id).all();
-    task.additional_drivers = drivers.results;
-    return new Response(JSON.stringify(task), { headers: corsHeaders });
+  const task = await env.DB.prepare(
+    `SELECT t.*, u.name as assigned_name, c.name as creator_name, t.created_by as creator_id FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id LEFT JOIN users c ON t.created_by = c.id WHERE t.id = ?`
+  )
+    .bind(id)
+    .first();
+  if (!task)
+    return new Response(JSON.stringify({ error: "Nie znaleziono" }), {
+      status: 404,
+      headers: corsHeaders,
+    });
+  const logs = await env.DB.prepare(
+    `SELECT tl.*, u.name as user_name FROM task_logs tl LEFT JOIN users u ON tl.user_id = u.id WHERE tl.task_id = ? ORDER BY tl.created_at DESC`
+  )
+    .bind(id)
+    .all();
+  task.logs = logs.results;
+  const drivers = await env.DB.prepare(
+    `SELECT u.id, u.name FROM task_drivers td JOIN users u ON td.user_id = u.id WHERE td.task_id = ?`
+  )
+    .bind(id)
+    .all();
+  task.additional_drivers = drivers.results;
+  return new Response(JSON.stringify(task), { headers: corsHeaders });
 }
 
 async function createTask(request, env, corsHeaders, userId) {
-    const data = await request.json();
-    const maxOrder = await env.DB.prepare('SELECT MAX(sort_order) as max FROM tasks WHERE scheduled_date = ?').bind(data.scheduled_date).first();
-    const sortOrder = (maxOrder?.max || 0) + 1;
-    const res = await env.DB.prepare(`INSERT INTO tasks (task_type, description, material, location_from, location_to, department, scheduled_date, scheduled_time, priority, sort_order, notes, created_by, assigned_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(data.task_type || 'transport', data.description, data.material || null, data.location_from || null, data.location_to || null, data.department || null, data.scheduled_date, data.scheduled_time || null, data.priority || 'normal', sortOrder, data.notes || null, userId, data.assigned_to || null).run();
-    const taskId = res.meta.last_row_id;
-    
-    // Powiadomienia dla kierowców
-    // Send Notification to ALL Drivers
-    const drivers = await env.DB.prepare('SELECT id FROM users WHERE role = "driver" AND active = 1').all();
-    const driverIds = drivers.results.map(u => u.id);
-    const origin = new URL(request.url).origin;
-    await sendOneSignalNotification(driverIds, 'Nowe zadanie', `Nowe zadanie: ${data.description}`, { taskId: taskId }, origin, env);
+  const data = await request.json();
+  const maxOrder = await env.DB.prepare(
+    "SELECT MAX(sort_order) as max FROM tasks WHERE scheduled_date = ?"
+  )
+    .bind(data.scheduled_date)
+    .first();
+  const sortOrder = (maxOrder?.max || 0) + 1;
+  const res = await env.DB.prepare(
+    `INSERT INTO tasks (task_type, description, material, location_from, location_to, department, scheduled_date, scheduled_time, priority, sort_order, notes, created_by, assigned_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      data.task_type || "transport",
+      data.description,
+      data.material || null,
+      data.location_from || null,
+      data.location_to || null,
+      data.department || null,
+      data.scheduled_date,
+      data.scheduled_time || null,
+      data.priority || "normal",
+      sortOrder,
+      data.notes || null,
+      userId,
+      data.assigned_to || null
+    )
+    .run();
+  const taskId = res.meta.last_row_id;
 
-    return new Response(JSON.stringify({ id: taskId, success: true }), { headers: corsHeaders });
+  // Powiadomienia dla kierowców
+  // Send Notification to ALL Drivers
+  const drivers = await env.DB.prepare(
+    'SELECT id FROM users WHERE role = "driver" AND active = 1'
+  ).all();
+  const driverIds = drivers.results.map((u) => u.id);
+
+  // INSERT NOTIFICATIONS TO DB
+  for (const driverId of driverIds) {
+    await env.DB.prepare(
+      "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(
+        driverId,
+        "new_task",
+        "Nowe zadanie",
+        `Nowe zadanie: ${data.description}`,
+        taskId
+      )
+      .run();
+  }
+
+  const origin = new URL(request.url).origin;
+  await sendOneSignalNotification(
+    driverIds,
+    "Nowe zadanie",
+    `Nowe zadanie: ${data.description}`,
+    { taskId: taskId },
+    origin,
+    env
+  );
+
+  return new Response(JSON.stringify({ id: taskId, success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 async function updateTask(id, request, env, corsHeaders, userId) {
-    const data = await request.json();
-    const task = await env.DB.prepare('SELECT created_by FROM tasks WHERE id = ?').bind(id).first();
-    if (userId !== 1 && task.created_by !== userId) return new Response(JSON.stringify({ error: 'Brak uprawnień' }), { status: 403, headers: corsHeaders });
-    await env.DB.prepare(`UPDATE tasks SET task_type = ?, description = ?, material = ?, location_from = ?, location_to = ?, department = ?, scheduled_date = ?, scheduled_time = ?, priority = ?, notes = ?, assigned_to = ? WHERE id = ?`).bind(data.task_type || 'transport', data.description, data.material || null, data.location_from || null, data.location_to || null, data.department || null, data.scheduled_date, data.scheduled_time || null, data.priority || 'normal', data.notes || null, data.assigned_to || null, id).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  const data = await request.json();
+  const task = await env.DB.prepare("SELECT created_by FROM tasks WHERE id = ?")
+    .bind(id)
+    .first();
+  if (userId !== 1 && task.created_by !== userId)
+    return new Response(JSON.stringify({ error: "Brak uprawnień" }), {
+      status: 403,
+      headers: corsHeaders,
+    });
+  await env.DB.prepare(
+    `UPDATE tasks SET task_type = ?, description = ?, material = ?, location_from = ?, location_to = ?, department = ?, scheduled_date = ?, scheduled_time = ?, priority = ?, notes = ?, assigned_to = ? WHERE id = ?`
+  )
+    .bind(
+      data.task_type || "transport",
+      data.description,
+      data.material || null,
+      data.location_from || null,
+      data.location_to || null,
+      data.department || null,
+      data.scheduled_date,
+      data.scheduled_time || null,
+      data.priority || "normal",
+      data.notes || null,
+      data.assigned_to || null,
+      id
+    )
+    .run();
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 async function deleteTask(id, env, corsHeaders) {
-    await env.DB.prepare('DELETE FROM task_logs WHERE task_id = ?').bind(id).run();
-    await env.DB.prepare('DELETE FROM task_drivers WHERE task_id = ?').bind(id).run();
-    await env.DB.prepare('DELETE FROM notifications WHERE task_id = ?').bind(id).run();
-    await env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(id).run();
-    
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  await env.DB.prepare("DELETE FROM task_logs WHERE task_id = ?")
+    .bind(id)
+    .run();
+  await env.DB.prepare("DELETE FROM task_drivers WHERE task_id = ?")
+    .bind(id)
+    .run();
+  await env.DB.prepare("DELETE FROM notifications WHERE task_id = ?")
+    .bind(id)
+    .run();
+  await env.DB.prepare("DELETE FROM tasks WHERE id = ?").bind(id).run();
+
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 async function updateTaskStatus(id, request, env, corsHeaders) {
-    const { status, userId } = await request.json();
-    let q = 'UPDATE tasks SET status = ?';
-    let b = [status];
-    if (status === 'in_progress') { q += ', started_at = CURRENT_TIMESTAMP, assigned_to = ?'; b.push(userId); }
-    else if (status === 'completed') { q += ', completed_at = CURRENT_TIMESTAMP'; }
-    q += ' WHERE id = ?'; b.push(id);
-    await env.DB.prepare(q).bind(...b).run();
-    
-    const statusLabels = { 'in_progress': 'Rozpoczęto', 'completed': 'Zakończono', 'pending': 'Oczekuje' };
-    await env.DB.prepare('INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)').bind(id, userId, 'status_change', statusLabels[status] || status).run();
-    
-    const task = await env.DB.prepare('SELECT description, created_by, assigned_to FROM tasks WHERE id = ?').bind(id).first();
-    const statusText = status === 'in_progress' ? 'rozpoczęte' : status === 'completed' ? 'zakończone' : status;
-    const origin = new URL(request.url).origin;
+  const { status, userId } = await request.json();
+  let q = "UPDATE tasks SET status = ?";
+  let b = [status];
+  if (status === "in_progress") {
+    q += ", started_at = CURRENT_TIMESTAMP, assigned_to = ?";
+    b.push(userId);
+  } else if (status === "completed") {
+    q += ", completed_at = CURRENT_TIMESTAMP";
+  }
+  q += " WHERE id = ?";
+  b.push(id);
+  await env.DB.prepare(q)
+    .bind(...b)
+    .run();
 
-    // 1. Powiadom KIEROWNIKA (Twórcę zadania), jeśli to nie on zmienił status
-    if (task.created_by && task.created_by != userId) {
-         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(task.created_by, 'status_change', 'Zmiana statusu', `"${task.description}" - ${statusText}`, id).run();
-         await sendOneSignalNotification([task.created_by], 'Zmiana statusu', `"${task.description}" - ${statusText}`, { taskId: id }, origin, env);
-    } else if (!task.created_by) {
-        // Fallback: Jeśli brak twórcy, powiadom wszystkich adminów (żeby nie zginęło)
-        const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
-        for (const a of admins.results) {
-             if (a.id == userId) continue; // Nie powiadamiaj sprawcy
-             await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, 'status_change', 'Zmiana statusu', `"${task.description}" - ${statusText}`, id).run();
-             await sendOneSignalNotification([a.id], 'Zmiana statusu', `"${task.description}" - ${statusText}`, { taskId: id }, origin, env);
-        }
+  const statusLabels = {
+    in_progress: "Rozpoczęto",
+    completed: "Zakończono",
+    pending: "Oczekuje",
+  };
+  await env.DB.prepare(
+    "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
+  )
+    .bind(id, userId, "status_change", statusLabels[status] || status)
+    .run();
+
+  const task = await env.DB.prepare(
+    "SELECT description, created_by, assigned_to FROM tasks WHERE id = ?"
+  )
+    .bind(id)
+    .first();
+  const statusText =
+    status === "in_progress"
+      ? "rozpoczęte"
+      : status === "completed"
+      ? "zakończone"
+      : status;
+  const origin = new URL(request.url).origin;
+
+  // 1. Powiadom KIEROWNIKA (Twórcę zadania), jeśli to nie on zmienił status
+  if (task.created_by && task.created_by != userId) {
+    await env.DB.prepare(
+      "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(
+        task.created_by,
+        "status_change",
+        "Zmiana statusu",
+        `"${task.description}" - ${statusText}`,
+        id
+      )
+      .run();
+    await sendOneSignalNotification(
+      [task.created_by],
+      "Zmiana statusu",
+      `"${task.description}" - ${statusText}`,
+      { taskId: id },
+      origin,
+      env
+    );
+  } else if (!task.created_by) {
+    // Fallback: Jeśli brak twórcy, powiadom wszystkich adminów (żeby nie zginęło)
+    const admins = await env.DB.prepare(
+      'SELECT id FROM users WHERE role = "admin" AND active = 1'
+    ).all();
+    for (const a of admins.results) {
+      if (a.id == userId) continue; // Nie powiadamiaj sprawcy
+      await env.DB.prepare(
+        "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+      )
+        .bind(
+          a.id,
+          "status_change",
+          "Zmiana statusu",
+          `"${task.description}" - ${statusText}`,
+          id
+        )
+        .run();
+      await sendOneSignalNotification(
+        [a.id],
+        "Zmiana statusu",
+        `"${task.description}" - ${statusText}`,
+        { taskId: id },
+        origin,
+        env
+      );
     }
+  }
 
-    // 2. Powiadom KIEROWCĘ (Przypisanego), jeśli to nie on zmienił status (np. admin cofnął)
-    // Uwaga: przy statusie 'in_progress' właśnie przypisujemy userId, więc assigned_to w bazie może być stary/null,
-    // ale w argumencie funkcji updateTaskStatus userId to sprawca.
-    // Logika: Jeśli status zmienił ADMIN, a zadanie jest przypisane do KIEROWCY (lub właśnie zostało), powiadom go.
-    
-    // Jeśli zadanie JEST lub BYŁO przypisane
-    if (task.assigned_to && task.assigned_to != userId) {
-         await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(task.assigned_to, 'status_change', 'Aktualizacja zadania', `"${task.description}" - ${statusText}`, id).run();
-         await sendOneSignalNotification([task.assigned_to], 'Aktualizacja zadania', `"${task.description}" - ${statusText}`, { taskId: id }, origin, env);
-    }
+  // 2. Powiadom KIEROWCĘ (Przypisanego), jeśli to nie on zmienił status (np. admin cofnął)
+  // Uwaga: przy statusie 'in_progress' właśnie przypisujemy userId, więc assigned_to w bazie może być stary/null,
+  // ale w argumencie funkcji updateTaskStatus userId to sprawca.
+  // Logika: Jeśli status zmienił ADMIN, a zadanie jest przypisane do KIEROWCY (lub właśnie zostało), powiadom go.
 
-    // Powiadomienie
-    const assigned_to = task.assigned_to;
-    if (assigned_to) {
-        // ... (existing logic)
-        // Jeśli zadanie ma przypisanego kierowcę i status zmienił INNY użytkownik (np. admin), powiadom kierowcę
-        if (assigned_to && String(assigned_to) !== String(userId)) {
-             await sendOneSignalNotification([assigned_to], `Status zadania: ${status}`, `${status}: ${task.description}`, { taskId: id }, new URL(request.url).origin, env);
-        }
-        
-        // Jeśli status zmienił kierowca (albo ktokolwiek inny niż twórca), powiadom Twórcę (Kierownika)
-        // Ale tylko jeśli twórca istnieje
-        if (task.created_by && String(task.created_by) !== String(userId)) {
-             await sendOneSignalNotification([task.created_by], `Aktualizacja zadania`, `Status ${status}: ${task.description}`, { taskId: id }, new URL(request.url).origin, env);
-        } else if (!task.created_by) {
-             // Fallback: Notify all admins if no creator
-             const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
-             const adminIds = admins.results.map(u => u.id).filter(aid => String(aid) !== String(userId));
-             await sendOneSignalNotification(adminIds, `Aktualizacja zadania`, `Status ${status}: ${task.description}`, { taskId: id }, new URL(request.url).origin, env);
-        }
-    }
+  // Jeśli zadanie JEST lub BYŁO przypisane
+  if (task.assigned_to && task.assigned_to != userId) {
+    await env.DB.prepare(
+      "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+    )
+      .bind(
+        task.assigned_to,
+        "status_change",
+        "Aktualizacja zadania",
+        `"${task.description}" - ${statusText}`,
+        id
+      )
+      .run();
+    await sendOneSignalNotification(
+      [task.assigned_to],
+      "Aktualizacja zadania",
+      `"${task.description}" - ${statusText}`,
+      { taskId: id },
+      origin,
+      env
+    );
+  }
 
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+
+
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 async function joinTask(id, request, env, corsHeaders) {
-    const { userId } = await request.json();
-    const ex = await env.DB.prepare('SELECT id FROM task_drivers WHERE task_id = ? AND user_id = ?').bind(id, userId).first();
-    if (ex) return new Response(JSON.stringify({ error: 'Już dołączyłeś' }), { status: 400, headers: corsHeaders });
-    await env.DB.prepare('INSERT INTO task_drivers (task_id, user_id) VALUES (?, ?)').bind(id, userId).run();
-    const user = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first();
-    await env.DB.prepare('INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)').bind(id, userId, 'status_change', `${user.name} dołączył`).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  const { userId } = await request.json();
+  const ex = await env.DB.prepare(
+    "SELECT id FROM task_drivers WHERE task_id = ? AND user_id = ?"
+  )
+    .bind(id, userId)
+    .first();
+  if (ex)
+    return new Response(JSON.stringify({ error: "Już dołączyłeś" }), {
+      status: 400,
+      headers: corsHeaders,
+    });
+  await env.DB.prepare(
+    "INSERT INTO task_drivers (task_id, user_id) VALUES (?, ?)"
+  )
+    .bind(id, userId)
+    .run();
+  const user = await env.DB.prepare("SELECT name FROM users WHERE id = ?")
+    .bind(userId)
+    .first();
+  await env.DB.prepare(
+    "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
+  )
+    .bind(id, userId, "status_change", `${user.name} dołączył`)
+    .run();
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 async function reorderTasks(request, env, corsHeaders) {
-    const { tasks, reason, userId } = await request.json();
-    for (let i = 0; i < tasks.length; i++) await env.DB.prepare('UPDATE tasks SET sort_order = ? WHERE id = ?').bind(i + 1, tasks[i]).run();
-    if (reason && tasks.length > 0) {
-        const user = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first();
-        await env.DB.prepare('INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)').bind(tasks[0], userId, 'status_change', `Zmiana kolejności przez ${user.name}: ${reason}`).run();
-    }
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  const { tasks, reason, userId } = await request.json();
+  for (let i = 0; i < tasks.length; i++)
+    await env.DB.prepare("UPDATE tasks SET sort_order = ? WHERE id = ?")
+      .bind(i + 1, tasks[i])
+      .run();
+  if (reason && tasks.length > 0) {
+    const user = await env.DB.prepare("SELECT name FROM users WHERE id = ?")
+      .bind(userId)
+      .first();
+    await env.DB.prepare(
+      "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        tasks[0],
+        userId,
+        "status_change",
+        `Zmiana kolejności przez ${user.name}: ${reason}`
+      )
+      .run();
+  }
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 // --- TASK LOGS ---
 
 async function getTaskLogs(id, env, corsHeaders) {
-    const r = await env.DB.prepare('SELECT tl.*, u.name as user_name FROM task_logs tl LEFT JOIN users u ON tl.user_id = u.id WHERE tl.task_id = ? ORDER BY tl.created_at DESC').bind(id).all();
-    return new Response(JSON.stringify(r.results), { headers: corsHeaders });
+  const r = await env.DB.prepare(
+    "SELECT tl.*, u.name as user_name FROM task_logs tl LEFT JOIN users u ON tl.user_id = u.id WHERE tl.task_id = ? ORDER BY tl.created_at DESC"
+  )
+    .bind(id)
+    .all();
+  return new Response(JSON.stringify(r.results), { headers: corsHeaders });
 }
 
 async function createTaskLog(id, request, env, corsHeaders) {
-    const { userId, logType, message, delayReason, delayMinutes } = await request.json();
-    
-    const safeMessage = message || null;
-    const safeReason = delayReason || null;
-    const safeMinutes = delayMinutes || null;
+  const { userId, logType, message, delayReason, delayMinutes } =
+    await request.json();
 
-    await env.DB.prepare(`INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes) VALUES (?, ?, ?, ?, ?, ?)`).bind(id, userId, logType, safeMessage, safeReason, safeMinutes).run();
-    
-    if (logType === 'delay' || logType === 'problem') {
-        const task = await env.DB.prepare('SELECT description, created_by FROM tasks WHERE id = ?').bind(id).first();
-        const user = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(userId).first();
-        
-        const title = logType === 'delay' ? '⏱️ Przestój' : '⚠️ Problem';
-        const delayLabels = { 
-            'no_access': 'Brak dojazdu', 'waiting': 'Oczekiwanie', 'traffic': 'Korki', 
-            'equipment': 'Problem ze sprzętem', 'weather': 'Pogoda', 'break': 'Przerwa', 'other': 'Inny' 
-        };
-        
-        const msgText = logType === 'delay' 
-            ? `${user.name}: ${delayLabels[safeReason] || safeReason} (${safeMinutes || 0} min)` 
-            : `${user.name}: ${safeMessage}`;
-        
-        const origin = new URL(request.url).origin;
+  const safeMessage = message || null;
+  const safeReason = delayReason || null;
+  const safeMinutes = delayMinutes || null;
 
-        // Powiadom TWÓRCĘ (Kierownika)
-        if (task.created_by) {
-            await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(task.created_by, logType, title, msgText, id).run();
-            await sendOneSignalNotification([task.created_by], title, msgText, { taskId: id }, origin, env);
-        } else {
-            // Fallback: Wszyscy admini
-            const admins = await env.DB.prepare('SELECT id FROM users WHERE role = "admin" AND active = 1').all();
-            for (const a of admins.results) {
-                await env.DB.prepare('INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)').bind(a.id, logType, title, msgText, id).run();
-                await sendOneSignalNotification([a.id], title, msgText, { taskId: id }, origin, env);
-            }
-        }
+  await env.DB.prepare(
+    `INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes) VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(id, userId, logType, safeMessage, safeReason, safeMinutes)
+    .run();
+
+  if (logType === "delay" || logType === "problem") {
+    const task = await env.DB.prepare(
+      "SELECT description, created_by FROM tasks WHERE id = ?"
+    )
+      .bind(id)
+      .first();
+    const user = await env.DB.prepare("SELECT name FROM users WHERE id = ?")
+      .bind(userId)
+      .first();
+
+    const title = logType === "delay" ? "⏱️ Przestój" : "⚠️ Problem";
+    const delayLabels = {
+      no_access: "Brak dojazdu",
+      waiting: "Oczekiwanie",
+      traffic: "Korki",
+      equipment: "Problem ze sprzętem",
+      weather: "Pogoda",
+      break: "Przerwa",
+      other: "Inny",
+    };
+
+    const msgText =
+      logType === "delay"
+        ? `${user.name}: ${delayLabels[safeReason] || safeReason} (${
+            safeMinutes || 0
+          } min)`
+        : `${user.name}: ${safeMessage}`;
+
+    const origin = new URL(request.url).origin;
+
+    // Powiadom TWÓRCĘ (Kierownika)
+    if (task.created_by) {
+      await env.DB.prepare(
+        "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+      )
+        .bind(task.created_by, logType, title, msgText, id)
+        .run();
+      await sendOneSignalNotification(
+        [task.created_by],
+        title,
+        msgText,
+        { taskId: id },
+        origin,
+        env
+      );
+    } else {
+      // Fallback: Wszyscy admini
+      const admins = await env.DB.prepare(
+        'SELECT id FROM users WHERE role = "admin" AND active = 1'
+      ).all();
+      for (const a of admins.results) {
+        await env.DB.prepare(
+          "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+        )
+          .bind(a.id, logType, title, msgText, id)
+          .run();
+        await sendOneSignalNotification(
+          [a.id],
+          title,
+          msgText,
+          { taskId: id },
+          origin,
+          env
+        );
+      }
     }
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  }
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 // --- NOTIFICATIONS ---
 
 async function getNotifications(uid, env, corsHeaders) {
-    const r = await env.DB.prepare('SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50').bind(uid).all();
-    const c = await env.DB.prepare('SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0').bind(uid).first();
-    return new Response(JSON.stringify({ notifications: r.results, unreadCount: c.count }), { headers: corsHeaders });
+  const r = await env.DB.prepare(
+    "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50"
+  )
+    .bind(uid)
+    .all();
+  const c = await env.DB.prepare(
+    "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0"
+  )
+    .bind(uid)
+    .first();
+  return new Response(
+    JSON.stringify({ notifications: r.results, unreadCount: c.count }),
+    { headers: corsHeaders }
+  );
 }
 
 async function markNotificationRead(id, env, corsHeaders) {
-    await env.DB.prepare('UPDATE notifications SET is_read = 1 WHERE id = ?').bind(id).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  await env.DB.prepare("UPDATE notifications SET is_read = 1 WHERE id = ?")
+    .bind(id)
+    .run();
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 async function markAllNotificationsRead(uid, env, corsHeaders) {
-    await env.DB.prepare('UPDATE notifications SET is_read = 1 WHERE user_id = ?').bind(uid).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  await env.DB.prepare("UPDATE notifications SET is_read = 1 WHERE user_id = ?")
+    .bind(uid)
+    .run();
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 async function deleteReadNotifications(uid, env, corsHeaders) {
-    await env.DB.prepare('DELETE FROM notifications WHERE user_id = ? AND is_read = 1').bind(uid).run();
-    return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  await env.DB.prepare(
+    "DELETE FROM notifications WHERE user_id = ? AND is_read = 1"
+  )
+    .bind(uid)
+    .run();
+  return new Response(JSON.stringify({ success: true }), {
+    headers: corsHeaders,
+  });
 }
 
 // --- REPORTS ---
 
 async function getReports(period, env, corsHeaders) {
-    let dateCondition = '';
-    let isSingleDay = false;
-    
-    if (period.includes('-')) {
-        if (period.length === 7) {
-            dateCondition = `AND strftime('%Y-%m', t.scheduled_date) = '${period}'`;
-        } else {
-            dateCondition = `AND t.scheduled_date = '${period}'`;
-            isSingleDay = true;
-        }
-    } else if (period === 'week') {
-        dateCondition = `AND t.scheduled_date >= date('now', '-7 days')`;
-    } else if (period === 'today') {
-        dateCondition = `AND t.scheduled_date = date('now')`;
-        isSingleDay = true;
+  let dateCondition = "";
+  let isSingleDay = false;
+
+  if (period.includes("-")) {
+    if (period.length === 7) {
+      dateCondition = `AND strftime('%Y-%m', t.scheduled_date) = '${period}'`;
+    } else {
+      dateCondition = `AND t.scheduled_date = '${period}'`;
+      isSingleDay = true;
     }
-    
-    const drivers = await env.DB.prepare(`SELECT id, name, work_start, work_end FROM users WHERE role = 'driver' AND active = 1`).all();
+  } else if (period === "week") {
+    dateCondition = `AND t.scheduled_date >= date('now', '-7 days')`;
+  } else if (period === "today") {
+    dateCondition = `AND t.scheduled_date = date('now')`;
+    isSingleDay = true;
+  }
 
-    const driversStats = [];
-    const now = new Date();
+  const drivers = await env.DB.prepare(
+    `SELECT id, name, work_start, work_end FROM users WHERE role = 'driver' AND active = 1`
+  ).all();
 
-    for (const driver of drivers.results) {
-        const tasks = await env.DB.prepare(`
+  const driversStats = [];
+  const now = new Date();
+
+  for (const driver of drivers.results) {
+    const tasks = await env.DB.prepare(
+      `
             SELECT t.id, t.description, t.status, t.started_at, t.completed_at, t.scheduled_date
             FROM tasks t LEFT JOIN task_drivers td ON t.id = td.task_id
             WHERE (t.assigned_to = ? OR td.user_id = ?) ${dateCondition}
             AND t.started_at IS NOT NULL
             ORDER BY t.started_at
-        `).bind(driver.id, driver.id).all();
+        `
+    )
+      .bind(driver.id, driver.id)
+      .all();
 
-        const delays = await env.DB.prepare(`
+    const delays = await env.DB.prepare(
+      `
             SELECT tl.delay_minutes, tl.delay_reason, tl.created_at, t.id as task_id 
             FROM task_logs tl
             LEFT JOIN tasks t ON tl.task_id = t.id
             WHERE tl.user_id = ? AND tl.log_type = 'delay' ${dateCondition}
             ORDER BY tl.created_at
-        `).bind(driver.id).all();
+        `
+    )
+      .bind(driver.id)
+      .all();
 
-        let workMinutes = 0;
-        let delayMinutes = 0;
-        let timeline = [];
-        let details = [];
+    let workMinutes = 0;
+    let delayMinutes = 0;
+    let timeline = [];
+    let details = [];
 
-        tasks.results.forEach(t => {
-            const start = new Date(t.started_at);
-            const end = t.completed_at ? new Date(t.completed_at) : now;
-            const duration = Math.max(0, (end - start) / 1000 / 60);
-            const type = t.status === 'in_progress' ? 'work-live' : 'work';
-            
-            if (isSingleDay) {
-                timeline.push({ type, start: t.started_at, end: end.toISOString(), desc: t.description, duration: Math.round(duration) });
-                details.push({ time: start.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}), desc: t.description, duration: Math.round(duration), type });
+    tasks.results.forEach((t) => {
+      const start = new Date(t.started_at);
+      const end = t.completed_at ? new Date(t.completed_at) : now;
+      const duration = Math.max(0, (end - start) / 1000 / 60);
+      const type = t.status === "in_progress" ? "work-live" : "work";
 
-                const taskDelays = delays.results.filter(d => d.task_id === t.id);
-                taskDelays.forEach(d => {
-                    const delayStart = new Date(d.created_at);
-                    const delayEnd = new Date(delayStart.getTime() + d.delay_minutes * 60000);
-                    timeline.push({ type: 'delay', start: d.created_at, end: delayEnd.toISOString(), desc: d.delay_reason, duration: d.delay_minutes });
-                    details.push({ time: delayStart.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}), desc: `Przestój: ${d.delay_reason}`, duration: d.delay_minutes, type: 'delay' });
-                });
-            } else {
-                const date = t.scheduled_date;
-                const existingBar = timeline.find(x => x.date === date);
-                if (existingBar) {
-                    existingBar.minutes += Math.round(duration);
-                    existingBar.percent = Math.min(100, Math.round((existingBar.minutes / 480) * 100));
-                } else {
-                    timeline.push({ type: 'bar', date, minutes: Math.round(duration), percent: Math.min(100, Math.round(duration / 480 * 100)) });
-                }
-            }
-            workMinutes += duration;
+      if (isSingleDay) {
+        timeline.push({
+          type,
+          start: t.started_at,
+          end: end.toISOString(),
+          desc: t.description,
+          duration: Math.round(duration),
+        });
+        details.push({
+          time: start.toLocaleTimeString("pl-PL", {
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+          desc: t.description,
+          duration: Math.round(duration),
+          type,
         });
 
-        delays.results.forEach(d => delayMinutes += (d.delay_minutes || 0));
-
-        let targetMinutes = 0;
-        if (isSingleDay) {
-            const [startH, startM] = (driver.work_start || '07:00').split(':');
-            const [endH, endM] = (driver.work_end || '15:00').split(':');
-            targetMinutes = Math.max(0, ((parseInt(endH) * 60 + parseInt(endM)) - (parseInt(startH) * 60 + parseInt(startM))) - 20);
+        const taskDelays = delays.results.filter((d) => d.task_id === t.id);
+        taskDelays.forEach((d) => {
+          const delayStart = new Date(d.created_at);
+          const delayEnd = new Date(
+            delayStart.getTime() + d.delay_minutes * 60000
+          );
+          timeline.push({
+            type: "delay",
+            start: d.created_at,
+            end: delayEnd.toISOString(),
+            desc: d.delay_reason,
+            duration: d.delay_minutes,
+          });
+          details.push({
+            time: delayStart.toLocaleTimeString("pl-PL", {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+            desc: `Przestój: ${d.delay_reason}`,
+            duration: d.delay_minutes,
+            type: "delay",
+          });
+        });
+      } else {
+        const date = t.scheduled_date;
+        const existingBar = timeline.find((x) => x.date === date);
+        if (existingBar) {
+          existingBar.minutes += Math.round(duration);
+          existingBar.percent = Math.min(
+            100,
+            Math.round((existingBar.minutes / 480) * 100)
+          );
         } else {
-            const activeDays = new Set(tasks.results.map(t => t.scheduled_date)).size;
-            targetMinutes = activeDays * (480 - 20);
+          timeline.push({
+            type: "bar",
+            date,
+            minutes: Math.round(duration),
+            percent: Math.min(100, Math.round((duration / 480) * 100)),
+          });
         }
-        
-        const realWorkMinutes = Math.max(0, workMinutes - delayMinutes);
-        const efficiency = targetMinutes > 0 ? Math.min(100, Math.round((realWorkMinutes / targetMinutes) * 100)) : 0;
+      }
+      workMinutes += duration;
+    });
 
-        driversStats.push({
-            id: driver.id,
-            name: driver.name,
-            tasksCount: tasks.results.length,
-            workTime: Math.round(realWorkMinutes),
-            delayTime: Math.round(delayMinutes),
-            kpi: efficiency,
-            isSingleDay,
-            timeline,
-            details: details.sort((a,b) => a.time.localeCompare(b.time))
-        });
+    delays.results.forEach((d) => (delayMinutes += d.delay_minutes || 0));
+
+    let targetMinutes = 0;
+    if (isSingleDay) {
+      const [startH, startM] = (driver.work_start || "07:00").split(":");
+      const [endH, endM] = (driver.work_end || "15:00").split(":");
+      targetMinutes = Math.max(
+        0,
+        parseInt(endH) * 60 +
+          parseInt(endM) -
+          (parseInt(startH) * 60 + parseInt(startM)) -
+          20
+      );
+    } else {
+      const activeDays = new Set(tasks.results.map((t) => t.scheduled_date))
+        .size;
+      targetMinutes = activeDays * (480 - 20);
     }
-    
-    driversStats.sort((a, b) => b.kpi - a.kpi);
-    return new Response(JSON.stringify({ drivers: driversStats }), { headers: corsHeaders });
+
+    const realWorkMinutes = Math.max(0, workMinutes - delayMinutes);
+    const efficiency =
+      targetMinutes > 0
+        ? Math.min(100, Math.round((realWorkMinutes / targetMinutes) * 100))
+        : 0;
+
+    driversStats.push({
+      id: driver.id,
+      name: driver.name,
+      tasksCount: tasks.results.length,
+      workTime: Math.round(realWorkMinutes),
+      delayTime: Math.round(delayMinutes),
+      kpi: efficiency,
+      isSingleDay,
+      timeline,
+      details: details.sort((a, b) => a.time.localeCompare(b.time)),
+    });
+  }
+
+  driversStats.sort((a, b) => b.kpi - a.kpi);
+  return new Response(JSON.stringify({ drivers: driversStats }), {
+    headers: corsHeaders,
+  });
 }
 
 // --- ONESIGNAL SERVICE ---
 
-async function sendOneSignalNotification(userIds, title, message, data, origin, env) {
-    const ids = Array.isArray(userIds) ? userIds : [userIds];
-    if (ids.length === 0) return;
+async function sendOneSignalNotification(
+  userIds,
+  title,
+  message,
+  data,
+  origin,
+  env
+) {
+  const ids = Array.isArray(userIds) ? userIds : [userIds];
+  if (ids.length === 0) return;
 
-    // Convert IDs to strings just in case
-    const targetIds = ids.map(id => String(id));
+  // Convert IDs to strings just in case
+  const targetIds = ids.map((id) => String(id));
 
-    if (!env.ONESIGNAL_APP_ID || !env.ONESIGNAL_API_KEY) {
-        console.error('❌ OneSignal credentials not set in ENV');
-        return;
-    }
+  if (!env.ONESIGNAL_APP_ID || !env.ONESIGNAL_API_KEY) {
+    console.error("❌ OneSignal credentials not set in ENV");
+    return;
+  }
 
-    const payload = {
-        app_id: env.ONESIGNAL_APP_ID,
-        include_aliases: { 
-            external_id: targetIds 
-        },
-        target_channel: "push",
-        headings: { "en": title },
-        contents: { "en": message },
-        data: data,
-        // Kluczowe: URL z parametrem taskId, aby aplikacja otworzyła się na właściwym zadaniu
-        url: `${origin}/?taskId=${data.taskId}`,
-        web_url: `${origin}/?taskId=${data.taskId}`, // Dla pewności na niektórych wersjach Chrome
-        
-        // Collapse ID: zapobiega spamowi, aktualizuje istniejące powiadomienie dla tego samego zadania
-        collapse_id: `task-${data.taskId}`,
-    };
+  const payload = {
+    app_id: env.ONESIGNAL_APP_ID,
+    include_aliases: {
+      external_id: targetIds,
+    },
+    target_channel: "push",
+    headings: { en: title, pl: title },
+    contents: { en: message, pl: message },
+    data: data,
+    // Kluczowe: URL z parametrem taskId, aby aplikacja otworzyła się na właściwym zadaniu
+    url: `${origin}/?taskId=${data.taskId}`,
+    web_url: `${origin}/?taskId=${data.taskId}`, // Dla pewności na niektórych wersjach Chrome
 
-    try {
-        const resp = await fetch('https://onesignal.com/api/v1/notifications', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json',
-                'Authorization': `Basic ${env.ONESIGNAL_API_KEY}`
-            },
-            body: JSON.stringify(payload)
-        });
-        const responseJson = await resp.json();
-        console.log(`📤 OneSignal:`, responseJson);
-    } catch (e) {
-        console.error('❌ OneSignal error:', e);
-    }
+    // Konfiguracja dla Androida/iOS
+    priority: 10,
+    android_channel_id: "transport_tracker_main", // Opcjonalne, jeśli utworzysz kanał
+    ios_sound: "default",
+
+    // Collapse ID: zapobiega spamowi, aktualizuje istniejące powiadomienie dla tego samego zadania
+    collapse_id: `task-${data.taskId}`,
+  };
+
+  try {
+    const resp = await fetch("https://onesignal.com/api/v1/notifications", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${env.ONESIGNAL_API_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const responseJson = await resp.json();
+    console.log(`📤 OneSignal:`, responseJson);
+  } catch (e) {
+    console.error("❌ OneSignal error:", e);
+  }
 }
 
 // =============================================
 // MAIN EXPORT (JEDEN!)
 // =============================================
 export default {
-    // Obsługa requestów HTTP
-    async fetch(request, env, ctx) {
-        const url = new URL(request.url);
-        const path = url.pathname;
-        const corsHeaders = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-            'Content-Type': 'application/json'
-        };
+  // Obsługa requestów HTTP
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const path = url.pathname;
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Content-Type": "application/json",
+    };
 
-        if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+    if (request.method === "OPTIONS")
+      return new Response(null, { headers: corsHeaders });
 
-        try {
-            if (path.startsWith('/api/')) return await handleAPI(request, env, path, corsHeaders);
-            return env.ASSETS.fetch(request);
-        } catch (error) {
-            console.error('Worker error:', error);
-            return new Response(JSON.stringify({ error: error.message || 'Internal Server Error' }), { status: 500, headers: corsHeaders });
-        }
-    },
-    
-    // Cron job - automatyczne czyszczenie (codziennie o 3:00)
-    async scheduled(event, env, ctx) {
-        console.log('🧹 Cron: Cleaning old data...');
-        
-        // Usuń stare tokeny - PUSHY REMOVED
-        /*
+    try {
+      if (path.startsWith("/api/"))
+        return await handleAPI(request, env, path, corsHeaders);
+      return env.ASSETS.fetch(request);
+    } catch (error) {
+      console.error("Worker error:", error);
+      return new Response(
+        JSON.stringify({ error: error.message || "Internal Server Error" }),
+        { status: 500, headers: corsHeaders }
+      );
+    }
+  },
+
+  // Cron job - automatyczne czyszczenie (codziennie o 3:00)
+  async scheduled(event, env, ctx) {
+    console.log("🧹 Cron: Cleaning old data...");
+
+    // Usuń stare tokeny - PUSHY REMOVED
+    /*
         const tokens = await env.DB.prepare(`
             DELETE FROM pushy_tokens WHERE last_used < datetime('now', '-30 days')
         `).run();
         console.log(`🧹 Deleted ${tokens.meta.changes} old tokens`);
         */
-        
-        // Usuń wygasłe sesje
-        const sessions = await env.DB.prepare(`
+
+    // Usuń wygasłe sesje
+    const sessions = await env.DB.prepare(
+      `
             DELETE FROM sessions WHERE expires_at < datetime('now')
-        `).run();
-        console.log(`🧹 Deleted ${sessions.meta.changes} expired sessions`);
-        
-        // Usuń stare próby logowania
-        const attempts = await env.DB.prepare(`
+        `
+    ).run();
+    console.log(`🧹 Deleted ${sessions.meta.changes} expired sessions`);
+
+    // Usuń stare próby logowania
+    const attempts = await env.DB.prepare(
+      `
             DELETE FROM login_attempts WHERE updated_at < datetime('now', '-1 day')
-        `).run();
-        console.log(`🧹 Deleted ${attempts.meta.changes} old login attempts`);
-        
-        console.log('🧹 Cron completed!');
-    }
+        `
+    ).run();
+    console.log(`🧹 Deleted ${attempts.meta.changes} old login attempts`);
+
+    console.log("🧹 Cron completed!");
+  },
 };
