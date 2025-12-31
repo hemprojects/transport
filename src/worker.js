@@ -603,8 +603,12 @@ async function createTask(request, env, corsHeaders, userId) {
     .bind(data.scheduled_date)
     .first();
   const sortOrder = (maxOrder?.max || 0) + 1;
+  
+  // Użyj polskiego czasu dla created_at
+  const polishNow = toPolishSQL(new Date());
+  
   const res = await env.DB.prepare(
-    `INSERT INTO tasks (task_type, description, material, location_from, location_to, department, scheduled_date, scheduled_time, priority, sort_order, notes, created_by, assigned_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO tasks (task_type, description, material, location_from, location_to, department, scheduled_date, scheduled_time, priority, sort_order, notes, created_by, assigned_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
     .bind(
       data.task_type || "transport",
@@ -619,7 +623,8 @@ async function createTask(request, env, corsHeaders, userId) {
       sortOrder,
       data.notes || null,
       userId,
-      data.assigned_to || null
+      data.assigned_to || null,
+      polishNow  // Polski czas!
     )
     .run();
   const taskId = res.meta.last_row_id;
