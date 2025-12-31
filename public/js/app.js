@@ -1623,9 +1623,18 @@ initDriverPanel() {
                         ▶️ Rozpocznij
                     </button>
                 `;
+      } else if (task.status === "paused") {
+        actionButtons = `
+                    <button class="task-action-btn btn-start" data-action="resume" data-id="${task.id}">
+                        ▶️ Wznów
+                    </button>
+                `;
       } else if (task.status === "in_progress") {
         if (isParticipating) {
           actionButtons = `
+                        <button class="task-action-btn" data-action="pause" data-id="${task.id}" title="Wstrzymaj">
+                            ⏸️
+                        </button>
                         <button class="task-action-btn" data-action="add-log" data-id="${task.id}" title="Dodaj uwagę">
                             📝
                         </button>
@@ -1732,6 +1741,12 @@ initDriverPanel() {
             case "join":
               this.openJoinModal(taskId);
               break;
+            case "pause":
+              this.pauseTask(taskId);
+              break;
+            case "resume":
+              this.resumeTask(taskId);
+              break;
           }
         });
       });
@@ -1767,38 +1782,87 @@ initDriverPanel() {
 },
 
     async completeTask(taskId) {
-    if (this._completingTask) return;
-    
-    Modal.confirm(
-        "Zakończyć zadanie?",
-        "Czy na pewno chcesz oznaczyć zadanie jako wykonane?",
-        async () => {
-            this._completingTask = true;
-            
-            // Instant UI update
-            const task = state.tasks.find((t) => t.id == taskId);
-            if (task) {
-                task.status = "completed";
-            }
-            this.sortTasks();
-            this.updateStats();
-            this.renderTasks();
-            Toast.success("Zadanie zakończone! 🎉");
-            
-            // Sync w tle
-            API.updateTaskStatus(taskId, "completed", state.currentUser.id)
-                .catch(async () => {
-                    Toast.error("Błąd synchronizacji - odświeżam...");
+        if (this._completingTask) return;
+        
+        Modal.confirm(
+            "Zakończyć zadanie?",
+            "Czy na pewno chcesz oznaczyć zadanie jako wykonane?",
+            async () => {
+                this._completingTask = true;
+                
+                // Instant UI update
+                const task = state.tasks.find((t) => t.id == taskId);
+                if (task) {
+                    task.status = "completed";
+                }
+                this.sortTasks();
+                this.updateStats();
+                this.renderTasks();
+                Toast.success("Zadanie zakończone! 🎉");
+                
+                // Sync w tle
+                API.updateTaskStatus(taskId, "completed", state.currentUser.id)
+                    .catch(async () => {
+                        Toast.error("Błąd synchronizacji - odświeżam...");
+                        await this.loadTasks();
+                    })
+                    .finally(() => {
+                        this._completingTask = false;
+                    });
+            },
+            "Zakończ",
+            false
+        );
+    },
+
+    async pauseTask(taskId) {
+        Modal.confirm(
+            "Wstrzymać zadanie?",
+            "Zadanie zostanie oznaczone jako wstrzymane. Inny kierowca będzie mógł je wznowić.",
+            async () => {
+                // Instant UI update
+                const task = state.tasks.find((t) => t.id == taskId);
+                if (task) {
+                    task.status = "paused";
+                }
+                this.sortTasks();
+                this.updateStats();
+                this.renderTasks();
+                Toast.info("Zadanie wstrzymane ⏸️");
+                
+                try {
+                    await API.updateTaskStatus(taskId, "paused", state.currentUser.id);
+                } catch(e) {
+                    Toast.error("Błąd synchronizacji");
                     await this.loadTasks();
-                })
-                .finally(() => {
-                    this._completingTask = false;
-                });
-        },
-        "Zakończ",
-        false
-    );
-},
+                }
+            },
+            "Wstrzymaj",
+            false
+        );
+    },
+
+    async resumeTask(taskId) {
+        // Instant UI update
+        const task = state.tasks.find((t) => t.id == taskId);
+        if (task) {
+            task.status = "in_progress";
+            task.assigned_to = state.currentUser.id;
+            task.assigned_name = state.currentUser.name;
+        }
+        this.sortTasks();
+        this.updateStats();
+        this.renderTasks(); // Refresh to show in progress
+        this.setFilter("in_progress");
+        Toast.success("Zadanie wznowione! ▶️");
+        
+        try {
+            await API.updateTaskStatus(taskId, "in_progress", state.currentUser.id);
+        } catch(e) {
+            Toast.error("Błąd synchronizacji");
+            await this.loadTasks();
+        }
+    },
 
     openJoinModal(taskId) {
       const task = state.tasks.find((t) => t.id == taskId);
@@ -1986,11 +2050,22 @@ initDriverPanel() {
         } else if (task.status === "in_progress" && isMyTask) {
           actionsHtml = `
                         <div class="task-detail-actions">
+                            <button class="btn btn-warning" onclick="TransportTracker.DriverPanel.pauseTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
+                                ⏸️ Wstrzymaj
+                            </button>
                             <button class="btn btn-secondary" onclick="TransportTracker.DriverPanel.openLogModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
                                 📝 Dodaj uwagę
                             </button>
                             <button class="btn btn-success" onclick="TransportTracker.DriverPanel.completeTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
                                 ✅ Zakończ
+                            </button>
+                        </div>
+                    `;
+        } else if (task.status === "paused") {
+             actionsHtml = `
+                        <div class="task-detail-actions">
+                            <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.resumeTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
+                                ▶️ Wznów zadanie
                             </button>
                         </div>
                     `;
@@ -2211,6 +2286,10 @@ initDriverPanel() {
         Utils.$("#loading-material").value =
           task.material || task.description || "";
         Utils.$("#loading-department").value = task.department || "";
+      } else if (task.task_type === "other") {
+        Utils.$("#other-description").value = task.description || "";
+        Utils.$("#other-from").value = task.location_from || "";
+        Utils.$("#other-to").value = task.location_to || "";
       }
 
       Utils.$("#task-date").value = task.scheduled_date || "";
@@ -2260,6 +2339,10 @@ initDriverPanel() {
         data.material = Utils.$("#loading-material").value.trim();
         data.description = `Załadunek: ${data.material}`;
         data.department = Utils.$("#loading-department").value;
+      } else if (taskType === "other") {
+        data.description = Utils.$("#other-description").value.trim();
+        data.location_from = Utils.$("#other-from").value.trim();
+        data.location_to = Utils.$("#other-to").value.trim();
       }
 
       return data;
@@ -2296,6 +2379,11 @@ initDriverPanel() {
         }
         if (!data.department) {
           Toast.warning("Wybierz dział");
+          return false;
+        }
+      } else if (data.task_type === "other") {
+        if (!data.description) {
+          Toast.warning("Wpisz rodzaj zadania");
           return false;
         }
       }
