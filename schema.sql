@@ -28,8 +28,8 @@ DROP TABLE IF EXISTS tasks;
 CREATE TABLE tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     
-    -- Typ zadania: unloading (rozładunek), transport (przewożenie), loading (załadunek)
-    task_type TEXT NOT NULL DEFAULT 'transport' CHECK(task_type IN ('unloading', 'transport', 'loading')),
+    -- Typ zadania: unloading (rozładunek), transport (przewożenie), loading (załadunek), other (inne)
+    task_type TEXT NOT NULL DEFAULT 'transport' CHECK(task_type IN ('unloading', 'transport', 'loading', 'other')),
     
     -- Wspólne pola
     description TEXT NOT NULL,
@@ -49,9 +49,10 @@ CREATE TABLE tasks (
     -- Priorytet i kolejność
     priority TEXT DEFAULT 'normal' CHECK(priority IN ('high', 'normal', 'low')),
     sort_order INTEGER DEFAULT 0,
+    from_yesterday INTEGER DEFAULT 0,
     
     -- Status
-    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled', 'paused')),
     
     -- Przypisanie
     assigned_to INTEGER,
@@ -64,6 +65,7 @@ CREATE TABLE tasks (
     created_by INTEGER,
     started_at DATETIME,
     completed_at DATETIME,
+    paused_at DATETIME,
     
     FOREIGN KEY (assigned_to) REFERENCES users(id),
     FOREIGN KEY (created_by) REFERENCES users(id)

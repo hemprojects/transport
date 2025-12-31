@@ -12,4 +12,4 @@ database_name = "transport-tracker-db"
 database_id = "0448180d-71ca-4286-b0c7-f4ec26ac317e"
 
 [triggers]
-crons = ["0 3 * * *"]
+crons = ["0 17 * * *"]

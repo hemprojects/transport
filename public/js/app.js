@@ -160,6 +160,7 @@
         unloading: "Rozładunek",
         transport: "Przewożenie",
         loading: "Załadunek",
+        other: "Inne zadanie",
       };
       return labels[type] || type;
     },
@@ -169,6 +170,7 @@
         unloading: "📥",
         transport: "🚛",
         loading: "📤",
+        other: "📋",
       };
       return icons[type] || "📋";
     },
@@ -179,6 +181,7 @@
         in_progress: "W trakcie",
         completed: "Zakończone",
         cancelled: "Anulowane",
+        paused: "Wstrzymane",
       };
       return labels[status] || status;
     },
@@ -189,6 +192,7 @@
         in_progress: "🔄",
         completed: "✅",
         cancelled: "❌",
+        paused: "⏸️",
       };
       return icons[status] || "❓";
     },

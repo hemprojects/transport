@@ -2,6 +2,42 @@
 // TransportTracker - Secure Worker API v3.2
 // =============================================
 
+// --- TIMEZONE UTILS (POLAND - Europe/Warsaw) ---
+
+// Konwertuje datę UTC na czas polski (uwzględnia automatycznie DST)
+function toPolishTime(utcDate) {
+  return new Date(utcDate.toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+}
+
+// Zwraca aktualny czas polski
+function getPolishNow() {
+  return new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+}
+
+// Formatuje datę do SQL DATETIME w czasie polskim
+function toPolishSQL(date) {
+  const polishDate = typeof date === 'string' ? new Date(date) : date;
+  const polish = new Date(polishDate.toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+  
+  const year = polish.getFullYear();
+  const month = String(polish.getMonth() + 1).padStart(2, '0');
+  const day = String(polish.getDate()).padStart(2, '0');
+  const hours = String(polish.getHours()).padStart(2, '0');
+  const minutes = String(polish.getMinutes()).padStart(2, '0');
+  const seconds = String(polish.getSeconds()).padStart(2, '0');
+  
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+}
+
+// Zwraca dzisiejszą datę w Polsce (format YYYY-MM-DD)
+function getPolishToday() {
+  const now = getPolishNow();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // --- SECURITY UTILS ---
 
 async function hashPin(pin) {
@@ -15,10 +51,52 @@ function generateToken() {
   return crypto.randomUUID();
 }
 
-// --- CONFIG ---
-// Keys are now in `env` (set via `wrangler secret put`)
-// env.ONESIGNAL_APP_ID
-// env.ONESIGNAL_API_KEY
+// --- TASK MIGRATION ---
+
+// Migruje oczekujące i wstrzymane zadania z poprzednich dni
+// Wywoływane codziennie o 18:00 (czas polski) przez cron
+async function migratePendingTasks(env) {
+  const today = getPolishToday();
+  
+  console.log(`🔄 Task Migration: Running for ${today}...`);
+  
+  // Znajdź wszystkie pending i paused z dni poprzednich
+  const tasksToMigrate = await env.DB.prepare(
+    `SELECT id, scheduled_date, status, description 
+     FROM tasks 
+     WHERE scheduled_date < ? 
+     AND status IN ('pending', 'paused')
+     ORDER BY scheduled_date ASC`
+  )
+    .bind(today)
+    .all();
+  
+  if (!tasksToMigrate.results || tasksToMigrate.results.length === 0) {
+    console.log(`✅ Task Migration: No tasks to migrate.`);
+    return { migrated: 0 };
+  }
+  
+  console.log(`📋 Task Migration: Found ${tasksToMigrate.results.length} tasks to migrate`);
+  
+  // Dla każdego zadania: przenieś na dziś + ustaw flagę from_yesterday
+  for (const task of tasksToMigrate.results) {
+    await env.DB.prepare(
+      `UPDATE tasks 
+       SET scheduled_date = ?, 
+           from_yesterday = 1,
+           sort_order = 0
+       WHERE id = ?`
+    )
+      .bind(today, task.id)
+      .run();
+    
+    console.log(`  ✓ Migrated task #${task.id}: "${task.description}" (${task.status})`);
+  }
+  
+  console.log(`✅ Task Migration: Completed. Migrated ${tasksToMigrate.results.length} tasks.`);
+  
+  return { migrated: tasksToMigrate.results.length };
+}
 
 // --- RATE LIMITING ---
 
@@ -546,23 +624,23 @@ async function createTask(request, env, corsHeaders, userId) {
     .run();
   const taskId = res.meta.last_row_id;
 
-  // Zbierz ID użytkowników do powiadomienia
+  // Powiadom wszystkich kierowców o nowym zadaniu
   const drivers = await env.DB.prepare(
     'SELECT id FROM users WHERE role = "driver" AND active = 1'
   ).all();
   
-  const driverIds = new Set(drivers.results.map((u) => u.id));
+  const driverIds = drivers.results.map((u) => u.id);
   
-  // Jeśli zadanie jest przypisane do konkretnej osoby, dodaj ją
-  if (data.assigned_to) {
-    driverIds.add(data.assigned_to);
+  // Jeśli zadanie jest przypisane do konkretnej osoby, upewnij się że jest na liście
+  if (data.assigned_to && !driverIds.includes(data.assigned_to)) {
+    driverIds.push(data.assigned_to);
   }
 
   const origin = new URL(request.url).origin;
   
-  // ✅ TYLKO JEDNO wywołanie - notifyUsers zajmuje się WSZYSTKIM (DB + Push)
+  // ✅ TYLKO JEDNO wywołanie - notifyUsers zajmuje się wszystkim (DB + Push)
   await notifyUsers(
-    Array.from(driverIds),
+    driverIds,
     "new_task",
     "Nowe zadanie",
     `Nowe zadanie: ${data.description}`,
@@ -628,16 +706,25 @@ async function deleteTask(id, env, corsHeaders) {
 
 async function updateTaskStatus(id, request, env, corsHeaders) {
   const { status, userId } = await request.json();
+  const polishNow = toPolishSQL(new Date());
+  
   let q = "UPDATE tasks SET status = ?";
   let b = [status];
+  
   if (status === "in_progress") {
-    q += ", started_at = CURRENT_TIMESTAMP, assigned_to = ?";
-    b.push(userId);
+    q += ", started_at = ?, assigned_to = ?";
+    b.push(polishNow, userId);
   } else if (status === "completed") {
-    q += ", completed_at = CURRENT_TIMESTAMP";
+    q += ", completed_at = ?";
+    b.push(polishNow);
+  } else if (status === "paused") {
+    q += ", paused_at = ?";
+    b.push(polishNow);
   }
+  
   q += " WHERE id = ?";
   b.push(id);
+  
   await env.DB.prepare(q)
     .bind(...b)
     .run();
@@ -646,7 +733,9 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     in_progress: "Rozpoczęto",
     completed: "Zakończono",
     pending: "Oczekuje",
+    paused: "Wstrzymano",
   };
+  
   await env.DB.prepare(
     "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
   )
@@ -1245,31 +1334,32 @@ export default {
     }
   },
 
-  // Cron job - automatyczne czyszczenie (codziennie o 3:00)
+  // Cron job - automatyczne czyszczenie + migracja zadań (codziennie o 17:00 UTC / 18:00 PL zimą)
   async scheduled(event, env, ctx) {
-    console.log("🧹 Cron: Cleaning old data...");
+    const polishNow = getPolishNow();
+    const polishHour = polishNow.getHours();
+    
+    console.log(`🕐 Cron: Triggered at ${toPolishSQL(polishNow)} (Polish time)`);
+    
+    // Migracja zadań - tylko jeśli cron wykonuje się koło 18:00 czasu polskiego
+    // (cron w Cloudflare działa na UTC, więc powinien być ustawiony na 17:00 UTC)
+    if (polishHour >= 17 && polishHour <= 19) {
+      console.log("🔄 Running task migration...");
+      const migrationResult = await migratePendingTasks(env);
+      console.log(`✅ Migrated ${migrationResult.migrated} tasks`);
+    }
 
-    // Usuń stare tokeny - PUSHY REMOVED
-    /*
-        const tokens = await env.DB.prepare(`
-            DELETE FROM pushy_tokens WHERE last_used < datetime('now', '-30 days')
-        `).run();
-        console.log(`🧹 Deleted ${tokens.meta.changes} old tokens`);
-        */
+    console.log("🧹 Cron: Cleaning old data...");
 
     // Usuń wygasłe sesje
     const sessions = await env.DB.prepare(
-      `
-            DELETE FROM sessions WHERE expires_at < datetime('now')
-        `
+      `DELETE FROM sessions WHERE expires_at < datetime('now')`
     ).run();
     console.log(`🧹 Deleted ${sessions.meta.changes} expired sessions`);
 
     // Usuń stare próby logowania
     const attempts = await env.DB.prepare(
-      `
-            DELETE FROM login_attempts WHERE updated_at < datetime('now', '-1 day')
-        `
+      `DELETE FROM login_attempts WHERE updated_at < datetime('now', '-1 day')`
     ).run();
     console.log(`🧹 Deleted ${attempts.meta.changes} old login attempts`);
 

@@ -574,6 +574,13 @@
                     <span class="task-type-name">Załadunek</span>
                   </div>
                 </label>
+                <label class="task-type-option" data-type="other">
+                  <input type="radio" name="task-type" value="other" />
+                  <div class="task-type-card">
+                    <span class="task-type-icon">📋</span>
+                    <span class="task-type-name">Inne zadanie</span>
+                  </div>
+                </label>
               </div>
             </div>
 
@@ -642,6 +649,38 @@
                 <select id="loading-department">
                   <option value="">Wybierz dział...</option>
                 </select>
+              </div>
+            </div>
+
+            <!-- Pola dla INNEGO ZADANIA -->
+            <div id="fields-other" class="task-fields hidden">
+              <div class="form-group">
+                <label for="other-description">Rodzaj zadania *</label>
+                <input
+                  type="text"
+                  id="other-description"
+                  placeholder="np. Pomoc przy rozładunku, Sprzątanie hali"
+                />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="other-from">Skąd</label>
+                  <input
+                    type="text"
+                    id="other-from"
+                    list="datalist-locations"
+                    placeholder="Opcjonalnie"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="other-to">Dokąd</label>
+                  <input
+                    type="text"
+                    id="other-to"
+                    list="datalist-locations"
+                    placeholder="Opcjonalnie"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1235,6 +1274,6 @@
       </div>
     </div>
     
-<script src="js/app.js?v=8"></script>
+<script src="js/app.js?v=9"></script>
   </body>
 </html>
