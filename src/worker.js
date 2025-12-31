@@ -624,21 +624,26 @@ async function createTask(request, env, corsHeaders, userId) {
     .run();
   const taskId = res.meta.last_row_id;
 
-  // Powiadom wszystkich kierowców o nowym zadaniu
-  const drivers = await env.DB.prepare(
-    'SELECT id FROM users WHERE role = "driver" AND active = 1'
-  ).all();
-  
-  const driverIds = drivers.results.map((u) => u.id);
-  
-  // Jeśli zadanie jest przypisane do konkretnej osoby, upewnij się że jest na liście
-  if (data.assigned_to && !driverIds.includes(data.assigned_to)) {
-    driverIds.push(data.assigned_to);
-  }
-
   const origin = new URL(request.url).origin;
   
-  // ✅ TYLKO JEDNO wywołanie - notifyUsers zajmuje się wszystkim (DB + Push)
+  // Logika powiadomień: 
+  // - Jeśli przypisane do kierowcy -> tylko ON
+  // - Jeśli "Dowolny kierowca" -> wszyscy
+  
+  let driverIds = [];
+  
+  if (data.assigned_to) {
+    // Tylko przypisany kierowca
+    driverIds = [data.assigned_to];
+  } else {
+    // Wszyscy kierowcy
+    const drivers = await env.DB.prepare(
+      'SELECT id FROM users WHERE role = "driver" AND active = 1'
+    ).all();
+    driverIds = drivers.results.map((u) => u.id);
+  }
+  
+  // Wyślij powiadomienia
   await notifyUsers(
     driverIds,
     "new_task",
@@ -1265,7 +1270,6 @@ async function sendOneSignalNotification(
     headings: { en: title, pl: title },
     contents: { en: message, pl: message },
     data: data,
-    url: `${origin}/?taskId=${data.taskId}`,
     web_url: `${origin}/?taskId=${data.taskId}`,
     
     // ❌ USUŃ TO (lub utwórz kanał w OneSignal Dashboard):

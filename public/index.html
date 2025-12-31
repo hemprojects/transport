@@ -574,14 +574,15 @@
                     <span class="task-type-name">Załadunek</span>
                   </div>
                 </label>
-                <label class="task-type-option" data-type="other">
-                  <input type="radio" name="task-type" value="other" />
-                  <div class="task-type-card">
-                    <span class="task-type-icon">📋</span>
-                    <span class="task-type-name">Inne zadanie</span>
-                  </div>
-                </label>
               </div>
+              <!-- Inne zadanie - pełna szerokość poniżej -->
+              <label class="task-type-option task-type-other-full" data-type="other" style="display: block; width: 100%; margin-top: 10px;">
+                <input type="radio" name="task-type" value="other" />
+                <div class="task-type-card" style="justify-content: center;">
+                  <span class="task-type-icon">📋</span>
+                  <span class="task-type-name">Inne zadanie</span>
+                </div>
+              </label>
             </div>
 
             <!-- Pola dla ROZŁADUNKU -->
@@ -1274,6 +1275,6 @@
       </div>
     </div>
     
-<script src="js/app.js?v=9"></script>
+<script src="js/app.js?v=10"></script>
   </body>
 </html>

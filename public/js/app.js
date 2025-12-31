@@ -74,7 +74,10 @@
       if (!timeStr) return "";
       // Jeśli to pełna data SQL (np. 2025-12-19 08:00:00)
       if (timeStr.includes(" ") || timeStr.includes("T")) {
-        const date = new Date(timeStr.replace(" ", "T")); // fix dla sqlite formatu
+        // Backend wysyła czas polski - dodaj strefę
+        const isoStr = timeStr.replace(" ", "T");
+        const dateStr = isoStr.includes("Z") || isoStr.includes("+") ? isoStr : isoStr + "+01:00";
+        const date = new Date(dateStr);
         return date.toLocaleTimeString(CONFIG.DATE_FORMAT, {
           hour: "2-digit",
           minute: "2-digit",
@@ -89,7 +92,10 @@
 
     formatRelativeTime(dateTimeStr) {
       if (!dateTimeStr) return "";
-      const date = new Date(dateTimeStr);
+      // Backend wysyła czas polski - dodaj strefę
+      const isoStr = dateTimeStr.replace(" ", "T");
+      const dateStr = isoStr.includes("Z") || isoStr.includes("+") ? isoStr : isoStr + "+01:00";
+      const date = new Date(dateStr);
       const now = new Date();
       const diffMs = now - date;
       const diffMins = Math.floor(diffMs / 60000);
