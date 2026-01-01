@@ -2921,8 +2921,8 @@ input[type="date"] {
     
     /* Better Date Picker Layout on PC */
     .date-picker-section {
-        max-width: 600px;
-        margin: 0 auto 24px auto;
+        max-width: none; /* Allow full stretch */
+        margin: 0 0 24px 0;
     }
     
     /* Main Content Spacing */
