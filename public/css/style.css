@@ -2875,6 +2875,61 @@ input[type="date"] {
 }
 
 /* DRIVER BUTTONS ENHANCEMENTS */
+/* FIX: Driver Buttons Horizontal Again */
+#driver-tasks-list .task-actions {
+    flex-direction: row !important; /* Force row */
+    gap: 8px;
+}
+#driver-tasks-list .task-action-btn {
+    flex: 1; /* Equal width */
+    margin-bottom: 0;
+}
+
+/* =============================================
+   34. PC VISUAL POLISH (Centering & Layout)
+   ============================================= */
+@media (min-width: 768px) {
+    /* Center Filters & Remove Scroll */
+    .filters-row {
+        justify-content: center;
+        overflow-x: visible;
+        flex-wrap: wrap;
+        margin-bottom: 24px;
+        padding-bottom: 0;
+    }
+    
+    .filter-btn {
+        padding: 10px 20px;
+        font-size: 14px;
+        transition: transform 0.2s ease, background 0.2s ease;
+    }
+    
+    .filter-btn:hover {
+        transform: translateY(-2px);
+    }
+    
+    /* Center & Constrain Stats */
+    .stats-row {
+        max-width: 800px;
+        margin: 0 auto 32px auto;
+        gap: 24px;
+    }
+    
+    .stat-box {
+        padding: 24px;
+    }
+    
+    /* Better Date Picker Layout on PC */
+    .date-picker-section {
+        max-width: 600px;
+        margin: 0 auto 24px auto;
+    }
+    
+    /* Main Content Spacing */
+    .main-content {
+        padding-top: 32px;
+    }
+}
 /* Large but Horizontal */
 #driver-tasks-list .task-actions {
     display: flex;
