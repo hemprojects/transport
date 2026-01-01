@@ -2964,16 +2964,24 @@ input[type="date"] {
 }
 
 /* List View Layout */
-.admin-tasks-list.view-list {
-    display: flex;
-    flex-direction: column;
+/* List View Layout */
+.admin-tasks-list.view-list,
+.tasks-list.view-list {
+    display: flex !important; /* Force flex over grid */
+    flex-direction: column !important;
     gap: 8px;
+    grid-template-columns: none !important; /* Disable grid */
+    width: 100%;
 }
 
-.admin-tasks-list.view-list .task-card {
+.admin-tasks-list.view-list .task-card,
+.tasks-list.view-list .task-card {
     display: flex;
     flex-direction: row;
     align-items: center;
+    width: 100%;
+    max-width: none; /* Allow full width */
+    margin: 0;
     padding: 8px 16px;
     margin-bottom: 0;
     flex-wrap: nowrap;
