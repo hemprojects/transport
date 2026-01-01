@@ -2838,10 +2838,6 @@ input[type="date"] {
 /* =============================================
    25. BROWSER BANNER
    ============================================= */
-
-/* =============================================
-   25. BROWSER BANNER
-   ============================================= */
 .browser-banner {
     background: var(--warning-bg);
     color: var(--warning);
@@ -2860,8 +2856,9 @@ input[type="date"] {
     font-size: 20px;
 }
 
+
 /* =============================================
-   15. NEW FEATURES (2026 Updates)
+   33. NEW FEATURES (2025 Updates)
    ============================================= */
 
 /* MOBILE COMPACT FILTERS */
@@ -2877,26 +2874,31 @@ input[type="date"] {
     }
 }
 
-/* DRIVER LARGE BUTTONS */
-#driver-tasks-list .task-action-btn {
-    min-height: 48px;
-    padding: 12px 16px;
-    font-size: 16px;
-    margin-bottom: 6px;
-    width: 100%; /* Ensure full width for easy clicking */
-    justify-content: center;
-}
+/* DRIVER BUTTONS ENHANCEMENTS */
+/* Large but Horizontal */
 #driver-tasks-list .task-actions {
-    flex-direction: column;
+    display: flex;
+    flex-direction: row; /* Horizontal */
     gap: 8px;
 }
-/* Specific colors for driver actions to pop */
+
+#driver-tasks-list .task-action-btn {
+    flex: 1; /* Equal width */
+    min-height: 48px; /* High touch target */
+    padding: 0 16px;
+    font-size: 16px;
+    margin-bottom: 0;
+    justify-content: center;
+}
+
+/* Specific colors for driver actions */
 #driver-tasks-list .btn-start { background-color: var(--primary); color: white; }
 #driver-tasks-list .btn-complete { background-color: var(--success); color: white; }
 #driver-tasks-list .task-action-btn[data-action='pause'] { background-color: var(--warning); color: white; }
 #driver-tasks-list .task-action-btn[data-action='add-log'] { background-color: var(--bg-tertiary); color: var(--text-primary); }
 
-/* PC LIST VIEW toggle */
+/* PC LIST VIEW (Admin) */
+/* Toggle Button Visibility */
 .hidden-mobile {
     display: none;
 }
@@ -2906,7 +2908,7 @@ input[type="date"] {
     }
 }
 
-/* LIST VIEW STYLES - Optimized Row Layout */
+/* List View Layout */
 .admin-tasks-list.view-list {
     display: flex;
     flex-direction: column;
@@ -2923,94 +2925,68 @@ input[type="date"] {
     gap: 16px;
 }
 
-/* View List - 1. Status Indicator */
+/* List View Elements */
 .admin-tasks-list.view-list .task-status-indicator {
     position: static;
     font-size: 11px;
     padding: 2px 6px;
-    margin: 0;
     min-width: 90px;
     text-align: center;
-    flex-shrink: 0;
     order: 0;
+    margin: 0;
 }
 
-/* View List - 2. Main Content */
 .admin-tasks-list.view-list .task-body {
     flex: 1;
-    margin: 0;
-    padding: 0;
-    border: none;
     display: flex;
     align-items: center;
     gap: 16px;
-    flex-wrap: wrap;
+    margin: 0;
+    padding: 0;
     order: 1;
-    min-width: 0; /* flexbox text overflow fix */
+    border: none;
 }
 
 .admin-tasks-list.view-list .task-title {
-    font-size: 14px;
     margin: 0;
+    font-size: 14px;
     white-space: nowrap;
+    max-width: 200px;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-weight: 600;
 }
 
 .admin-tasks-list.view-list .task-description {
+    margin: 0;
     font-size: 13px;
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin: 0;
-    color: var(--text-secondary);
 }
 
-.admin-tasks-list.view-list .task-route {
-    background: none;
-    padding: 0;
-    margin: 0;
-    border: none;
-    display: inline-flex;
-    align-items: center;
-}
-
-/* View List - 3. Badges (Priority/Type) */
 .admin-tasks-list.view-list .task-header {
     margin: 0;
     padding: 0;
-    border: none;
-    width: auto;
     flex-shrink: 0;
     order: 2;
-}
-.admin-tasks-list.view-list .task-badges {
-    gap: 4px;
-}
-.admin-tasks-list.view-list .task-priority-badge,
-.admin-tasks-list.view-list .task-type-badge {
-    font-size: 10px;
-    padding: 2px 6px;
+    border: none;
+    width: auto;
 }
 
-/* View List - 4. Actions */
 .admin-tasks-list.view-list .task-footer {
-    width: auto;
     margin: 0;
     padding: 0;
-    border: none;
-    background: none;
     flex-shrink: 0;
     order: 3;
+    border: none;
+    background: none;
+    width: auto;
 }
-.admin-tasks-list.view-list .task-meta {
-    display: none;
-}
+
 .admin-tasks-list.view-list .task-actions {
     display: flex;
     gap: 4px;
 }
+
 .admin-tasks-list.view-list .task-action-btn {
     width: 28px;
     height: 28px;
@@ -3018,7 +2994,8 @@ input[type="date"] {
     font-size: 14px;
 }
 
-/* Hide Order Badge in List View */
+.admin-tasks-list.view-list .task-meta,
 .admin-tasks-list.view-list .task-order-badge {
     display: none;
 }
+
