@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 2.50 - Kompletna przebudowa
+// Wersja 2.00 - final
 // =============================================
 
 (function () {
