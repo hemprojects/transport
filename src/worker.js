@@ -1115,21 +1115,39 @@ async function getReports(period, env, corsHeaders) {
     let details = [];
 
     tasks.results.forEach((t) => {
-      const start = new Date(t.started_at);
-      const end = t.completed_at ? new Date(t.completed_at) : now;
-      const duration = Math.max(0, (end - start) / 1000 / 60);
+      // FIX: Use raw strings for sending to frontend to avoid double-shifting.
+      // Database stores "Polish Time" as raw string (e.g. 12:00).
+      // Worker treats new Date("12:00") as 12:00 UTC.
+      // So math (end - start) works fine as long as both are treated as UTC.
+      // But we must send the RAW string "12:00" to frontend, not "12:00Z" (ISO).
+
+      const startObj = new Date(t.started_at);
+      let endObj;
+      let endStr;
+
+      if (t.completed_at) {
+        endObj = new Date(t.completed_at);
+        endStr = t.completed_at; // Raw DB string
+      } else {
+        // Task in progress: "Now" must be converted to Polish String to match DB format
+        endStr = toPolishSQL(now);
+        endObj = new Date(endStr);
+      }
+
+      const duration = Math.max(0, (endObj - startObj) / 1000 / 60);
       const type = t.status === "in_progress" ? "work-live" : "work";
 
       if (isSingleDay) {
         timeline.push({
           type,
           start: t.started_at,
-          end: end.toISOString(),
+          end: endStr,
           desc: t.description,
           duration: Math.round(duration),
         });
         details.push({
-          time: start.toLocaleTimeString("pl-PL", {
+          // Frontend parses raw string "YYYY-MM-DD HH:MM:SS" as local time correctly
+          time: new Date(t.started_at).toLocaleTimeString("pl-PL", {
             hour: "2-digit",
             minute: "2-digit",
           }),
@@ -1140,19 +1158,35 @@ async function getReports(period, env, corsHeaders) {
 
         const taskDelays = delays.results.filter((d) => d.task_id === t.id);
         taskDelays.forEach((d) => {
-          const delayStart = new Date(d.created_at);
-          const delayEnd = new Date(
-            delayStart.getTime() + d.delay_minutes * 60000
+          const delayStartObj = new Date(d.created_at);
+          const delayEndObj = new Date(
+            delayStartObj.getTime() + d.delay_minutes * 60000
           );
+          
+          // Re-format delay end to string for consistency if needed, 
+          // but timelines relying on ISO might need check. 
+          // actually generateTimeline in app.js handles strings well.
+          const delayEndStr = toPolishSQL(delayEndObj); 
+          // Note: toPolishSQL expects Date or String. delayEndObj is Date (UTC-like).
+          // Wait, delayEndObj is derived from delayStartObj (Date from String "12:00").
+          // So delayEndObj is also "Visual UTC". 
+          // We need to convert it back to "YYYY-MM-DD HH:MM:SS" string without timezone shift.
+          // toPolishSQL does shifting! We don't want to shift again if it's already "Visual UTC".
+          
+          // Simple formatting function for "Visual UTC" Date to String
+          const formatRaw = (d) => {
+             return d.toISOString().replace('T', ' ').split('.')[0];
+          };
+
           timeline.push({
             type: "delay",
             start: d.created_at,
-            end: delayEnd.toISOString(),
+            end: formatRaw(delayEndObj),
             desc: d.delay_reason,
             duration: d.delay_minutes,
           });
           details.push({
-            time: delayStart.toLocaleTimeString("pl-PL", {
+            time: new Date(d.created_at).toLocaleTimeString("pl-PL", {
               hour: "2-digit",
               minute: "2-digit",
             }),

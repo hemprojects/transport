@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 2.00 - final
+// Wersja 2.0.0 - Final
 // =============================================
 
 (function () {
@@ -3546,7 +3546,7 @@
     },
 
     // REPORTS
-    async loadReports(period = "week") {
+    async loadReports(period = "today") {
       try {
         // Dodaj timestamp żeby nie było cache
         const data = await API.getReports(period + "&t=" + Date.now());
@@ -3944,7 +3944,7 @@
           period = dayPicker.value;
         }
 
-        this.loadReports(period);
+        this.loadReports(period || "today");
       };
 
       if (reportType) {
