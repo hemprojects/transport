@@ -1,5 +1,5 @@
 // =============================================
-// TransportTracker - Secure Worker API v3.2
+// TransportTracker - Secure Worker API v.2.06
 // =============================================
 
 // --- TIMEZONE UTILS (POLAND - Europe/Warsaw) ---
@@ -18,14 +18,14 @@ function getPolishNow() {
 function toPolishSQL(date) {
   const polishDate = typeof date === 'string' ? new Date(date) : date;
   const polish = new Date(polishDate.toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
-  
+
   const year = polish.getFullYear();
   const month = String(polish.getMonth() + 1).padStart(2, '0');
   const day = String(polish.getDate()).padStart(2, '0');
   const hours = String(polish.getHours()).padStart(2, '0');
   const minutes = String(polish.getMinutes()).padStart(2, '0');
   const seconds = String(polish.getSeconds()).padStart(2, '0');
-  
+
   return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
 }
 
@@ -53,13 +53,72 @@ function generateToken() {
 
 // --- TASK MIGRATION ---
 
+// Wstrzymuje zadania in_progress o 18:00
+// Wywoływane codziennie o 18:00 (czas polski) przez cron
+async function pauseInProgressTasks(env) {
+  const today = getPolishToday();
+  const polishNow = toPolishSQL(new Date());
+
+  console.log(`⏸️ Task Pause: Running at ${polishNow}...`);
+
+  const defaultWorkEnd = `${today} 15:00:00`; // Domyślny koniec zmiany dla KPI
+
+  // Znajdź wszystkie zadania in_progress z dzisiaj
+  const tasksToSwap = await env.DB.prepare(
+    `SELECT id, description, assigned_to, started_at 
+     FROM tasks 
+     WHERE scheduled_date = ? 
+     AND status = 'in_progress'`
+  )
+    .bind(today)
+    .all();
+
+  if (!tasksToSwap.results || tasksToSwap.results.length === 0) {
+    console.log(`✅ Task Pause: No in_progress tasks to pause.`);
+    return { paused: 0 };
+  }
+
+  console.log(`📋 Task Pause: Found ${tasksToSwap.results.length} tasks to pause`);
+
+  for (const task of tasksToSwap.results) {
+    // Oblicz czas pauzy tak, aby nie psuć KPI (nie wliczać czasu po 15:00)
+    let pauseTime = defaultWorkEnd;
+    if (task.started_at && task.started_at > defaultWorkEnd) {
+      pauseTime = task.started_at;
+    }
+
+    await env.DB.prepare(
+      `UPDATE tasks 
+       SET status = 'paused', 
+           paused_at = ?
+       WHERE id = ?`
+    )
+      .bind(pauseTime, task.id)
+      .run();
+
+    // Dodaj log o automatycznym wstrzymaniu
+    await env.DB.prepare(
+      `INSERT INTO task_logs (task_id, user_id, log_type, message) 
+       VALUES (?, ?, ?, ?)`
+    )
+      .bind(task.id, task.assigned_to || 0, "status_change", `Automatycznie wstrzymano (Cron 18:00->${pauseTime.substring(11, 16)})`)
+      .run();
+
+    console.log(`  ✓ Paused task #${task.id}: "${task.description}" at ${pauseTime} (KPI safe)`);
+  }
+
+  console.log(`✅ Task Pause: Completed. Paused ${tasksToSwap.results.length} tasks.`);
+
+  return { paused: tasksToSwap.results.length };
+}
+
 // Migruje oczekujące i wstrzymane zadania z poprzednich dni
 // Wywoływane codziennie o 18:00 (czas polski) przez cron
 async function migratePendingTasks(env) {
   const today = getPolishToday();
-  
+
   console.log(`🔄 Task Migration: Running for ${today}...`);
-  
+
   // Znajdź wszystkie pending i paused z dni poprzednich
   const tasksToMigrate = await env.DB.prepare(
     `SELECT id, scheduled_date, status, description 
@@ -70,15 +129,20 @@ async function migratePendingTasks(env) {
   )
     .bind(today)
     .all();
-  
+
   if (!tasksToMigrate.results || tasksToMigrate.results.length === 0) {
     console.log(`✅ Task Migration: No tasks to migrate.`);
     return { migrated: 0 };
   }
-  
+
   console.log(`📋 Task Migration: Found ${tasksToMigrate.results.length} tasks to migrate`);
-  
-  // Dla każdego zadania: przenieś na dziś + ustaw flagę from_yesterday
+
+  // Pobierz jutrzejszą datę
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowStr = tomorrow.toISOString().split("T")[0];
+
+  // Dla każdego zadania: przenieś na jutro + ustaw flagę from_yesterday
   for (const task of tasksToMigrate.results) {
     await env.DB.prepare(
       `UPDATE tasks 
@@ -87,14 +151,14 @@ async function migratePendingTasks(env) {
            sort_order = 0
        WHERE id = ?`
     )
-      .bind(today, task.id)
+      .bind(tomorrowStr, task.id)
       .run();
-    
-    console.log(`  ✓ Migrated task #${task.id}: "${task.description}" (${task.status})`);
+
+    console.log(`  ✓ Migrated task #${task.id}: "${task.description}" to ${tomorrowStr} (${task.status})`);
   }
-  
+
   console.log(`✅ Task Migration: Completed. Migrated ${tasksToMigrate.results.length} tasks.`);
-  
+
   return { migrated: tasksToMigrate.results.length };
 }
 
@@ -156,19 +220,33 @@ async function verifySession(request, env) {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader || !authHeader.startsWith("Bearer ")) return null;
   const token = authHeader.split(" ")[1];
+
+  // Pobierz sesję wraz z rolą użytkownika i uprawnieniami
   const session = await env.DB.prepare(
-    "SELECT user_id, expires_at FROM sessions WHERE token = ?"
+    `SELECT s.user_id, s.expires_at, u.role, u.perm_users, u.perm_locations, u.perm_reports 
+     FROM sessions s 
+     JOIN users u ON s.user_id = u.id 
+     WHERE s.token = ?`
   )
     .bind(token)
     .first();
+
   if (!session) return null;
+
   if (new Date(session.expires_at) < new Date()) {
     await env.DB.prepare("DELETE FROM sessions WHERE token = ?")
       .bind(token)
       .run();
     return null;
   }
-  return session.user_id;
+
+  return {
+    id: session.user_id,
+    role: session.role,
+    perm_users: session.perm_users === 1,
+    perm_locations: session.perm_locations === 1,
+    perm_reports: session.perm_reports === 1
+  };
 }
 
 // --- API HANDLER ---
@@ -191,12 +269,24 @@ async function handleAPI(request, env, path, corsHeaders) {
     });
   }
 
-  const userId = await verifySession(request, env);
-  if (!userId)
+  const user = await verifySession(request, env);
+  if (!user)
     return new Response(JSON.stringify({ error: "Sesja wygasła" }), {
       status: 401,
       headers: corsHeaders,
     });
+
+  const userId = user.id;
+  const isAdmin = user.role === "admin";
+  const canManageLocations = isAdmin || user.perm_locations;
+  const canManageUsers = isAdmin || user.perm_users;
+  // Kierownik = Admin lub ktoś z uprawnieniami (np. do raportów, userów lub lokalizacji)
+  const canManageTasks = isAdmin || user.perm_locations || user.perm_users || user.perm_reports;
+
+  // Helper do sprawdzania uprawnień
+  const requireAdmin = () => {
+    return !isAdmin ? new Response(JSON.stringify({ error: "Brak uprawnień admina" }), { status: 403, headers: corsHeaders }) : null;
+  };
 
   // PUSHY - Removed
   // if (path === '/api/pushy/register' && method === 'POST') return await registerPushyToken(request, env, corsHeaders, userId);
@@ -204,29 +294,42 @@ async function handleAPI(request, env, path, corsHeaders) {
   // USERS
   if (path === "/api/users" && method === "GET")
     return await getUsers(env, corsHeaders);
-  if (path === "/api/users" && method === "POST")
+  if (path === "/api/users" && method === "POST") {
+    if (!canManageUsers) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await createUser(request, env, corsHeaders);
-  if (path.match(/^\/api\/users\/\d+$/) && method === "DELETE")
+  }
+  if (path.match(/^\/api\/users\/\d+$/) && method === "DELETE") {
+    if (!canManageUsers) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await deleteUser(path.split("/").pop(), env, corsHeaders);
-  if (path.match(/^\/api\/users\/\d+$/) && method === "PUT")
+  }
+  if (path.match(/^\/api\/users\/\d+$/) && method === "PUT") {
+    if (!canManageUsers) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await updateUser(path.split("/").pop(), request, env, corsHeaders);
+  }
 
   // LOCATIONS
   if (path === "/api/locations" && method === "GET")
     return await getLocations(env, corsHeaders);
-  if (path === "/api/locations" && method === "POST")
+  if (path === "/api/locations" && method === "POST") {
+    if (!canManageLocations) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await createLocation(request, env, corsHeaders);
-  if (path.match(/^\/api\/locations\/\d+$/) && method === "DELETE")
+  }
+  if (path.match(/^\/api\/locations\/\d+$/) && method === "DELETE") {
+    if (!canManageLocations) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await deleteLocation(path.split("/").pop(), env, corsHeaders);
+  }
 
   // TASKS
   if (path === "/api/tasks" && method === "GET")
     return await getTasks(new URL(request.url).searchParams, env, corsHeaders);
-  if (path === "/api/tasks" && method === "POST")
+  if (path === "/api/tasks" && method === "POST") {
+    if (!canManageTasks) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await createTask(request, env, corsHeaders, userId);
+  }
   if (path.match(/^\/api\/tasks\/\d+$/) && method === "GET")
     return await getTask(path.split("/").pop(), env, corsHeaders);
-  if (path.match(/^\/api\/tasks\/\d+$/) && method === "PUT")
+  if (path.match(/^\/api\/tasks\/\d+$/) && method === "PUT") {
+    if (!canManageTasks) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await updateTask(
       path.split("/").pop(),
       request,
@@ -234,8 +337,11 @@ async function handleAPI(request, env, path, corsHeaders) {
       corsHeaders,
       userId
     );
-  if (path.match(/^\/api\/tasks\/\d+$/) && method === "DELETE")
+  }
+  if (path.match(/^\/api\/tasks\/\d+$/) && method === "DELETE") {
+    if (!canManageTasks) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await deleteTask(path.split("/").pop(), env, corsHeaders);
+  }
   if (path.match(/^\/api\/tasks\/\d+\/status$/) && method === "PUT")
     return await updateTaskStatus(
       path.split("/")[3],
@@ -245,8 +351,10 @@ async function handleAPI(request, env, path, corsHeaders) {
     );
   if (path.match(/^\/api\/tasks\/\d+\/join$/) && method === "POST")
     return await joinTask(path.split("/")[3], request, env, corsHeaders);
-  if (path === "/api/tasks/reorder" && method === "POST")
+  if (path === "/api/tasks/reorder" && method === "POST") {
+    if (!canManageTasks) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
     return await reorderTasks(request, env, corsHeaders);
+  }
 
   // LOGS & NOTIFICATIONS
   if (path.match(/^\/api\/tasks\/\d+\/logs$/) && method === "GET")
@@ -297,7 +405,7 @@ async function login(request, env, corsHeaders) {
     );
 
   const user = await env.DB.prepare(
-  `SELECT 
+    `SELECT 
     id, 
     name, 
     role, 
@@ -310,7 +418,7 @@ async function login(request, env, corsHeaders) {
     COALESCE(perm_reports, 1) as perm_reports
   FROM users 
   WHERE id = ? AND active = 1`
-)
+  )
     .bind(userId)
     .first();
   if (!user) {
@@ -383,7 +491,7 @@ async function createUser(request, env, corsHeaders) {
     perm_locations,
     perm_reports,
   } = await request.json();
-  
+
   const hashedPin = await hashPin(pin);
 
   // Domyślne uprawnienia
@@ -410,7 +518,7 @@ async function createUser(request, env, corsHeaders) {
       p_rep
     )
     .run();
-    
+
   return new Response(
     JSON.stringify({ id: result.meta.last_row_id, name, role }),
     { headers: corsHeaders }
@@ -566,7 +674,19 @@ async function getTasks(params, env, corsHeaders) {
   const r = await env.DB.prepare(q)
     .bind(...b)
     .all();
-  return new Response(JSON.stringify(r.results), { headers: corsHeaders });
+
+  // Dołącz additional_drivers do każdego zadania
+  const tasks = r.results;
+  for (const task of tasks) {
+    const drivers = await env.DB.prepare(
+      `SELECT u.id, u.name FROM task_drivers td JOIN users u ON td.user_id = u.id WHERE td.task_id = ?`
+    )
+      .bind(task.id)
+      .all();
+    task.additional_drivers = drivers.results;
+  }
+
+  return new Response(JSON.stringify(tasks), { headers: corsHeaders });
 }
 
 async function getTask(id, env, corsHeaders) {
@@ -603,10 +723,10 @@ async function createTask(request, env, corsHeaders, userId) {
     .bind(data.scheduled_date)
     .first();
   const sortOrder = (maxOrder?.max || 0) + 1;
-  
+
   // Użyj polskiego czasu dla created_at
   const polishNow = toPolishSQL(new Date());
-  
+
   const res = await env.DB.prepare(
     `INSERT INTO tasks (task_type, description, material, location_from, location_to, department, scheduled_date, scheduled_time, priority, sort_order, notes, created_by, assigned_to, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
@@ -630,13 +750,13 @@ async function createTask(request, env, corsHeaders, userId) {
   const taskId = res.meta.last_row_id;
 
   const origin = new URL(request.url).origin;
-  
+
   // Logika powiadomień: 
   // - Jeśli przypisane do kierowcy -> tylko ON
   // - Jeśli "Dowolny kierowca" -> wszyscy
-  
+
   let driverIds = [];
-  
+
   if (data.assigned_to) {
     // Tylko przypisany kierowca
     driverIds = [data.assigned_to];
@@ -647,7 +767,7 @@ async function createTask(request, env, corsHeaders, userId) {
     ).all();
     driverIds = drivers.results.map((u) => u.id);
   }
-  
+
   // Wyślij powiadomienia
   await notifyUsers(
     driverIds,
@@ -717,24 +837,69 @@ async function deleteTask(id, env, corsHeaders) {
 async function updateTaskStatus(id, request, env, corsHeaders) {
   const { status, userId } = await request.json();
   const polishNow = toPolishSQL(new Date());
-  
+
+  // Pobierz informacje o zadaniu i dodatkowych kierowcach
+  const task = await env.DB.prepare(
+    "SELECT assigned_to, status as current_status FROM tasks WHERE id = ?"
+  ).bind(id).first();
+
+  const additionalDrivers = await env.DB.prepare(
+    "SELECT user_id FROM task_drivers WHERE task_id = ?"
+  ).bind(id).all();
+
+  const allDriverIds = new Set();
+  if (task.assigned_to) allDriverIds.add(task.assigned_to);
+  additionalDrivers.results.forEach(d => allDriverIds.add(d.user_id));
+
+  let finalStatus = status;
+
+  // Logika dla wielu kierowców przy zakończeniu
+  if (status === "completed" && allDriverIds.size > 1) {
+    // Pobierz kto już zakończył (ma log "Zakończono")
+    const completedLogs = await env.DB.prepare(
+      `SELECT DISTINCT user_id FROM task_logs 
+       WHERE task_id = ? AND log_type = 'status_change' AND message = 'Zakończono'`
+    ).bind(id).all();
+
+    const completedUserIds = new Set(completedLogs.results.map(l => l.user_id));
+    completedUserIds.add(userId); // Dodaj bieżącego użytkownika
+
+    // Sprawdź czy wszyscy zakończyli
+    const allCompleted = [...allDriverIds].every(driverId => completedUserIds.has(driverId));
+
+    if (!allCompleted) {
+      // Nie wszyscy zakończyli - zadanie pozostaje in_progress lub staje się paused
+      // Ale dodajemy log o zakończeniu przez tego kierowcę
+      await env.DB.prepare(
+        "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
+      ).bind(id, userId, "status_change", "Zakończono").run();
+
+      // Zwróć sukces bez zmiany statusu zadania
+      return new Response(JSON.stringify({
+        success: true,
+        partial: true,
+        message: "Zakończono Twoją część. Oczekiwanie na pozostałych kierowców."
+      }), { headers: corsHeaders });
+    }
+  }
+
   let q = "UPDATE tasks SET status = ?";
-  let b = [status];
-  
-  if (status === "in_progress") {
+  let b = [finalStatus];
+
+  if (finalStatus === "in_progress") {
     q += ", started_at = ?, assigned_to = ?";
     b.push(polishNow, userId);
-  } else if (status === "completed") {
+  } else if (finalStatus === "completed") {
     q += ", completed_at = ?";
     b.push(polishNow);
-  } else if (status === "paused") {
+  } else if (finalStatus === "paused") {
     q += ", paused_at = ?";
     b.push(polishNow);
   }
-  
+
   q += " WHERE id = ?";
   b.push(id);
-  
+
   await env.DB.prepare(q)
     .bind(...b)
     .run();
@@ -745,14 +910,14 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     pending: "Oczekuje",
     paused: "Wstrzymano",
   };
-  
+
   await env.DB.prepare(
     "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
   )
     .bind(id, userId, "status_change", statusLabels[status] || status)
     .run();
 
-  const task = await env.DB.prepare(
+  const taskInfo = await env.DB.prepare(
     "SELECT description, created_by, assigned_to FROM tasks WHERE id = ?"
   )
     .bind(id)
@@ -761,32 +926,32 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     status === "in_progress"
       ? "rozpoczęte"
       : status === "completed"
-      ? "zakończone"
-      : status;
+        ? "zakończone"
+        : status;
   const origin = new URL(request.url).origin;
 
   // 1. Powiadom KIEROWNIKA (Twórcę zadania), jeśli to nie on zmienił status
-  if (task.created_by && task.created_by != userId) {
+  if (taskInfo.created_by && taskInfo.created_by != userId) {
     await env.DB.prepare(
       "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
     )
       .bind(
-        task.created_by,
+        taskInfo.created_by,
         "status_change",
         "Zmiana statusu",
-        `"${task.description}" - ${statusText}`,
+        `"${taskInfo.description}" - ${statusText}`,
         id
       )
       .run();
     await sendOneSignalNotification(
-      [task.created_by],
+      [taskInfo.created_by],
       "Zmiana statusu",
-      `"${task.description}" - ${statusText}`,
+      `"${taskInfo.description}" - ${statusText}`,
       { taskId: id },
       origin,
       env
     );
-  } else if (!task.created_by) {
+  } else if (!taskInfo.created_by) {
     // Fallback: Jeśli brak twórcy, powiadom wszystkich adminów (żeby nie zginęło)
     const admins = await env.DB.prepare(
       'SELECT id FROM users WHERE role = "admin" AND active = 1'
@@ -800,14 +965,14 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
           a.id,
           "status_change",
           "Zmiana statusu",
-          `"${task.description}" - ${statusText}`,
+          `"${taskInfo.description}" - ${statusText}`,
           id
         )
         .run();
       await sendOneSignalNotification(
         [a.id],
         "Zmiana statusu",
-        `"${task.description}" - ${statusText}`,
+        `"${taskInfo.description}" - ${statusText}`,
         { taskId: id },
         origin,
         env
@@ -821,22 +986,22 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
   // Logika: Jeśli status zmienił ADMIN, a zadanie jest przypisane do KIEROWCY (lub właśnie zostało), powiadom go.
 
   // Jeśli zadanie JEST lub BYŁO przypisane
-  if (task.assigned_to && task.assigned_to != userId) {
+  if (taskInfo.assigned_to && taskInfo.assigned_to != userId) {
     await env.DB.prepare(
       "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
     )
       .bind(
-        task.assigned_to,
+        taskInfo.assigned_to,
         "status_change",
         "Aktualizacja zadania",
-        `"${task.description}" - ${statusText}`,
+        `"${taskInfo.description}" - ${statusText}`,
         id
       )
       .run();
     await sendOneSignalNotification(
-      [task.assigned_to],
+      [taskInfo.assigned_to],
       "Aktualizacja zadania",
-      `"${task.description}" - ${statusText}`,
+      `"${taskInfo.description}" - ${statusText}`,
       { taskId: id },
       origin,
       env
@@ -954,9 +1119,8 @@ async function createTaskLog(id, request, env, corsHeaders) {
 
     const msgText =
       logType === "delay"
-        ? `${user.name}: ${delayLabels[safeReason] || safeReason} (${
-            safeMinutes || 0
-          } min)`
+        ? `${user.name}: ${delayLabels[safeReason] || safeReason} (${safeMinutes || 0
+        } min)`
         : `${user.name}: ${safeMessage}`;
 
     const origin = new URL(request.url).origin;
@@ -1007,21 +1171,21 @@ async function createTaskLog(id, request, env, corsHeaders) {
 
 async function getNotifications(uid, env, corsHeaders) {
   console.log(`📬 getNotifications called for user: ${uid}`);
-  
+
   const r = await env.DB.prepare(
     "SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50"
   )
     .bind(uid)
     .all();
-    
+
   const c = await env.DB.prepare(
     "SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = 0"
   )
     .bind(uid)
     .first();
-    
+
   console.log(`📬 getNotifications result: ${r.results.length} notifications, ${c.count} unread`);
-  
+
   return new Response(
     JSON.stringify({ notifications: r.results, unreadCount: c.count }),
     { headers: corsHeaders }
@@ -1162,20 +1326,20 @@ async function getReports(period, env, corsHeaders) {
           const delayEndObj = new Date(
             delayStartObj.getTime() + d.delay_minutes * 60000
           );
-          
+
           // Re-format delay end to string for consistency if needed, 
           // but timelines relying on ISO might need check. 
           // actually generateTimeline in app.js handles strings well.
-          const delayEndStr = toPolishSQL(delayEndObj); 
+          const delayEndStr = toPolishSQL(delayEndObj);
           // Note: toPolishSQL expects Date or String. delayEndObj is Date (UTC-like).
           // Wait, delayEndObj is derived from delayStartObj (Date from String "12:00").
           // So delayEndObj is also "Visual UTC". 
           // We need to convert it back to "YYYY-MM-DD HH:MM:SS" string without timezone shift.
           // toPolishSQL does shifting! We don't want to shift again if it's already "Visual UTC".
-          
+
           // Simple formatting function for "Visual UTC" Date to String
           const formatRaw = (d) => {
-             return d.toISOString().replace('T', ' ').split('.')[0];
+            return d.toISOString().replace('T', ' ').split('.')[0];
           };
 
           timeline.push({
@@ -1225,9 +1389,9 @@ async function getReports(period, env, corsHeaders) {
       targetMinutes = Math.max(
         0,
         parseInt(endH) * 60 +
-          parseInt(endM) -
-          (parseInt(startH) * 60 + parseInt(startM)) -
-          20
+        parseInt(endM) -
+        (parseInt(startH) * 60 + parseInt(startM)) -
+        20
       );
     } else {
       const activeDays = new Set(tasks.results.map((t) => t.scheduled_date))
@@ -1265,29 +1429,29 @@ async function getReports(period, env, corsHeaders) {
 // --- NOTIFICATION HELPERS ---
 
 async function notifyUsers(userIds, type, title, message, taskId, origin, env) {
-    if (!userIds || userIds.length === 0) return;
-    
-    // Convert to Array if it's a Set or single value
-    const ids = Array.isArray(userIds) ? userIds : (userIds instanceof Set ? Array.from(userIds) : [userIds]);
-    
-    console.log(`📤 notifyUsers called for users: [${ids.join(', ')}]`);
+  if (!userIds || userIds.length === 0) return;
 
-    // 1. Insert into DB (for the "bell" in-app notifications)
-    for (const userId of ids) {
-        try {
-            await env.DB.prepare(
-                "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
-            )
-            .bind(userId, type, title, message, taskId || null)
-            .run();
-            console.log(`✅ DB notification inserted for user ${userId}`);
-        } catch (e) {
-            console.error(`❌ DB Notification error for user ${userId}:`, e);
-        }
+  // Convert to Array if it's a Set or single value
+  const ids = Array.isArray(userIds) ? userIds : (userIds instanceof Set ? Array.from(userIds) : [userIds]);
+
+  console.log(`📤 notifyUsers called for users: [${ids.join(', ')}]`);
+
+  // 1. Insert into DB (for the "bell" in-app notifications)
+  for (const userId of ids) {
+    try {
+      await env.DB.prepare(
+        "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+      )
+        .bind(userId, type, title, message, taskId || null)
+        .run();
+      console.log(`✅ DB notification inserted for user ${userId}`);
+    } catch (e) {
+      console.error(`❌ DB Notification error for user ${userId}:`, e);
     }
+  }
 
-    // 2. Send Push via OneSignal
-    await sendOneSignalNotification(ids, title, message, { taskId }, origin, env);
+  // 2. Send Push via OneSignal
+  await sendOneSignalNotification(ids, title, message, { taskId }, origin, env);
 }
 
 async function sendOneSignalNotification(
@@ -1310,14 +1474,14 @@ async function sendOneSignalNotification(
     contents: { en: message, pl: message },
     data: data,
     web_url: `${origin}/?taskId=${data.taskId}`,
-    
+
     // ❌ USUŃ TO (lub utwórz kanał w OneSignal Dashboard):
     // android_channel_id: "transport_tracker_main",
-    
+
     // ✅ Użyj domyślnego kanału:
     priority: 10,
     ttl: 86400, // 24h
-    
+
     // Chrome na Android
     chrome_web_icon: `${origin}/icon.png`,
     chrome_web_badge: `${origin}/badge.png`,
@@ -1335,11 +1499,11 @@ async function sendOneSignalNotification(
     });
     const responseJson = await resp.json();
     console.log(`📤 OneSignal Response:`, JSON.stringify(responseJson, null, 2));
-    
+
     if (responseJson.errors) {
       console.error('❌ OneSignal API Errors:', responseJson.errors);
     }
-    
+
     return responseJson;
   } catch (e) {
     console.error("❌ OneSignal error:", e);
@@ -1381,13 +1545,19 @@ export default {
   async scheduled(event, env, ctx) {
     const polishNow = getPolishNow();
     const polishHour = polishNow.getHours();
-    
+
     console.log(`🕐 Cron: Triggered at ${toPolishSQL(polishNow)} (Polish time)`);
-    
+
     // Migracja zadań - tylko jeśli cron wykonuje się koło 18:00 czasu polskiego
     // (cron w Cloudflare działa na UTC, więc powinien być ustawiony na 17:00 UTC)
     if (polishHour >= 17 && polishHour <= 19) {
-      console.log("🔄 Running task migration...");
+      console.log("🔄 Running task pause & migration...");
+
+      // 1. Najpierw wstrzymaj zadania w toku
+      const pauseResult = await pauseInProgressTasks(env);
+      console.log(`⏸️ Paused ${pauseResult.paused} in_progress tasks`);
+
+      // 2. Potem przenieś zadania na jutro
       const migrationResult = await migratePendingTasks(env);
       console.log(`✅ Migrated ${migrationResult.migrated} tasks`);
     }

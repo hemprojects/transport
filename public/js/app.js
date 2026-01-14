@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 2.0.0 - Final
+// Wersja 2.06 - Beta
 // =============================================
 
 (function () {
@@ -40,6 +40,7 @@
 
     isLoading: false,
     isReorderMode: false,
+    viewMode: window.innerWidth > 768 ? "list" : "tiles",
     theme: "light",
 
     notificationInterval: null,
@@ -71,21 +72,18 @@
 
     formatTime(timeStr) {
       if (!timeStr) return "";
-      // Jeśli to pełna data SQL (np. 2025-12-19 08:00:00)
+      // Jeśli to pełna data SQL (np. 2025-12-19 08:00:00) - traktuj jako czas lokalny
       if (timeStr.includes(" ") || timeStr.includes("T")) {
-        // Backend wysyła czas polski - dodaj strefę
-        const isoStr = timeStr.replace(" ", "T");
-        const dateStr =
-          isoStr.includes("Z") || isoStr.includes("+")
-            ? isoStr
-            : isoStr + "+01:00";
-        const date = new Date(dateStr);
-        return date.toLocaleTimeString(CONFIG.DATE_FORMAT, {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
+        // Format SQL: "YYYY-MM-DD HH:MM:SS" - backend zapisuje już czas polski
+        // Wyciągnij tylko godzinę i minuty bez konwersji stref
+        const timePart = timeStr.includes(" ")
+          ? timeStr.split(" ")[1]
+          : timeStr.split("T")[1];
+        if (timePart) {
+          return timePart.substring(0, 5);
+        }
       }
-      // Jeśli to sam czas (HH:MM:SS)
+      // Jeśli to sam czas (HH:MM:SS lub HH:MM)
       if (timeStr.includes(":")) {
         return timeStr.substring(0, 5);
       }
@@ -94,13 +92,26 @@
 
     formatRelativeTime(dateTimeStr) {
       if (!dateTimeStr) return "";
-      // Backend wysyła czas polski - dodaj strefę
-      const isoStr = dateTimeStr.replace(" ", "T");
-      const dateStr =
-        isoStr.includes("Z") || isoStr.includes("+")
-          ? isoStr
-          : isoStr + "+01:00";
-      const date = new Date(dateStr);
+      // Backend zapisuje czas polski - traktuj jako czas lokalny
+      // Tworzymy datę z formatu SQL bez konwersji stref
+      let date;
+      if (dateTimeStr.includes(" ")) {
+        // Format SQL: "YYYY-MM-DD HH:MM:SS"
+        const parts = dateTimeStr.split(" ");
+        const dateParts = parts[0].split("-");
+        const timeParts = parts[1].split(":");
+        date = new Date(
+          parseInt(dateParts[0]),
+          parseInt(dateParts[1]) - 1,
+          parseInt(dateParts[2]),
+          parseInt(timeParts[0]),
+          parseInt(timeParts[1]),
+          parseInt(timeParts[2] || 0)
+        );
+      } else {
+        date = new Date(dateTimeStr);
+      }
+
       const now = new Date();
       const diffMs = now - date;
       const diffMins = Math.floor(diffMs / 60000);
@@ -111,7 +122,7 @@
       if (diffMins < 60) return `${diffMins} min temu`;
       if (diffHours < 24) return `${diffHours} godz. temu`;
       if (diffDays < 7) return `${diffDays} dni temu`;
-      return this.formatDateShort(dateTimeStr.split("T")[0]);
+      return this.formatDateShort(dateTimeStr.split(" ")[0] || dateTimeStr.split("T")[0]);
     },
 
     getToday() {
@@ -924,7 +935,7 @@
             .setAppBadge(state.unreadNotifications)
             .catch((e) => console.log("Badge error:", e));
         } else {
-          navigator.clearAppBadge().catch(() => {});
+          navigator.clearAppBadge().catch(() => { });
         }
       }
     },
@@ -984,20 +995,19 @@
                 <div class="notification-icon">${this.getIcon(notif.type)}</div>
                 <div class="notification-content">
                     <div class="notification-title">${Utils.escapeHtml(
-                      notif.title
-                    )}</div>
+            notif.title
+          )}</div>
                     <div class="notification-message">${Utils.escapeHtml(
-                      notif.message
-                    )}</div>
+            notif.message
+          )}</div>
                     <div class="notification-time">${Utils.formatRelativeTime(
-                      notif.created_at
-                    )}</div>
+            notif.created_at
+          )}</div>
                 </div>
-                ${
-                  notif.is_read
-                    ? ""
-                    : '<div class="notification-unread-dot"></div>'
-                }
+                ${notif.is_read
+              ? ""
+              : '<div class="notification-unread-dot"></div>'
+            }
             </div>
         `
         )
@@ -1027,7 +1037,7 @@
             if (notif) notif.is_read = 1;
 
             // Sync w tle (nie czekamy)
-            API.markNotificationRead(id).catch(() => {});
+            API.markNotificationRead(id).catch(() => { });
           }
 
           if (taskId) {
@@ -1571,14 +1581,14 @@
       let filteredTasks = state.tasks;
       if (state.currentFilter !== "all") {
         if (state.currentFilter === "pending") {
-           // Kierowcy widzą wstrzymane jako "Oczekujące" (do wzięcia)
-           filteredTasks = state.tasks.filter(
-             (t) => t.status === "pending" || t.status === "paused"
-           );
+          // Kierowcy widzą wstrzymane jako "Oczekujące" (do wzięcia)
+          filteredTasks = state.tasks.filter(
+            (t) => t.status === "pending" || t.status === "paused"
+          );
         } else {
-           filteredTasks = state.tasks.filter(
-             (t) => t.status === state.currentFilter
-           );
+          filteredTasks = state.tasks.filter(
+            (t) => t.status === state.currentFilter
+          );
         }
       }
 
@@ -1610,12 +1620,12 @@
         taskDescription = `
                     <div class="task-route">
                         <span>📍 ${Utils.escapeHtml(
-                          task.location_from || "?"
-                        )}</span>
+          task.location_from || "?"
+        )}</span>
                         <span class="task-route-arrow">→</span>
                         <span>📍 ${Utils.escapeHtml(
-                          task.location_to || "?"
-                        )}</span>
+          task.location_to || "?"
+        )}</span>
                     </div>
                 `;
       } else {
@@ -1623,8 +1633,8 @@
                     <div class="task-department">
                         <span>🏢</span>
                         <span>${Utils.escapeHtml(
-                          task.department || "Nie określono"
-                        )}</span>
+          task.department || "Nie określono"
+        )}</span>
                     </div>
                 `;
       }
@@ -1663,15 +1673,14 @@
 
         driversHtml = `
                     <span class="task-meta-item" title="${Utils.escapeHtml(
-                      driversList
-                    )}">
+          driversList
+        )}">
                         <span>${icon}</span>
                         <span>${Utils.escapeHtml(driversList)}</span>
-                        ${
-                          label
-                            ? `<span class="task-drivers-badge">${label}</span>`
-                            : ""
-                        }
+                        ${label
+            ? `<span class="task-drivers-badge">${label}</span>`
+            : ""
+          }
                     </span>
                 `;
       }
@@ -1713,41 +1722,37 @@
       }
 
       return `
-                <div class="task-card priority-${task.priority} status-${
-        task.status
-      } ${isLocked ? "task-locked" : ""}" 
+                <div class="task-card priority-${task.priority} status-${task.status
+        } ${isLocked ? "task-locked" : ""}" 
                      data-id="${task.id}">
                     <div class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-                          task.status
-                        )} ${Utils.getStatusLabel(task.status)}
+          task.status
+        )} ${Utils.getStatusLabel(task.status)}
                     </div>
                     
                     <div class="task-header">
                         <div class="task-badges">
-                            <span class="task-type-badge type-${
-                              task.task_type
-                            }">
+                            <span class="task-type-badge type-${task.task_type
+        }">
                                 ${Utils.getTaskTypeIcon(
-                                  task.task_type
-                                )} ${Utils.getTaskTypeLabel(task.task_type)}
+          task.task_type
+        )} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
-                            <span class="task-priority-badge priority-${
-                              task.priority
-                            }">
+                            <span class="task-priority-badge priority-${task.priority
+        }">
                                 ${Utils.getPriorityIcon(
-                                  task.priority
-                                )} ${Utils.getPriorityLabel(task.priority)}
+          task.priority
+        )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
                     </div>
                     
-                    <div class="task-body" data-action="details" data-id="${
-                      task.id
-                    }">
+                    <div class="task-body" data-action="details" data-id="${task.id
+        }">
                         <div class="task-title">${Utils.escapeHtml(
-                          task.description
-                        )}</div>
+          task.description
+        )}</div>
                         <div class="task-description">
                             ${taskDescription}
                             ${materialHtml}
@@ -1757,18 +1762,17 @@
                     
                     <div class="task-footer">
                         <div class="task-meta">
-                            ${
-                              task.scheduled_time
-                                ? `
+                            ${task.scheduled_time
+          ? `
                                 <span class="task-meta-item">
                                     <span>🕐</span>
                                     <span>${Utils.formatTime(
-                                      task.scheduled_time
-                                    )}</span>
+            task.scheduled_time
+          )}</span>
                                 </span>
                             `
-                                : ""
-                            }
+          : ""
+        }
                             ${driversHtml}
                         </div>
                         <div class="task-actions">
@@ -1851,25 +1855,30 @@
         async () => {
           this._completingTask = true;
 
-          // Instant UI update
-          const task = state.tasks.find((t) => t.id == taskId);
-          if (task) {
-            task.status = "completed";
-          }
-          this.sortTasks();
-          this.updateStats();
-          this.renderTasks();
-          Toast.success("Zadanie zakończone! 🎉");
+          try {
+            const response = await API.updateTaskStatus(taskId, "completed", state.currentUser.id);
 
-          // Sync w tle
-          API.updateTaskStatus(taskId, "completed", state.currentUser.id)
-            .catch(async () => {
-              Toast.error("Błąd synchronizacji - odświeżam...");
+            if (response.partial) {
+              // Nie wszyscy kierowcy zakończyli - zadanie pozostaje aktywne
+              Toast.success(response.message || "Zakończono Twoją część. Oczekiwanie na pozostałych kierowców.");
               await this.loadTasks();
-            })
-            .finally(() => {
-              this._completingTask = false;
-            });
+            } else {
+              // Wszyscy zakończyli - zadanie ukończone
+              const task = state.tasks.find((t) => t.id == taskId);
+              if (task) {
+                task.status = "completed";
+              }
+              this.sortTasks();
+              this.updateStats();
+              this.renderTasks();
+              Toast.success("Zadanie zakończone! 🎉");
+            }
+          } catch (error) {
+            Toast.error("Błąd synchronizacji - odświeżam...");
+            await this.loadTasks();
+          } finally {
+            this._completingTask = false;
+          }
         },
         "Zakończ",
         false
@@ -1930,8 +1939,7 @@
       Utils.$("#join-task-id").value = taskId;
       Utils.$(
         "#join-task-message"
-      ).textContent = `Czy chcesz dołączyć do zadania "${
-        task?.description || ""
+      ).textContent = `Czy chcesz dołączyć do zadania "${task?.description || ""
       }" i pomagać przy jego realizacji?`;
       Modal.open("modal-join-task");
     },
@@ -2033,6 +2041,9 @@
       const content = Utils.$("#task-detail-content");
       const isDriver = state.currentUser.role === "driver";
       const isMyTask = task.assigned_to === state.currentUser.id;
+      const isJoined = task.additional_drivers &&
+        task.additional_drivers.some((d) => d.id === state.currentUser.id);
+      const isParticipating = isMyTask || isJoined;
 
       let locationInfo = "";
       if (task.task_type === "transport") {
@@ -2040,14 +2051,14 @@
                     <div class="task-detail-row">
                         <span class="task-detail-label">Skąd</span>
                         <span class="task-detail-value">📍 ${Utils.escapeHtml(
-                          task.location_from || "-"
-                        )}</span>
+          task.location_from || "-"
+        )}</span>
                     </div>
                     <div class="task-detail-row">
                         <span class="task-detail-label">Dokąd</span>
                         <span class="task-detail-value">📍 ${Utils.escapeHtml(
-                          task.location_to || "-"
-                        )}</span>
+          task.location_to || "-"
+        )}</span>
                     </div>
                 `;
       } else {
@@ -2055,8 +2066,8 @@
                     <div class="task-detail-row">
                         <span class="task-detail-label">Dział</span>
                         <span class="task-detail-value">🏢 ${Utils.escapeHtml(
-                          task.department || "-"
-                        )}</span>
+          task.department || "-"
+        )}</span>
                     </div>
                 `;
       }
@@ -2067,35 +2078,33 @@
                     <div class="task-logs-section">
                         <h4>Historia i uwagi</h4>
                         ${task.logs
-                          .map(
-                            (log) => `
+            .map(
+              (log) => `
                             <div class="task-log-item log-${log.log_type}">
                                 <span class="task-log-icon">${Utils.getLogTypeIcon(
-                                  log.log_type
-                                )}</span>
+                log.log_type
+              )}</span>
                                 <div class="task-log-content">
                                     <div class="task-log-message">
-                                        ${
-                                          log.log_type === "delay"
-                                            ? `<strong>${Utils.getDelayReasonLabel(
-                                                log.delay_reason
-                                              )}</strong> (${
-                                                log.delay_minutes || 0
-                                              } min)<br>`
-                                            : ""
-                                        }
+                                        ${log.log_type === "delay"
+                  ? `<strong>${Utils.getDelayReasonLabel(
+                    log.delay_reason
+                  )}</strong> (${log.delay_minutes || 0
+                  } min)<br>`
+                  : ""
+                }
                                         ${Utils.escapeHtml(log.message || "")}
                                     </div>
                                                                         <div class="task-log-meta">
                                         ${Utils.escapeHtml(
-                                          log.user_name || "Nieznany"
-                                        )} • ${Utils.formatTime(log.created_at)}
+                  log.user_name || "Nieznany"
+                )} • ${Utils.formatTime(log.created_at)}
                                     </div>
                                 </div>
                             </div>
                         `
-                          )
-                          .join("")}
+            )
+            .join("")}
                     </div>
                 `;
       }
@@ -2110,7 +2119,7 @@
                             </button>
                         </div>
                     `;
-        } else if (task.status === "in_progress" && isMyTask) {
+        } else if (task.status === "in_progress" && isParticipating) {
           actionsHtml = `
                         <div class="task-detail-actions">
                             <button class="btn btn-warning" onclick="TransportTracker.DriverPanel.pauseTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
@@ -2132,7 +2141,7 @@
                             </button>
                         </div>
                     `;
-        } else if (task.status === "in_progress" && !isMyTask) {
+        } else if (task.status === "in_progress" && !isParticipating) {
           actionsHtml = `
                         <div class="task-detail-actions">
                             <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.openJoinModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
@@ -2158,75 +2167,71 @@
                 <div class="task-detail-header">
                     <span class="task-type-badge type-${task.task_type}">
                         ${Utils.getTaskTypeIcon(
-                          task.task_type
-                        )} ${Utils.getTaskTypeLabel(task.task_type)}
+        task.task_type
+      )} ${Utils.getTaskTypeLabel(task.task_type)}
                     </span>
                     <span class="task-priority-badge priority-${task.priority}">
                         ${Utils.getPriorityIcon(
-                          task.priority
-                        )} ${Utils.getPriorityLabel(task.priority)}
+        task.priority
+      )} ${Utils.getPriorityLabel(task.priority)}
                     </span>
                     <span class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-                          task.status
-                        )} ${Utils.getStatusLabel(task.status)}
+        task.status
+      )} ${Utils.getStatusLabel(task.status)}
                     </span>
                 </div>
                 
                 <h3 class="task-detail-title">${Utils.escapeHtml(
-                  task.description
-                )}</h3>
+        task.description
+      )}</h3>
                 
                 <div class="task-detail-section">
                     <h4>Szczegóły</h4>
                     ${locationInfo}
-                    ${
-                      task.material
-                        ? `
+                    ${task.material
+          ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Materiał</span>
                             <span class="task-detail-value">📦 ${Utils.escapeHtml(
-                              task.material
-                            )}</span>
+            task.material
+          )}</span>
                         </div>
                     `
-                        : ""
-                    }
+          : ""
+        }
                     <div class="task-detail-row">
                         <span class="task-detail-label">Data</span>
                         <span class="task-detail-value">📅 ${Utils.formatDate(
-                          task.scheduled_date
-                        )}</span>
+          task.scheduled_date
+        )}</span>
                     </div>
-                    ${
-                      task.scheduled_time
-                        ? `
+                    ${task.scheduled_time
+          ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Godzina</span>
                             <span class="task-detail-value">🕐 ${Utils.formatTime(
-                              task.scheduled_time
-                            )}</span>
+            task.scheduled_time
+          )}</span>
                         </div>
                     `
-                        : ""
-                    }
-                    ${
-                      task.assigned_name
-                        ? `
+          : ""
+        }
+                    ${task.assigned_name
+          ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Przypisany</span>
                             <span class="task-detail-value">👤 ${Utils.escapeHtml(
-                              task.assigned_name
-                            )}</span>
+            task.assigned_name
+          )}</span>
                         </div>
                     `
-                        : ""
-                    }
+          : ""
+        }
                 </div>
                 
-                ${
-                  task.notes
-                    ? `
+                ${task.notes
+          ? `
                     <div class="task-detail-section">
                         <h4>Uwagi</h4>
                         <div class="task-notes-preview">
@@ -2235,8 +2240,8 @@
                         </div>
                     </div>
                 `
-                    : ""
-                }
+          : ""
+        }
                 
                 ${logsHtml}
                 ${actionsHtml}
@@ -2572,11 +2577,11 @@
       state.viewMode = state.viewMode === 'list' ? 'tiles' : 'list';
       const list = Utils.$("#admin-tasks-list");
       list.classList.toggle('view-list', state.viewMode === 'list');
-      
+
       const btn = Utils.$("#admin-view-toggle-btn");
       if (btn) {
-         btn.innerHTML = state.viewMode === 'list' ? '📱' : '📝';
-         btn.title = state.viewMode === 'list' ? 'Widok kafelkowy' : 'Widok listy';
+        btn.innerHTML = state.viewMode === 'list' ? '📱' : '📝';
+        btn.title = state.viewMode === 'list' ? 'Widok kafelkowy' : 'Widok listy';
       }
     },
 
@@ -2606,12 +2611,12 @@
       }
 
       Utils.hide(emptyState);
-      
+
       // Ensure view mode class is applied
       if (state.viewMode === 'list') {
-          tasksList.classList.add('view-list');
+        tasksList.classList.add('view-list');
       } else {
-          tasksList.classList.remove('view-list');
+        tasksList.classList.remove('view-list');
       }
 
       tasksList.innerHTML = filteredTasks
@@ -2640,12 +2645,12 @@
         taskDescription = `
                     <div class="task-route">
                         <span>📍 ${Utils.escapeHtml(
-                          task.location_from || "?"
-                        )}</span>
+          task.location_from || "?"
+        )}</span>
                         <span class="task-route-arrow">→</span>
                         <span>📍 ${Utils.escapeHtml(
-                          task.location_to || "?"
-                        )}</span>
+          task.location_to || "?"
+        )}</span>
                     </div>
                 `;
       } else {
@@ -2653,8 +2658,8 @@
                     <div class="task-department">
                         <span>🏢</span>
                         <span>${Utils.escapeHtml(
-                          task.department || "Nie określono"
-                        )}</span>
+          task.department || "Nie określono"
+        )}</span>
                     </div>
                 `;
       }
@@ -2682,8 +2687,8 @@
                 <span class="task-meta-item" title="Utworzył">
                     <span>✏️</span>
                     <span>${Utils.escapeHtml(
-                      task.creator_name
-                    )} (${Utils.formatTime(task.created_at)})</span>
+          task.creator_name
+        )} (${Utils.formatTime(task.created_at)})</span>
                 </span>
             `
         : "";
@@ -2710,20 +2715,17 @@
       }
 
       return `
-                <div class="task-card priority-${task.priority} status-${
-        task.status
-      }" 
+                <div class="task-card priority-${task.priority} status-${task.status
+        }" 
                      data-id="${task.id}" 
-                     draggable="${
-                       state.isReorderMode &&
-                       !isCompleted &&
-                       !isInProgress &&
-                       canEdit
-                     }">
+                     draggable="${state.isReorderMode &&
+        !isCompleted &&
+        !isInProgress &&
+        canEdit
+        }">
                     
-                    ${
-                      state.isReorderMode && canEdit
-                        ? `
+                    ${state.isReorderMode && canEdit
+          ? `
                     <div class="task-drag-handle">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <circle cx="9" cy="6" r="2"/>
@@ -2734,50 +2736,45 @@
                             <circle cx="15" cy="18" r="2"/>
                         </svg>
                     </div>`
-                        : ""
-                    }
+          : ""
+        }
                     
                     <div class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-                          task.status
-                        )} ${Utils.getStatusLabel(task.status)}
+          task.status
+        )} ${Utils.getStatusLabel(task.status)}
                     </div>
                     
                     <div class="task-header">
                         <div class="task-badges">
                             <span class="task-order-badge">#${order}</span>
-                            <span class="task-type-badge type-${
-                              task.task_type
-                            }">
+                            <span class="task-type-badge type-${task.task_type
+        }">
                                 ${Utils.getTaskTypeIcon(
-                                  task.task_type
-                                )} ${Utils.getTaskTypeLabel(task.task_type)}
+          task.task_type
+        )} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
-                            <span class="task-priority-badge priority-${
-                              task.priority
-                            }" 
-                                  data-action="${
-                                    canEdit ? "change-priority" : ""
-                                  }" data-id="${task.id}" 
+                            <span class="task-priority-badge priority-${task.priority
+        }" 
+                                  data-action="${canEdit ? "change-priority" : ""
+        }" data-id="${task.id}" 
                                   title="Zmień priorytet" 
-                                  style="${
-                                    canEdit
-                                      ? "cursor:pointer"
-                                      : "cursor:default"
-                                  }">
+                                  style="${canEdit
+          ? "cursor:pointer"
+          : "cursor:default"
+        }">
                                 ${Utils.getPriorityIcon(
-                                  task.priority
-                                )} ${Utils.getPriorityLabel(task.priority)}
+          task.priority
+        )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
                     </div>
                     
-                    <div class="task-body" data-action="details" data-id="${
-                      task.id
-                    }">
+                    <div class="task-body" data-action="details" data-id="${task.id
+        }">
                         <div class="task-title">${Utils.escapeHtml(
-                          task.description
-                        )}</div>
+          task.description
+        )}</div>
                         <div class="task-description">
                             ${taskDescription}
                             ${materialHtml}
@@ -2786,18 +2783,17 @@
                     
                     <div class="task-footer">
                         <div class="task-meta">
-                            ${
-                              task.scheduled_time
-                                ? `
+                            ${task.scheduled_time
+          ? `
                                 <span class="task-meta-item">
                                     <span>🕐</span>
                                     <span>${Utils.formatTime(
-                                      task.scheduled_time
-                                    )}</span>
+            task.scheduled_time
+          )}</span>
                                 </span>
                             `
-                                : ""
-                            }
+          : ""
+        }
                             ${assignedHtml}
                             ${creatorHtml}
                         </div>
@@ -3157,6 +3153,16 @@
 
       Utils.hide(emptyState);
 
+      const canManageUsers = state.currentUser.id === 1 || state.currentUser.perm_users;
+      const renderActions = (userId) => {
+        if (!canManageUsers) return "";
+        return `
+                  <div class="user-actions">
+                      <button class="task-action-btn btn-edit" data-action="edit-user" data-id="${userId}">✏️</button>
+                      <button class="task-action-btn btn-delete" data-action="delete-user" data-id="${userId}">🗑️</button>
+                  </div>`;
+      };
+
       list.innerHTML =
         state.users
           .map(
@@ -3166,31 +3172,22 @@
                       <div class="user-details">
                           <h3>${Utils.escapeHtml(user.name)}</h3>
                           <p class="user-role text-muted">
-                              ${
-                                user.role === "admin"
-                                  ? "👔 Kierownik"
-                                  : "🚗 Kierowca"
-                              }
-                              ${
-                                user.role === "admin"
-                                  ? `<br><small style="font-size: 0.8em; opacity: 0.8;">
-                                  ${user.perm_reports !== 0 ? "📊" : ""} 
-                                  ${user.perm_users !== 0 ? "👥" : ""} 
-                                  ${user.perm_locations !== 0 ? "📍" : ""}
+                              ${user.role === "admin"
+                ? "👔 Kierownik"
+                : "🚗 Kierowca"
+              }
+                              ${user.role === "admin"
+                ? `<br><small style="font-size: 0.8em; opacity: 0.8;">
+                                  ${user.perm_reports ? "📊" : ""} 
+                                  ${user.perm_users ? "👥" : ""} 
+                                  ${user.perm_locations ? "📍" : ""}
                               </small>`
-                                  : ""
-                              }
+                : ""
+              }
                           </p>
                       </div>
                   </div>
-                  <div class="user-actions">
-                      <button class="task-action-btn btn-edit" data-action="edit-user" data-id="${
-                        user.id
-                      }">✏️</button>
-                      <button class="task-action-btn btn-delete" data-action="delete-user" data-id="${
-                        user.id
-                      }">🗑️</button>
-                  </div>
+                  ${renderActions(user.id)}
               </div>
           `
           )
@@ -3399,10 +3396,10 @@
     renderLocations() {
       const locationsList = Utils.$("#locations-list");
       const departmentsList = Utils.$("#departments-list");
-      const isMainAdmin = state.currentUser.id === 1; // Tylko główny admin usuwa
+      const canManageLocations = state.currentUser.id === 1 || state.currentUser.perm_locations;
 
       const renderDeleteBtn = (id) =>
-        isMainAdmin
+        canManageLocations
           ? `
                 <div class="location-actions">
                     <button class="task-action-btn btn-delete" data-action="delete-location" data-id="${id}">🗑️</button>
@@ -3442,7 +3439,7 @@
           )
           .join("") || '<p class="text-muted text-center">Brak działów</p>';
 
-      if (isMainAdmin) {
+      if (canManageLocations) {
         Utils.$$('[data-action="delete-location"]').forEach((btn) => {
           btn.addEventListener("click", () =>
             this.deleteLocation(btn.dataset.id)
@@ -3572,7 +3569,7 @@
       const totalTasks = data.drivers.reduce((sum, d) => sum + d.tasksCount, 0);
       const avgKpi = Math.round(
         data.drivers.reduce((sum, d) => sum + d.kpi, 0) /
-          (data.drivers.length || 1)
+        (data.drivers.length || 1)
       );
 
       statsContainer.innerHTML = `
@@ -3615,22 +3612,20 @@
                             </button>
                             <div id="details-${index}" class="details-container">
                                 ${driver.details
-                                  .map(
-                                    (d) => `
+                  .map(
+                    (d) => `
                                     <div class="details-row type-${d.type}">
-                                        <span class="details-time">${
-                                          d.time
-                                        }</span>
+                                        <span class="details-time">${d.time
+                      }</span>
                                         <span class="details-desc">${Utils.escapeHtml(
-                                          d.desc
-                                        )}</span>
-                                        <span class="details-duration">${
-                                          d.duration
-                                        }m</span>
+                        d.desc
+                      )}</span>
+                                        <span class="details-duration">${d.duration
+                      }m</span>
                                     </div>
                                 `
-                                  )
-                                  .join("")}
+                  )
+                  .join("")}
                             </div>
                         `;
             }
@@ -3645,45 +3640,40 @@
                                 <div class="user-avatar">🚗</div>
                                 <div>
                                     <h3>${Utils.escapeHtml(driver.name)}</h3>
-                                    <span class="text-muted" style="font-size:12px">KPI: ${
-                                      driver.kpi
-                                    }%</span>
+                                    <span class="text-muted" style="font-size:12px">KPI: ${driver.kpi
+            }%</span>
                                 </div>
                             </div>
-                            <div class="report-driver-kpi ${kpiColor}">${
-            driver.kpi
-          }%</div>
+                            <div class="report-driver-kpi ${kpiColor}">${driver.kpi
+            }%</div>
                         </div>
 
                         <div class="kpi-grid">
                             <div class="kpi-box">
                                 <div class="kpi-value">${this.formatDuration(
-                                  driver.workTime
-                                )}</div>
+              driver.workTime
+            )}</div>
                                 <div class="kpi-label">Praca</div>
                             </div>
                             <div class="kpi-box">
                                 <div class="kpi-value" style="color:var(--danger)">${this.formatDuration(
-                                  driver.delayTime
-                                )}</div>
+              driver.delayTime
+            )}</div>
                                 <div class="kpi-label">Przestoje</div>
                             </div>
                             <div class="kpi-box">
-                                <div class="kpi-value">${
-                                  driver.tasksCount
-                                }</div>
+                                <div class="kpi-value">${driver.tasksCount
+            }</div>
                                 <div class="kpi-label">Zadań</div>
                             </div>
                         </div>
 
-                        <div class="timeline-container ${
-                          driver.isSingleDay ? "" : "bar-chart"
-                        }" 
-                             style="${
-                               driver.isSingleDay
-                                 ? ""
-                                 : "height:150px; overflow-x:auto; overflow-y:hidden;"
-                             }">
+                        <div class="timeline-container ${driver.isSingleDay ? "" : "bar-chart"
+            }" 
+                             style="${driver.isSingleDay
+              ? ""
+              : "height:150px; overflow-x:auto; overflow-y:hidden;"
+            }">
                             ${chartHtml}
                         </div>
                         ${labelsHtml}
@@ -3721,26 +3711,25 @@
       return `
                 <div style="display:flex; gap:10px; height:100%; align-items:flex-end; padding:10px;">
                     ${days
-                      .map(
-                        (d) => `
+          .map(
+            (d) => `
                         <div style="flex:1; display:flex; flex-direction:column; align-items:center; min-width:30px;">
                             <div style="font-size:10px; margin-bottom:4px; font-weight:bold;">${this.formatDuration(
-                              d.minutes
-                            )}</div>
+              d.minutes
+            )}</div>
                             <div style="width:100%; background:var(--bg-tertiary); height:80px; border-radius:4px; position:relative; overflow:hidden;">
-                                <div style="position:absolute; bottom:0; left:0; right:0; height:${
-                                  d.percent
-                                }%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(
-                          d.date
-                        )}"></div>
+                                <div style="position:absolute; bottom:0; left:0; right:0; height:${d.percent
+              }%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(
+                d.date
+              )}"></div>
                             </div>
                             <div style="font-size:9px; margin-top:4px; color:var(--text-secondary); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${Utils.formatDateShort(
-                              d.date
-                            )}</div>
+                d.date
+              )}</div>
                         </div>
                     `
-                      )
-                      .join("")}
+          )
+          .join("")}
                 </div>
             `;
     },
@@ -3748,10 +3737,22 @@
     generateTimeline(events) {
       if (!events || events.length === 0) return "";
 
-      const startHour = 6;
-      const endHour = 18;
+      // Znajdź zakres godzin dynamicznie (min 6:00 - 18:00, ale rozszerz jeśli są zadania poza)
+      let minHour = 6;
+      let maxHour = 18;
+
+      events.forEach(e => {
+        const s = new Date(e.start).getHours();
+        const end = new Date(e.end);
+        const en = end.getHours() + (end.getMinutes() > 0 ? 1 : 0);
+        if (s < minHour) minHour = s;
+        if (en > maxHour) maxHour = en;
+      });
+
+      const startHour = minHour;
+      const endHour = maxHour;
       const totalMinutes = (endHour - startHour) * 60;
-      const dayStart = new Date();
+      const dayStart = new Date(); // Używamy tylko do porównywania godzin
       dayStart.setHours(startHour, 0, 0, 0);
 
       // Sortuj eventy chronologicznie
@@ -3764,6 +3765,9 @@
         const start = new Date(event.start);
         const end = new Date(event.end);
 
+        // Fix: Jeśli zadanie jest z innego dnia (np. przeniesione), pokaż je od początku skali lub wcale
+        // Tutaj zakładamy że eventy są z jednego dnia (filtrowane wcześniej)
+
         // Znajdź pierwszy wolny rząd
         let rowIndex = -1;
         for (let i = 0; i < rows.length; i++) {
@@ -3775,18 +3779,28 @@
         }
 
         if (rowIndex === -1) {
-          // Nowy rząd
           rows.push([event]);
         } else {
-          // Dodaj do istniejącego
           rows[rowIndex].push(event);
         }
       });
 
-      // Renderowanie
-      return rows
+      // Generowanie markerów godzin
+      let markersHtml = '<div class="timeline-markers">';
+      for (let h = startHour; h <= endHour; h++) {
+        const left = ((h - startHour) * 60 / totalMinutes) * 100;
+        markersHtml += `
+          <div class="timeline-marker" style="left: ${left}%">
+            ${h % 2 === 0 || totalMinutes < 720 ? `<div class="timeline-time">${h}:00</div>` : ''}
+          </div>
+        `;
+      }
+      markersHtml += '</div>';
+
+      // Renderowanie pasków
+      const barsHtml = rows
         .map((row, rowIndex) => {
-          const height = 100 / rows.length; // Dzielimy wysokość na rzędy
+          const height = 100 / Math.max(rows.length, 1);
           const top = rowIndex * height;
 
           return row
@@ -3794,7 +3808,14 @@
               const start = new Date(event.start);
               const end = new Date(event.end);
 
-              const startDiff = (start - dayStart) / 1000 / 60;
+              // Oblicz pozycję względem startHour
+              // Uważaj na daty - jeśli event.start ma inną datę niż dayStart, musimy normalizować
+              const startH = start.getHours();
+              const startM = start.getMinutes();
+              const eventStartMins = (startH * 60) + startM;
+              const dayStartMins = startHour * 60;
+
+              const startDiff = eventStartMins - dayStartMins;
               const duration = (end - start) / 1000 / 60;
 
               let left = (startDiff / totalMinutes) * 100;
@@ -3809,18 +3830,16 @@
 
               return `
                         <div class="timeline-bar ${event.type}" 
-                             style="left: ${left}%; width: ${width}%; height: ${
-                height - 2
-              }%; top: ${top}%;"
-                             data-title="${Utils.escapeHtml(
-                               event.desc
-                             )} (${Math.round(duration)} min)">
+                             style="left: ${left}%; width: ${width}%; height: ${height - 2}%; top: ${top}%;"
+                             data-title="${Utils.escapeHtml(event.desc)} (${Math.round(duration)} min)">
                         </div>
                     `;
             })
             .join("");
         })
         .join("");
+
+      return markersHtml + barsHtml;
     },
 
     // TABS
@@ -3836,7 +3855,8 @@
       });
 
       if (tabId === "reports") {
-        this.loadReports();
+        // Opóźnij ładowanie raportów aby upewnić się że kontener jest widoczny
+        setTimeout(() => this.loadReports(), 50);
       }
     },
 
@@ -3878,8 +3898,8 @@
       Utils.$("#toggle-reorder-btn")?.addEventListener("click", () =>
         this.toggleReorderMode()
       );
-      
-      Utils.$("#admin-view-toggle-btn")?.addEventListener("click", () => 
+
+      Utils.$("#admin-view-toggle-btn")?.addEventListener("click", () =>
         this.toggleViewMode()
       );
       Utils.$("#save-reorder-btn")?.addEventListener("click", () =>
@@ -3978,6 +3998,16 @@
     TaskForm.initEventListeners();
     AdminPanel.initEventListeners();
 
+    // Linki regulaminu i polityki prywatności
+    Utils.$("#open-terms-link")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      Modal.open("modal-terms");
+    });
+    Utils.$("#open-privacy-link")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      Modal.open("modal-privacy");
+    });
+
     // Deep Link Handling (TaskId z URL)
     const urlParams = new URLSearchParams(window.location.search);
     const DeepLinkTaskId = urlParams.get("taskId");
@@ -3997,8 +4027,8 @@
         if (event.data.type === "PUSH_RECEIVED") {
           Toast.info(
             event.data.data?.message ||
-              event.data.data?.title ||
-              "Nowe powiadomienie"
+            event.data.data?.title ||
+            "Nowe powiadomienie"
           );
           Notifications.load();
           if (state.currentUser?.role === "driver") {

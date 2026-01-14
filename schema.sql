@@ -9,6 +9,16 @@ CREATE TABLE users (
     name TEXT NOT NULL,
     pin TEXT NOT NULL,
     role TEXT NOT NULL CHECK(role IN ('driver', 'admin')),
+    
+    -- Godziny pracy (dla kierowców)
+    work_start TEXT DEFAULT '07:00',
+    work_end TEXT DEFAULT '15:00',
+    
+    -- Uprawnienia granularne (dla adminów)
+    perm_reports INTEGER DEFAULT 0,
+    perm_users INTEGER DEFAULT 0,
+    perm_locations INTEGER DEFAULT 0,
+    
     active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
