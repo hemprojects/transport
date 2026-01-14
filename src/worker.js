@@ -1,41 +1,39 @@
-// =============================================
-// TransportTracker - Secure Worker API v.2.06
-// =============================================
-
 // --- TIMEZONE UTILS (POLAND - Europe/Warsaw) ---
 
-// Konwertuje datę UTC na czas polski (uwzględnia automatycznie DST)
-function toPolishTime(utcDate) {
-  return new Date(utcDate.toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
-}
-
-// Zwraca aktualny czas polski
+/**
+ * Zwraca aktualny czas polski jako obiekt Date.
+ * Worker działa w UTC, więc ustawiamy "Visual UTC" na czas polski.
+ */
 function getPolishNow() {
-  return new Date(new Date().toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+  const now = new Date();
+  const polishStr = now.toLocaleString("en-US", { timeZone: "Europe/Warsaw", hour12: false });
+  return new Date(polishStr);
 }
 
-// Formatuje datę do SQL DATETIME w czasie polskim
-function toPolishSQL(date) {
-  const polishDate = typeof date === 'string' ? new Date(date) : date;
-  const polish = new Date(polishDate.toLocaleString("en-US", { timeZone: "Europe/Warsaw" }));
+/**
+ * Formatuje datę (Date lub String) do SQL DATETIME (YYYY-MM-DD HH:MM:SS) w czasie polskim.
+ * Zapobiega podwójnemu przesunięciu strefy.
+ */
+function toPolishSQL(dateInput) {
+  let date;
+  if (!dateInput) date = new Date();
+  else if (typeof dateInput === 'string') {
+    // Jeśli string już wygląda jak SQL DATETIME i nie ma strefy, traktujemy go jako gotowy
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateInput)) return dateInput;
+    date = new Date(dateInput);
+  } else {
+    date = dateInput;
+  }
 
-  const year = polish.getFullYear();
-  const month = String(polish.getMonth() + 1).padStart(2, '0');
-  const day = String(polish.getDate()).padStart(2, '0');
-  const hours = String(polish.getHours()).padStart(2, '0');
-  const minutes = String(polish.getMinutes()).padStart(2, '0');
-  const seconds = String(polish.getSeconds()).padStart(2, '0');
-
-  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+  // Używamy szwedzkiego locale (sv-SE) bo daje idealny format YYYY-MM-DD HH:mm:ss
+  return date.toLocaleString("sv-SE", { timeZone: "Europe/Warsaw" }).replace('T', ' ');
 }
 
-// Zwraca dzisiejszą datę w Polsce (format YYYY-MM-DD)
+/**
+ * Zwraca dzisiejszą datę w Polsce (format YYYY-MM-DD)
+ */
 function getPolishToday() {
-  const now = getPolishNow();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return toPolishSQL(new Date()).split(' ')[0];
 }
 
 // --- SECURITY UTILS ---
@@ -203,9 +201,9 @@ async function recordLoginResult(env, identifier, success) {
   }
   if (record) {
     await env.DB.prepare(
-      "UPDATE login_attempts SET attempts = ?, blocked_until = ?, updated_at = CURRENT_TIMESTAMP WHERE identifier = ?"
+      "UPDATE login_attempts SET attempts = ?, blocked_until = ?, updated_at = ? WHERE identifier = ?"
     )
-      .bind(newAttempts, blockedUntil, identifier)
+      .bind(newAttempts, blockedUntil, toPolishSQL(now), identifier)
       .run();
   } else {
     await env.DB.prepare(
@@ -660,6 +658,8 @@ async function deleteLocation(id, env, corsHeaders) {
 async function getTasks(params, env, corsHeaders) {
   const date = params.get("date");
   const status = params.get("status");
+  const userId = params.get("userId"); // Nowy parametr do sprawdzania has_completed
+
   let q = `SELECT t.*, u.name as assigned_name, c.name as creator_name, t.created_by as creator_id FROM tasks t LEFT JOIN users u ON t.assigned_to = u.id LEFT JOIN users c ON t.created_by = c.id WHERE 1=1`;
   let b = [];
   if (date) {
@@ -670,12 +670,12 @@ async function getTasks(params, env, corsHeaders) {
     q += " AND t.status = ?";
     b.push(status);
   }
-  q += ` ORDER BY CASE t.status WHEN 'in_progress' THEN 1 WHEN 'pending' THEN 2 WHEN 'completed' THEN 3 END, CASE t.priority WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END, t.sort_order ASC, t.scheduled_time ASC`;
+  q += ` ORDER BY CASE t.status WHEN 'in_progress' THEN 1 WHEN 'pending' THEN 2 WHEN 'paused' THEN 3 WHEN 'completed' THEN 4 END, CASE t.priority WHEN 'high' THEN 1 WHEN 'normal' THEN 2 WHEN 'low' THEN 3 END, t.sort_order ASC, t.scheduled_time ASC`;
   const r = await env.DB.prepare(q)
     .bind(...b)
     .all();
 
-  // Dołącz additional_drivers do każdego zadania
+  // Dołącz additional_drivers + check completion
   const tasks = r.results;
   for (const task of tasks) {
     const drivers = await env.DB.prepare(
@@ -684,6 +684,13 @@ async function getTasks(params, env, corsHeaders) {
       .bind(task.id)
       .all();
     task.additional_drivers = drivers.results;
+
+    if (userId) {
+      const completed = await env.DB.prepare(
+        "SELECT id FROM task_logs WHERE task_id = ? AND user_id = ? AND log_type = 'status_change' AND message = 'Zakończono'"
+      ).bind(task.id, userId).first();
+      task.has_completed = !!completed;
+    }
   }
 
   return new Response(JSON.stringify(tasks), { headers: corsHeaders });
@@ -871,8 +878,8 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
       // Nie wszyscy zakończyli - zadanie pozostaje in_progress lub staje się paused
       // Ale dodajemy log o zakończeniu przez tego kierowcę
       await env.DB.prepare(
-        "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
-      ).bind(id, userId, "status_change", "Zakończono").run();
+        "INSERT INTO task_logs (task_id, user_id, log_type, message, created_at) VALUES (?, ?, ?, ?, ?)"
+      ).bind(id, userId, "status_change", "Zakończono", polishNow).run();
 
       // Zwróć sukces bez zmiany statusu zadania
       return new Response(JSON.stringify({
@@ -912,9 +919,9 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
   };
 
   await env.DB.prepare(
-    "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
+    "INSERT INTO task_logs (task_id, user_id, log_type, message, created_at) VALUES (?, ?, ?, ?, ?)"
   )
-    .bind(id, userId, "status_change", statusLabels[status] || status)
+    .bind(id, userId, "status_change", statusLabels[status] || status, polishNow)
     .run();
 
   const taskInfo = await env.DB.prepare(
@@ -933,14 +940,15 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
   // 1. Powiadom KIEROWNIKA (Twórcę zadania), jeśli to nie on zmienił status
   if (taskInfo.created_by && taskInfo.created_by != userId) {
     await env.DB.prepare(
-      "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO notifications (user_id, type, title, message, task_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
     )
       .bind(
         taskInfo.created_by,
         "status_change",
         "Zmiana statusu",
         `"${taskInfo.description}" - ${statusText}`,
-        id
+        id,
+        polishNow
       )
       .run();
     await sendOneSignalNotification(
@@ -959,14 +967,15 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
     for (const a of admins.results) {
       if (a.id == userId) continue; // Nie powiadamiaj sprawcy
       await env.DB.prepare(
-        "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO notifications (user_id, type, title, message, task_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
       )
         .bind(
           a.id,
           "status_change",
           "Zmiana statusu",
           `"${taskInfo.description}" - ${statusText}`,
-          id
+          id,
+          polishNow
         )
         .run();
       await sendOneSignalNotification(
@@ -988,14 +997,15 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
   // Jeśli zadanie JEST lub BYŁO przypisane
   if (taskInfo.assigned_to && taskInfo.assigned_to != userId) {
     await env.DB.prepare(
-      "INSERT INTO notifications (user_id, type, title, message, task_id) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO notifications (user_id, type, title, message, task_id, created_at) VALUES (?, ?, ?, ?, ?, ?)"
     )
       .bind(
         taskInfo.assigned_to,
         "status_change",
         "Aktualizacja zadania",
         `"${taskInfo.description}" - ${statusText}`,
-        id
+        id,
+        polishNow
       )
       .run();
     await sendOneSignalNotification(
@@ -1017,32 +1027,44 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
 
 async function joinTask(id, request, env, corsHeaders) {
   const { userId } = await request.json();
+
+  // Sprawdź czy użytkownik już jest przypisany lub w task_drivers
+  const task = await env.DB.prepare("SELECT assigned_to FROM tasks WHERE id = ?").bind(id).first();
+  const isAssigned = task && task.assigned_to == userId;
+
   const ex = await env.DB.prepare(
     "SELECT id FROM task_drivers WHERE task_id = ? AND user_id = ?"
   )
     .bind(id, userId)
     .first();
-  if (ex)
-    return new Response(JSON.stringify({ error: "Już dołączyłeś" }), {
-      status: 400,
-      headers: corsHeaders,
-    });
+
+  const polishNow = toPolishSQL(new Date());
+
+  if (!isAssigned && !ex) {
+    // Jeśli nie ma go wcale, to dodaj
+    await env.DB.prepare(
+      "INSERT INTO task_drivers (task_id, user_id, joined_at) VALUES (?, ?, ?)"
+    )
+      .bind(id, userId, polishNow)
+      .run();
+  }
+
+  // Jeśli dołącza ponownie (bo np. zakończył swoją część a inni jeszcze robią), 
+  // usuń log o zakończeniu żeby przywrócić mu aktywne przyciski
   await env.DB.prepare(
-    "INSERT INTO task_drivers (task_id, user_id) VALUES (?, ?)"
-  )
-    .bind(id, userId)
-    .run();
+    "DELETE FROM task_logs WHERE task_id = ? AND user_id = ? AND log_type = 'status_change' AND message = 'Zakończono'"
+  ).bind(id, userId).run();
+
   const user = await env.DB.prepare("SELECT name FROM users WHERE id = ?")
     .bind(userId)
     .first();
   await env.DB.prepare(
-    "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
+    "INSERT INTO task_logs (task_id, user_id, log_type, message, created_at) VALUES (?, ?, ?, ?, ?)"
   )
-    .bind(id, userId, "status_change", `${user.name} dołączył`)
+    .bind(id, userId, "joined", `Kierowca ${user.name} dołączył do zadania`, polishNow)
     .run();
-  return new Response(JSON.stringify({ success: true }), {
-    headers: corsHeaders,
-  });
+
+  return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 async function reorderTasks(request, env, corsHeaders) {
@@ -1056,13 +1078,14 @@ async function reorderTasks(request, env, corsHeaders) {
       .bind(userId)
       .first();
     await env.DB.prepare(
-      "INSERT INTO task_logs (task_id, user_id, log_type, message) VALUES (?, ?, ?, ?)"
+      "INSERT INTO task_logs (task_id, user_id, log_type, message, created_at) VALUES (?, ?, ?, ?, ?)"
     )
       .bind(
         tasks[0],
         userId,
         "status_change",
-        `Zmiana kolejności przez ${user.name}: ${reason}`
+        `Zmiana kolejności przez ${user.name}: ${reason}`,
+        toPolishSQL(new Date())
       )
       .run();
   }
@@ -1090,10 +1113,11 @@ async function createTaskLog(id, request, env, corsHeaders) {
   const safeReason = delayReason || null;
   const safeMinutes = delayMinutes || null;
 
+  const polishNow = toPolishSQL(new Date());
   await env.DB.prepare(
-    `INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes) VALUES (?, ?, ?, ?, ?, ?)`
+    `INSERT INTO task_logs (task_id, user_id, log_type, message, delay_reason, delay_minutes, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(id, userId, logType, safeMessage, safeReason, safeMinutes)
+    .bind(id, userId, logType, safeMessage, safeReason, safeMinutes, polishNow)
     .run();
 
   if (logType === "delay" || logType === "problem") {
@@ -1273,17 +1297,18 @@ async function getReports(period, env, corsHeaders) {
       .bind(driver.id)
       .all();
 
-    let workMinutes = 0;
+    let intervals = [];
     let delayMinutes = 0;
     let timeline = [];
     let details = [];
 
     tasks.results.forEach((t) => {
-      // FIX: Use raw strings for sending to frontend to avoid double-shifting.
-      // Database stores "Polish Time" as raw string (e.g. 12:00).
-      // Worker treats new Date("12:00") as 12:00 UTC.
-      // So math (end - start) works fine as long as both are treated as UTC.
-      // But we must send the RAW string "12:00" to frontend, not "12:00Z" (ISO).
+      const dateStr = t.scheduled_date; // YYYY-MM-DD
+      const [sh, sm] = (driver.work_start || "07:00").split(":");
+      const [eh, em] = (driver.work_end || "15:00").split(":");
+
+      const shiftStart = new Date(`${dateStr} ${sh}:${sm}:00`).getTime();
+      const shiftEnd = new Date(`${dateStr} ${eh}:${em}:00`).getTime();
 
       const startObj = new Date(t.started_at);
       let endObj;
@@ -1291,11 +1316,19 @@ async function getReports(period, env, corsHeaders) {
 
       if (t.completed_at) {
         endObj = new Date(t.completed_at);
-        endStr = t.completed_at; // Raw DB string
+        endStr = t.completed_at;
       } else {
-        // Task in progress: "Now" must be converted to Polish String to match DB format
         endStr = toPolishSQL(now);
         endObj = new Date(endStr);
+      }
+
+      // CLIPPING: Ogranicz interwał do godzin pracy (np. 7:00 - 15:00)
+      const clippedStart = Math.max(startObj.getTime(), shiftStart);
+      const clippedEnd = Math.min(endObj.getTime(), shiftEnd);
+
+      if (clippedStart < clippedEnd) {
+        // Dodaj do interwałów tylko część wewnątrz zmiany
+        intervals.push({ start: clippedStart, end: clippedEnd });
       }
 
       const duration = Math.max(0, (endObj - startObj) / 1000 / 60);
@@ -1309,12 +1342,11 @@ async function getReports(period, env, corsHeaders) {
           desc: t.description,
           duration: Math.round(duration),
         });
+
+        const timeFormat = { hour: "2-digit", minute: "2-digit" };
         details.push({
-          // Frontend parses raw string "YYYY-MM-DD HH:MM:SS" as local time correctly
-          time: new Date(t.started_at).toLocaleTimeString("pl-PL", {
-            hour: "2-digit",
-            minute: "2-digit",
-          }),
+          time: new Date(t.started_at).toLocaleTimeString("pl-PL", timeFormat),
+          endTime: endObj.toLocaleTimeString("pl-PL", timeFormat),
           desc: t.description,
           duration: Math.round(duration),
           type,
@@ -1323,24 +1355,17 @@ async function getReports(period, env, corsHeaders) {
         const taskDelays = delays.results.filter((d) => d.task_id === t.id);
         taskDelays.forEach((d) => {
           const delayStartObj = new Date(d.created_at);
-          const delayEndObj = new Date(
-            delayStartObj.getTime() + d.delay_minutes * 60000
-          );
+          const delayEndObj = new Date(delayStartObj.getTime() + d.delay_minutes * 60000);
 
-          // Re-format delay end to string for consistency if needed, 
-          // but timelines relying on ISO might need check. 
-          // actually generateTimeline in app.js handles strings well.
-          const delayEndStr = toPolishSQL(delayEndObj);
-          // Note: toPolishSQL expects Date or String. delayEndObj is Date (UTC-like).
-          // Wait, delayEndObj is derived from delayStartObj (Date from String "12:00").
-          // So delayEndObj is also "Visual UTC". 
-          // We need to convert it back to "YYYY-MM-DD HH:MM:SS" string without timezone shift.
-          // toPolishSQL does shifting! We don't want to shift again if it's already "Visual UTC".
+          // Clipping delays to shift hours too
+          const dClippedStart = Math.max(delayStartObj.getTime(), shiftStart);
+          const dClippedEnd = Math.min(delayEndObj.getTime(), shiftEnd);
 
-          // Simple formatting function for "Visual UTC" Date to String
-          const formatRaw = (d) => {
-            return d.toISOString().replace('T', ' ').split('.')[0];
-          };
+          if (dClippedStart < dClippedEnd) {
+            delayMinutes += (dClippedEnd - dClippedStart) / 1000 / 60;
+          }
+
+          const formatRaw = (d) => toPolishSQL(d);
 
           timeline.push({
             type: "delay",
@@ -1350,10 +1375,8 @@ async function getReports(period, env, corsHeaders) {
             duration: d.delay_minutes,
           });
           details.push({
-            time: new Date(d.created_at).toLocaleTimeString("pl-PL", {
-              hour: "2-digit",
-              minute: "2-digit",
-            }),
+            time: new Date(d.created_at).toLocaleTimeString("pl-PL", timeFormat),
+            endTime: delayEndObj.toLocaleTimeString("pl-PL", timeFormat),
             desc: `Przestój: ${d.delay_reason}`,
             duration: d.delay_minutes,
             type: "delay",
@@ -1362,25 +1385,63 @@ async function getReports(period, env, corsHeaders) {
       } else {
         const date = t.scheduled_date;
         const existingBar = timeline.find((x) => x.date === date);
+        const clippedDuration = Math.max(0, (clippedEnd - clippedStart) / 1000 / 60);
+
         if (existingBar) {
-          existingBar.minutes += Math.round(duration);
-          existingBar.percent = Math.min(
-            100,
-            Math.round((existingBar.minutes / 480) * 100)
-          );
+          existingBar.minutes += Math.round(clippedDuration);
+          existingBar.percent = Math.min(100, Math.round((existingBar.minutes / 480) * 100));
         } else {
           timeline.push({
             type: "bar",
             date,
-            minutes: Math.round(duration),
-            percent: Math.min(100, Math.round((duration / 480) * 100)),
+            minutes: Math.round(clippedDuration),
+            percent: Math.min(100, Math.round((clippedDuration / 480) * 100)),
           });
         }
       }
-      workMinutes += duration;
     });
 
-    delays.results.forEach((d) => (delayMinutes += d.delay_minutes || 0));
+    // POŁĄCZ INTERWAŁY (Interval Merging) dla sprawiedliwego liczenia czasu pracy
+    let mergedWorkMinutes = 0;
+    if (intervals.length > 0) {
+      intervals.sort((a, b) => a.start - b.start);
+      let current = intervals[0];
+      let merged = [current];
+
+      for (let i = 1; i < intervals.length; i++) {
+        let next = intervals[i];
+        if (next.start <= current.end) {
+          current.end = Math.max(current.end, next.end);
+        } else {
+          current = next;
+          merged.push(current);
+        }
+      }
+      merged.forEach(inter => {
+        mergedWorkMinutes += (inter.end - inter.start) / 1000 / 60;
+      });
+    }
+
+    // delayMinutes already calculated during clipping above if isSingleDay
+    if (!isSingleDay) {
+      delays.results.forEach((d) => {
+        const dDate = d.created_at.split(' ')[0];
+        const [sh, sm] = (driver.work_start || "07:00").split(":");
+        const [eh, em] = (driver.work_end || "15:00").split(":");
+        const shiftStart = new Date(`${dDate} ${sh}:${sm}:00`).getTime();
+        const shiftEnd = new Date(`${dDate} ${eh}:${em}:00`).getTime();
+
+        const dStart = new Date(d.created_at).getTime();
+        const dEnd = dStart + (d.delay_minutes * 60000);
+
+        const clippedStart = Math.max(dStart, shiftStart);
+        const clippedEnd = Math.min(dEnd, shiftEnd);
+
+        if (clippedStart < clippedEnd) {
+          delayMinutes += (clippedEnd - clippedStart) / 1000 / 60;
+        }
+      });
+    }
 
     let targetMinutes = 0;
     if (isSingleDay) {
@@ -1394,16 +1455,12 @@ async function getReports(period, env, corsHeaders) {
         20
       );
     } else {
-      const activeDays = new Set(tasks.results.map((t) => t.scheduled_date))
-        .size;
+      const activeDays = new Set(tasks.results.map((t) => t.scheduled_date)).size;
       targetMinutes = activeDays * (480 - 20);
     }
 
-    const realWorkMinutes = Math.max(0, workMinutes - delayMinutes);
-    const efficiency =
-      targetMinutes > 0
-        ? Math.min(100, Math.round((realWorkMinutes / targetMinutes) * 100))
-        : 0;
+    const realWorkMinutes = Math.max(0, mergedWorkMinutes - delayMinutes);
+    const efficiency = targetMinutes > 0 ? Math.min(100, Math.round((realWorkMinutes / targetMinutes) * 100)) : 0;
 
     driversStats.push({
       id: driver.id,

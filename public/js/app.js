@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 2.06 - Beta
+// Wersja 2.08 - Beta
 // =============================================
 
 (function () {
@@ -1528,8 +1528,12 @@
   // =============================================
   const DriverPanel = {
     async loadTasks(silent = false) {
+      if (!state.currentUser) return;
       try {
-        state.tasks = await API.getTasks({ date: state.currentDate });
+        state.tasks = await API.getTasks({
+          date: state.currentDate,
+          userId: state.currentUser.id,
+        });
         this.sortTasks();
         this.updateStats();
         this.renderTasks();
@@ -1540,6 +1544,7 @@
     },
 
     sortTasks() {
+      if (!state.currentUser) return;
       state.tasks.sort((a, b) => {
         // 1. Zakończone ZAWSZE na dole
         if (a.status === "completed" && b.status !== "completed") return 1;
@@ -1549,10 +1554,16 @@
         if (a.status === "in_progress" && b.status !== "in_progress") return -1;
         if (b.status === "in_progress" && a.status !== "in_progress") return 1;
 
+        // 2a. W obrębie "W trakcie" - moje zadania na samej górze
+        if (a.status === "in_progress" && b.status === "in_progress") {
+          const aMine = a.assigned_to === state.currentUser.id || (a.additional_drivers && a.additional_drivers.some(d => d.id === state.currentUser.id));
+          const bMine = b.assigned_to === state.currentUser.id || (b.additional_drivers && b.additional_drivers.some(d => d.id === state.currentUser.id));
+          if (aMine && !bMine) return -1;
+          if (!aMine && bMine) return 1;
+        }
+
         // 3. Potem priorytet (Pilne > Normalne > Niski)
-        const priorityDiff =
-          Utils.getPriorityOrder(a.priority) -
-          Utils.getPriorityOrder(b.priority);
+        const priorityDiff = Utils.getPriorityOrder(a.priority) - Utils.getPriorityOrder(b.priority);
         if (priorityDiff !== 0) return priorityDiff;
 
         // 4. Na końcu kolejność ręczna (sort_order)
@@ -1700,7 +1711,7 @@
                     </button>
                 `;
       } else if (task.status === "in_progress") {
-        if (isParticipating) {
+        if (isParticipating && !task.has_completed) {
           actionButtons = `
                         <button class="task-action-btn" data-action="pause" data-id="${task.id}" title="Wstrzymaj">
                             ⏸️
@@ -1713,6 +1724,7 @@
                         </button>
                     `;
         } else {
+          // Jeśli już zakończyłem swoją część (has_completed), pokazać Dołącz
           actionButtons = `
                         <button class="task-action-btn btn-join" data-action="join" data-id="${task.id}">
                             👥 Dołącz
@@ -2141,7 +2153,7 @@
                             </button>
                         </div>
                     `;
-        } else if (task.status === "in_progress" && !isParticipating) {
+        } else if (task.status === "in_progress" && (task.has_completed || !isParticipating)) {
           actionsHtml = `
                         <div class="task-detail-actions">
                             <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.openJoinModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
@@ -2228,6 +2240,10 @@
                     `
           : ""
         }
+                    <div class="task-detail-row">
+                        <span class="task-detail-label">Zlecił</span>
+                        <span class="task-detail-value">👔 ${Utils.escapeHtml(task.creator_name || 'System')}</span>
+                    </div>
                 </div>
                 
                 ${task.notes
@@ -2506,8 +2522,12 @@
   // =============================================
   const AdminPanel = {
     async loadTasks(silent = false) {
+      if (!state.currentUser) return;
       try {
-        state.tasks = await API.getTasks({ date: state.currentDate });
+        state.tasks = await API.getTasks({
+          date: state.currentDate,
+          userId: state.currentUser.id,
+        });
         this.sortTasks();
         this.updateStats();
         this.updateDateDisplay();
@@ -2613,10 +2633,19 @@
       Utils.hide(emptyState);
 
       // Ensure view mode class is applied
+      const btn = Utils.$("#admin-view-toggle-btn");
       if (state.viewMode === 'list') {
         tasksList.classList.add('view-list');
+        if (btn) {
+          btn.innerHTML = '📱';
+          btn.title = 'Widok kafelkowy';
+        }
       } else {
         tasksList.classList.remove('view-list');
+        if (btn) {
+          btn.innerHTML = '📝';
+          btn.title = 'Widok listy';
+        }
       }
 
       tasksList.innerHTML = filteredTasks
@@ -2673,22 +2702,34 @@
             `
         : "";
 
-      const assignedHtml = task.assigned_name
-        ? `
-                <span class="task-meta-item">
-                    <span>👤</span>
-                    <span>${Utils.escapeHtml(task.assigned_name)}</span>
-                </span>
-            `
-        : "";
+      // Obsługa wielu kierowców (DODANO DLA ADMINA)
+      let driversHtml = "";
+      const allDrivers = [];
+
+      if (task.assigned_name) allDrivers.push(task.assigned_name);
+      if (task.additional_drivers) {
+        task.additional_drivers.forEach((d) => allDrivers.push(d.name));
+      }
+
+      if (allDrivers.length > 0) {
+        const driversList = allDrivers.join(", ");
+        const icon = allDrivers.length > 1 ? "👥" : "👤";
+        const label = allDrivers.length > 1 ? "Współdzielone" : "";
+
+        driversHtml = `
+                    <span class="task-meta-item" title="${Utils.escapeHtml(driversList)}">
+                        <span>${icon}</span>
+                        <span>${Utils.escapeHtml(driversList)}</span>
+                        ${label ? `<span class="task-drivers-badge">${label}</span>` : ""}
+                    </span>
+                `;
+      }
 
       const creatorHtml = task.creator_name
         ? `
                 <span class="task-meta-item" title="Utworzył">
                     <span>✏️</span>
-                    <span>${Utils.escapeHtml(
-          task.creator_name
-        )} (${Utils.formatTime(task.created_at)})</span>
+                    <span>${Utils.escapeHtml(task.creator_name)} (${Utils.formatTime(task.created_at)})</span>
                 </span>
             `
         : "";
@@ -2794,7 +2835,7 @@
                             `
           : ""
         }
-                            ${assignedHtml}
+                            ${driversHtml}
                             ${creatorHtml}
                         </div>
                         ${actionsHtml}
@@ -3615,13 +3656,9 @@
                   .map(
                     (d) => `
                                     <div class="details-row type-${d.type}">
-                                        <span class="details-time">${d.time
-                      }</span>
-                                        <span class="details-desc">${Utils.escapeHtml(
-                        d.desc
-                      )}</span>
-                                        <span class="details-duration">${d.duration
-                      }m</span>
+                                        <span class="details-time">${d.time} - ${d.endTime || '?'}</span>
+                                        <span class="details-desc">${Utils.escapeHtml(d.desc)}</span>
+                                        <span class="details-duration">${d.duration}m</span>
                                     </div>
                                 `
                   )
