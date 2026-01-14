@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 2.08 - Beta
+// Wersja 2.06 - Beta
 // =============================================
 
 (function () {
@@ -497,7 +497,128 @@
   };
 
   // =============================================
-  // 5. TOAST
+  // 5. SYNC (Optimistic UI & Background Queue)
+  // =============================================
+  const Sync = {
+    queue: [],
+    isProcessing: false,
+
+    init() {
+      this.loadQueue();
+      // Próbuj wysłać kolejkę przy starcie
+      this.processQueue();
+      // Cykliczne sprawdzanie kolejki (np. po odzyskaniu neta)
+      setInterval(() => this.processQueue(), 30000);
+    },
+
+    /**
+     * Główna funkcja do wykonywania akcji.
+     * @param {string} actionNazwa - Klucz akcji (np. 'updateTaskStatus')
+     * @param {object} data - Dane dla API
+     * @param {function} optimisticFn - Funkcja do natychmiastowej zmiany stanu UI
+     * @param {function} rollbackFn - Funkcja do przywrócenia stanu w razie błędu
+     */
+    async enqueue(actionName, data, optimisticFn, rollbackFn) {
+      console.log(`[Sync] Enqueuing action: ${actionName}`, data);
+
+      // 1. Wykonaj optymistyczną zmianę (UI)
+      let oldState = null;
+      if (optimisticFn) {
+        try {
+          oldState = optimisticFn();
+        } catch (e) {
+          console.error("[Sync] Optimistic update failed:", e);
+        }
+      }
+
+      // 2. Dodaj do kolejki
+      const action = {
+        id: crypto.randomUUID(),
+        name: actionName,
+        data,
+        timestamp: Date.now(),
+        attempts: 0
+      };
+      this.queue.push(action);
+      this.persistQueue();
+
+      // 3. Procesuj w tle (nie awaitujemy tego!)
+      this.processQueue();
+
+      return action.id;
+    },
+
+    async processQueue() {
+      if (this.isProcessing || this.queue.length === 0) return;
+      if (!navigator.onLine) return; // Oszczędność baterii/zasobów jeśli wiemy że offline
+
+      this.isProcessing = true;
+      console.log(`[Sync] Processing queue (${this.queue.length} items)...`);
+
+      const actionsToProcess = [...this.queue];
+
+      for (const action of actionsToProcess) {
+        try {
+          await this.executeAction(action);
+          // Sukces - usuń z kolejki
+          this.queue = this.queue.filter(a => a.id !== action.id);
+          this.persistQueue();
+        } catch (error) {
+          console.error(`[Sync] Action ${action.name} failed:`, error);
+          action.attempts++;
+
+          // Jeśli to błąd krytyczny (np. 403, 400) lub za dużo prób - usuń i ewentualnie rollback
+          if (action.attempts >= 3) {
+            this.queue = this.queue.filter(a => a.id !== action.id);
+            this.persistQueue();
+            Toast.error(`Błąd synchronizacji: ${action.name}`);
+            // Tu można dodać wymuszenie odświeżenia całego stanu
+          }
+          // Przerwij pętlę przy pierwszym błędzie sieciowym
+          break;
+        }
+      }
+
+      this.isProcessing = false;
+    },
+
+    async executeAction(action) {
+      switch (action.name) {
+        case 'updateTaskStatus':
+          return await API.updateTaskStatus(action.data.id, action.data.status, action.data.userId);
+        case 'joinTask':
+          return await API.joinTask(action.data.taskId, action.data.userId);
+        case 'createTaskLog':
+          return await API.createTaskLog(action.data.taskId, action.data.logData);
+        case 'deleteReadNotifications':
+          return await API.deleteReadNotifications(action.data.userId);
+        case 'markNotificationRead':
+          return await API.markNotificationRead(action.data.notificationId);
+        case 'createTask':
+          return await API.createTask(action.data.taskData);
+        default:
+          console.warn(`[Sync] Unknown action: ${action.name}`);
+      }
+    },
+
+    persistQueue() {
+      localStorage.setItem('tt_sync_queue', JSON.stringify(this.queue));
+    },
+
+    loadQueue() {
+      const saved = localStorage.getItem('tt_sync_queue');
+      if (saved) {
+        try {
+          this.queue = JSON.parse(saved);
+        } catch (e) {
+          this.queue = [];
+        }
+      }
+    }
+  };
+
+  // =============================================
+  // 6. TOAST
   // =============================================
   const Toast = {
     container: null,
@@ -1835,27 +1956,24 @@
 
       Notifications.markRelatedRead(taskId);
 
-      // Instant UI update - BEZ POTWIERDZENIA dla szybkości
-      const task = state.tasks.find((t) => t.id == taskId);
-      if (task) {
-        task.status = "in_progress";
-        task.assigned_to = state.currentUser.id;
-        task.assigned_name = state.currentUser.name;
-      }
-      this.sortTasks();
-      this.updateStats();
-      this.setFilter("in_progress");
-      Toast.success("Zadanie rozpoczęte!");
-
-      // Sync w tle
-      try {
-        await API.updateTaskStatus(taskId, "in_progress", state.currentUser.id);
-      } catch (error) {
-        Toast.error("Błąd synchronizacji - odświeżam...");
-        await this.loadTasks();
-      } finally {
+      Sync.enqueue(
+        "updateTaskStatus",
+        { id: taskId, status: "in_progress", userId: state.currentUser.id },
+        () => {
+          const task = state.tasks.find((t) => t.id == taskId);
+          if (task) {
+            task.status = "in_progress";
+            task.assigned_to = state.currentUser.id;
+            task.assigned_name = state.currentUser.name;
+          }
+          this.sortTasks();
+          this.updateStats();
+          this.setFilter("in_progress");
+          Toast.success("Zadanie rozpoczęte! 🚀");
+        }
+      ).finally(() => {
         this._startingTask = false;
-      }
+      });
     },
 
     async completeTask(taskId) {
@@ -1867,30 +1985,26 @@
         async () => {
           this._completingTask = true;
 
-          try {
-            const response = await API.updateTaskStatus(taskId, "completed", state.currentUser.id);
-
-            if (response.partial) {
-              // Nie wszyscy kierowcy zakończyli - zadanie pozostaje aktywne
-              Toast.success(response.message || "Zakończono Twoją część. Oczekiwanie na pozostałych kierowców.");
-              await this.loadTasks();
-            } else {
-              // Wszyscy zakończyli - zadanie ukończone
+          Sync.enqueue(
+            "updateTaskStatus",
+            { id: taskId, status: "completed", userId: state.currentUser.id },
+            () => {
               const task = state.tasks.find((t) => t.id == taskId);
               if (task) {
+                // Optymistycznie zakładamy sukces (zakończenie całości lub części)
                 task.status = "completed";
               }
               this.sortTasks();
               this.updateStats();
               this.renderTasks();
-              Toast.success("Zadanie zakończone! 🎉");
+              Toast.success("Zadanie oznaczone jako zakończone! 🎉");
             }
-          } catch (error) {
-            Toast.error("Błąd synchronizacji - odświeżam...");
-            await this.loadTasks();
-          } finally {
+          ).then(() => {
+            // Po faktycznym zakończeniu sync, możemy odświeżyć żeby sprawdzić "partial"
+            this.loadTasks(true);
+          }).finally(() => {
             this._completingTask = false;
-          }
+          });
         },
         "Zakończ",
         false
@@ -1902,22 +2016,20 @@
         "Wstrzymać zadanie?",
         "Zadanie zostanie oznaczone jako wstrzymane. Inny kierowca będzie mógł je wznowić.",
         async () => {
-          // Instant UI update
-          const task = state.tasks.find((t) => t.id == taskId);
-          if (task) {
-            task.status = "paused";
-          }
-          this.sortTasks();
-          this.updateStats();
-          this.renderTasks();
-          Toast.info("Zadanie wstrzymane ⏸️");
-
-          try {
-            await API.updateTaskStatus(taskId, "paused", state.currentUser.id);
-          } catch (e) {
-            Toast.error("Błąd synchronizacji");
-            await this.loadTasks();
-          }
+          Sync.enqueue(
+            "updateTaskStatus",
+            { id: taskId, status: "paused", userId: state.currentUser.id },
+            () => {
+              const task = state.tasks.find((t) => t.id == taskId);
+              if (task) {
+                task.status = "paused";
+              }
+              this.sortTasks();
+              this.updateStats();
+              this.renderTasks();
+              Toast.info("Zadanie wstrzymane ⏸️");
+            }
+          );
         },
         "Wstrzymaj",
         false
@@ -1925,25 +2037,23 @@
     },
 
     async resumeTask(taskId) {
-      // Instant UI update
-      const task = state.tasks.find((t) => t.id == taskId);
-      if (task) {
-        task.status = "in_progress";
-        task.assigned_to = state.currentUser.id;
-        task.assigned_name = state.currentUser.name;
-      }
-      this.sortTasks();
-      this.updateStats();
-      this.renderTasks(); // Refresh to show in progress
-      this.setFilter("in_progress");
-      Toast.success("Zadanie wznowione! ▶️");
-
-      try {
-        await API.updateTaskStatus(taskId, "in_progress", state.currentUser.id);
-      } catch (e) {
-        Toast.error("Błąd synchronizacji");
-        await this.loadTasks();
-      }
+      Sync.enqueue(
+        "updateTaskStatus",
+        { id: taskId, status: "in_progress", userId: state.currentUser.id },
+        () => {
+          const task = state.tasks.find((t) => t.id == taskId);
+          if (task) {
+            task.status = "in_progress";
+            task.assigned_to = state.currentUser.id;
+            task.assigned_name = state.currentUser.name;
+          }
+          this.sortTasks();
+          this.updateStats();
+          this.renderTasks();
+          this.setFilter("in_progress");
+          Toast.success("Zadanie wznowione! ▶️");
+        }
+      );
     },
 
     openJoinModal(taskId) {
@@ -1959,18 +2069,17 @@
     async joinTask() {
       const taskId = Utils.$("#join-task-id").value;
       Notifications.markRelatedRead(taskId);
-      // Natychmiast zamknij modal i pokaż sukces
       Modal.close("modal-join-task");
-      Toast.success("Dołączyłeś do zadania!");
 
-      // Sync w tle
-      try {
-        await API.joinTask(taskId, state.currentUser.id);
-        await this.loadTasks(); // silent refresh
-      } catch (error) {
-        Toast.error("Błąd synchronizacji");
-        await this.loadTasks();
-      }
+      Sync.enqueue(
+        "joinTask",
+        { taskId, userId: state.currentUser.id },
+        () => {
+          Toast.success("Dołączyłeś do zadania! 👥");
+        }
+      ).then(() => {
+        this.loadTasks(true);
+      });
     },
 
     openLogModal(taskId) {
@@ -2028,11 +2137,17 @@
 
       // Instant - zamknij i pokaż sukces
       Modal.close("modal-task-log");
-      Toast.success("Zapisano!");
+      Toast.success("Zapisano! 📝");
 
-      // Sync w tle (nie czekamy)
-      API.createTaskLog(taskId, logData).catch(() => {
-        Toast.error("Błąd zapisu - spróbuj ponownie");
+      // Sync w tle
+      Sync.enqueue(
+        "createTaskLog",
+        { taskId, logData },
+        () => {
+          // Możemy tu dodać optymistyczne dodanie logu do state.tasks[id].logs jeśli chcemy
+        }
+      ).then(() => {
+        this.loadTasks(true); // silent refresh
       });
 
       this._submittingLog = false;
@@ -4024,6 +4139,7 @@
     // Czekamy chwilę aż biblioteka się załaduje
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalService.init();
+    Sync.init();
 
     Toast.init();
     Modal.init();
@@ -4281,6 +4397,7 @@
     state,
     Utils,
     API,
+    Sync,
     Toast,
     Modal,
     Screen,
