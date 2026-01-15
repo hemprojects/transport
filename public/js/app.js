@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 2.06 - Beta
+// Wersja 2.11
 // =============================================
 
 (function () {
@@ -834,6 +834,13 @@
       if (targetScreen) {
         targetScreen.classList.add("active");
         state.currentScreen = screenId;
+
+        // BŁYSKAWICZNE ODŚWIEŻANIE przy przełączaniu ekranów
+        if (screenId === "driver-tasks") {
+          DriverPanel.loadTasks(true);
+        } else if (screenId === "admin-tasks") {
+          AdminPanel.loadTasks(true);
+        }
       }
     },
   };
@@ -1410,6 +1417,15 @@
         this.initDriverPanel();
       }
 
+      // AGRESYWNY PRE-FETCH (Wczoraj, Dzisiaj, Jutro) od razu po zalogowaniu
+      if (state.currentUser.role === "admin") {
+        AdminPanel.loadTasks(true);
+        AdminPanel.prefetchNeighboringDates();
+      } else {
+        DriverPanel.loadTasks(true);
+        DriverPanel.prefetchNeighboringDates();
+      }
+
       // OneSignal - inicjalizuj SDK (nie blokuje UI)
       OneSignalService.init()
         .then(() => {
@@ -1425,7 +1441,7 @@
           }, 2000);
         })
         .catch((err) => {
-          console.warn("OneSignal setup failed:", err);
+
         });
     },
 
@@ -4225,7 +4241,7 @@
   // 15. INIT
   // =============================================
   async function init() {
-    console.log("🚛 TransportTracker v2.0 initializing...");
+    console.log("🚛 TransportTracker v2.11 initializing...");
 
     // OneSignal Init (Global)
     // Czekamy chwilę aż biblioteka się załaduje
@@ -4298,14 +4314,28 @@
 
     // Jeśli mieliśmy Deep Link, otwórz zadanie po zalogowaniu
     if (DeepLinkTaskId && state.currentUser) {
-      if (state.currentUser.role === "driver") {
-        DriverPanel.openTaskDetails(DeepLinkTaskId);
-      } else {
+      if (state.currentUser.role === "admin") {
         AdminPanel.openTaskDetails(DeepLinkTaskId);
+      } else {
+        DriverPanel.openTaskDetails(DeepLinkTaskId);
       }
       // Wyczyść URL
       window.history.replaceState({}, document.title, "/");
     }
+
+    // REAL-TIME: Odświeżaj gdy użytkownik wraca do karty przeglądarki
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && state.currentUser) {
+        console.log("🚀 App visible - refreshing data...");
+        if (state.currentUser.role === "admin") {
+          AdminPanel.loadTasks(true);
+        } else {
+          DriverPanel.loadTasks(true);
+        }
+        Notifications.load();
+      }
+    });
+
     // Diagnostyka
     console.log("📱 Device Info:", {
       userAgent: navigator.userAgent.substring(0, 100),
@@ -4346,7 +4376,7 @@
               serviceWorkerParam: { scope: "/" },
             });
 
-            console.log("✅ OneSignal: SDK Initialized");
+
             OneSignalService.initialized = true;
 
             // Event: Foreground notification
@@ -4384,7 +4414,7 @@
 
     async login(userId, role) {
       if (!this.initialized) {
-        console.warn("⚠️ OneSignal not initialized, skipping login");
+
         return;
       }
 
