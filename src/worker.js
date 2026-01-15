@@ -686,10 +686,13 @@ async function getTasks(params, env, corsHeaders) {
     task.additional_drivers = drivers.results;
 
     if (userId) {
-      const completed = await env.DB.prepare(
-        "SELECT id FROM task_logs WHERE task_id = ? AND user_id = ? AND log_type = 'status_change' AND message = 'Zakończono'"
+      const latestLog = await env.DB.prepare(
+        "SELECT message FROM task_logs WHERE task_id = ? AND user_id = ? AND log_type = 'status_change' ORDER BY created_at DESC LIMIT 1"
       ).bind(task.id, userId).first();
-      task.has_completed = !!completed;
+
+      const msg = latestLog?.message || "";
+      task.has_completed = msg.includes("Zakończył") || msg.includes("Zakończono");
+      task.has_paused = msg.includes("Wstrzymał") || msg.includes("Wstrzymano");
     }
   }
 
@@ -858,38 +861,82 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
   if (task.assigned_to) allDriverIds.add(task.assigned_to);
   additionalDrivers.results.forEach(d => allDriverIds.add(d.user_id));
 
-  let finalStatus = status;
+  const currentUser = await env.DB.prepare("SELECT name FROM users WHERE id = ?").bind(userId).first();
+  const userName = currentUser?.name || "Kierowca";
 
-  // Logika dla wielu kierowców przy zakończeniu
-  if (status === "completed" && allDriverIds.size > 1) {
-    // Pobierz kto już zakończył (ma log "Zakończono")
-    const completedLogs = await env.DB.prepare(
-      `SELECT DISTINCT user_id FROM task_logs 
-       WHERE task_id = ? AND log_type = 'status_change' AND message = 'Zakończono'`
+  // Logika dla wielu kierowców przy zakończeniu lub wstrzymaniu
+  if ((status === "completed" || status === "paused") && allDriverIds.size > 1) {
+    // Pobierz najnowsze statusy (logi) wszystkich kierowców przypisanych do tego zadania
+    const activeLogs = await env.DB.prepare(
+      `SELECT user_id, message FROM (
+         SELECT user_id, message, ROW_NUMBER() OVER(PARTITION BY user_id ORDER BY created_at DESC) as rn
+         FROM task_logs 
+         WHERE task_id = ? AND log_type = 'status_change'
+       ) WHERE rn = 1`
     ).bind(id).all();
 
-    const completedUserIds = new Set(completedLogs.results.map(l => l.user_id));
-    completedUserIds.add(userId); // Dodaj bieżącego użytkownika
+    const statuses = {};
+    activeLogs.results.forEach(l => statuses[l.user_id] = l.message);
 
-    // Sprawdź czy wszyscy zakończyli
-    const allCompleted = [...allDriverIds].every(driverId => completedUserIds.has(driverId));
+    // Nadpisz status dla obecnego użytkownika tym, co właśnie przesyła
+    statuses[userId] = status === "completed" ? "Zakończono" : "Wstrzymano";
 
-    if (!allCompleted) {
-      // Nie wszyscy zakończyli - zadanie pozostaje in_progress lub staje się paused
-      // Ale dodajemy log o zakończeniu przez tego kierowcę
+    // Sprawdź kto nadal pracuje (nie zakończył i nie wstrzymał swojej części)
+    const othersWorkingIds = [...allDriverIds].filter(dId =>
+      dId != userId &&
+      !String(statuses[dId] || "").includes("Zakończył") &&
+      !String(statuses[dId] || "").includes("Wstrzymał") &&
+      !String(statuses[dId] || "").includes("Zakończono") &&
+      !String(statuses[dId] || "").includes("Wstrzymano")
+    );
+
+    const otherNames = othersWorkingIds.length > 0
+      ? await env.DB.prepare(`SELECT name FROM users WHERE id IN (${othersWorkingIds.join(',')})`).all()
+      : { results: [] };
+    const otherNamesList = otherNames.results.map(u => u.name).join(", ");
+
+    if (status === "completed") {
+      const allCompleted = [...allDriverIds].every(dId => String(statuses[dId] || "").includes("Zakończono") || String(statuses[dId] || "").includes("Zakończył"));
+
+      let logMsg = `Zakończył swoją część`;
+      if (othersWorkingIds.length > 0) {
+        logMsg += ` (Pozostali pracują: ${otherNamesList})`;
+      }
+
       await env.DB.prepare(
         "INSERT INTO task_logs (task_id, user_id, log_type, message, created_at) VALUES (?, ?, ?, ?, ?)"
-      ).bind(id, userId, "status_change", "Zakończono", polishNow).run();
+      ).bind(id, userId, "status_change", logMsg, polishNow).run();
 
-      // Zwróć sukces bez zmiany statusu zadania
-      return new Response(JSON.stringify({
-        success: true,
-        partial: true,
-        message: "Zakończono Twoją część. Oczekiwanie na pozostałych kierowców."
-      }), { headers: corsHeaders });
+      if (!allCompleted) {
+        return new Response(JSON.stringify({
+          success: true,
+          partial: true,
+          message: othersWorkingIds.length > 0
+            ? `${userName} zakończył swoją część. ${otherNamesList} nadal wykonuje zadanie.`
+            : "Zakończyłeś swoją część."
+        }), { headers: corsHeaders });
+      }
+    } else if (status === "paused") {
+      let logMsg = `Wstrzymał swoją część`;
+      if (othersWorkingIds.length > 0) {
+        logMsg += ` (Pozostali pracują: ${otherNamesList})`;
+      }
+
+      await env.DB.prepare(
+        "INSERT INTO task_logs (task_id, user_id, log_type, message, created_at) VALUES (?, ?, ?, ?, ?)"
+      ).bind(id, userId, "status_change", logMsg, polishNow).run();
+
+      if (othersWorkingIds.length > 0) {
+        return new Response(JSON.stringify({
+          success: true,
+          partial: true,
+          message: `${userName} wstrzymał swoją część. ${otherNamesList} nadal wykonuje zadanie.`
+        }), { headers: corsHeaders });
+      }
     }
   }
 
+  let finalStatus = status;
   let q = "UPDATE tasks SET status = ?";
   let b = [finalStatus];
 
@@ -913,9 +960,9 @@ async function updateTaskStatus(id, request, env, corsHeaders) {
 
   const statusLabels = {
     in_progress: "Rozpoczęto",
-    completed: "Zakończono",
+    completed: "Zakończono zadanie",
     pending: "Oczekuje",
-    paused: "Wstrzymano",
+    paused: "Wstrzymano zadanie",
   };
 
   await env.DB.prepare(
@@ -1049,10 +1096,10 @@ async function joinTask(id, request, env, corsHeaders) {
       .run();
   }
 
-  // Jeśli dołącza ponownie (bo np. zakończył swoją część a inni jeszcze robią), 
-  // usuń log o zakończeniu żeby przywrócić mu aktywne przyciski
+  // Jeśli dołącza ponownie (bo np. zakończył lub wstrzymał swoją część), 
+  // usuń logi o statusie aby przywrócić mu aktywne przyciski
   await env.DB.prepare(
-    "DELETE FROM task_logs WHERE task_id = ? AND user_id = ? AND log_type = 'status_change' AND message = 'Zakończono'"
+    "DELETE FROM task_logs WHERE task_id = ? AND user_id = ? AND log_type = 'status_change'"
   ).bind(id, userId).run();
 
   const user = await env.DB.prepare("SELECT name FROM users WHERE id = ?")
@@ -1061,7 +1108,7 @@ async function joinTask(id, request, env, corsHeaders) {
   await env.DB.prepare(
     "INSERT INTO task_logs (task_id, user_id, log_type, message, created_at) VALUES (?, ?, ?, ?, ?)"
   )
-    .bind(id, userId, "joined", `Kierowca ${user.name} dołączył do zadania`, polishNow)
+    .bind(id, userId, "status_change", `Kierowca ${user.name} dołączył do zadania`, polishNow)
     .run();
 
   return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });

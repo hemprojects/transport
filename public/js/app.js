@@ -44,6 +44,7 @@
     theme: "light",
 
     notificationInterval: null,
+    taskCache: {}, // { "YYYY-MM-DD": tasks[] }
   };
 
   // =============================================
@@ -519,7 +520,7 @@
      * @param {function} rollbackFn - Funkcja do przywrócenia stanu w razie błędu
      */
     async enqueue(actionName, data, optimisticFn, rollbackFn) {
-      console.log(`[Sync] Enqueuing action: ${actionName}`, data);
+
 
       // 1. Wykonaj optymistyczną zmianę (UI)
       let oldState = null;
@@ -553,7 +554,7 @@
       if (!navigator.onLine) return; // Oszczędność baterii/zasobów jeśli wiemy że offline
 
       this.isProcessing = true;
-      console.log(`[Sync] Processing queue (${this.queue.length} items)...`);
+
 
       const actionsToProcess = [...this.queue];
 
@@ -873,17 +874,11 @@
       }
 
       try {
-        console.log(
-          `🔔 Notifications.load: Fetching for user ${state.currentUser.id}...`
-        );
+
 
         const response = await API.getNotifications(state.currentUser.id);
 
-        console.log(`🔔 Notifications.load: Response:`, {
-          notificationsCount: response.notifications?.length || 0,
-          unreadCount: response.unreadCount,
-          firstNotification: response.notifications?.[0] || null,
-        });
+
 
         // Sprawdź czy mamy nowe nieprzeczytane
         if (response.unreadCount > state.unreadNotifications) {
@@ -900,9 +895,7 @@
         state.notifications = response.notifications || [];
         state.unreadNotifications = response.unreadCount || 0;
 
-        console.log(
-          `🔔 Notifications.load: State updated - ${state.unreadNotifications} unread`
-        );
+
 
         this.updateBadge();
 
@@ -938,9 +931,7 @@
     async showSystemNotification(title, body, taskId) {
       // ❌ Na iOS nie pokazuj systemowych - i tak nie działają w tle
       if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-        console.log(
-          "📱 iOS detected - skipping system notification (bell only)"
-        );
+
         return;
       }
 
@@ -948,7 +939,7 @@
         !("Notification" in window) ||
         Notification.permission !== "granted"
       ) {
-        console.log("⚠️ No notification permission");
+
         return;
       }
 
@@ -1016,9 +1007,7 @@
     },
 
     updateBadge() {
-      console.log(
-        `🔔 updateBadge: unread = ${state.unreadNotifications}, role = ${state.currentUser?.role}`
-      );
+
 
       const driverBadge = Utils.$("#driver-notification-badge");
       const adminBadge = Utils.$("#admin-notification-badge");
@@ -1027,23 +1016,17 @@
       const badge =
         state.currentUser?.role === "admin" ? adminBadge : driverBadge;
 
-      console.log(
-        `🔔 updateBadge: badge element =`,
-        badge,
-        `exists = ${!!badge}`
-      );
+
 
       if (badge) {
         if (state.unreadNotifications > 0) {
           badge.textContent =
             state.unreadNotifications > 99 ? "99+" : state.unreadNotifications;
           badge.classList.remove("hidden");
-          console.log(
-            `🔔 updateBadge: Showing badge with ${state.unreadNotifications}`
-          );
+
         } else {
           badge.classList.add("hidden");
-          console.log(`🔔 updateBadge: Hiding badge`);
+
         }
       } else {
         console.error("❌ updateBadge: Badge element NOT FOUND!");
@@ -1062,7 +1045,7 @@
     },
 
     startPolling() {
-      console.log("🔔 startPolling: Starting notification polling...");
+
 
       // Natychmiast załaduj powiadomienia
       this.load();
@@ -1084,9 +1067,7 @@
         }
       }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
 
-      console.log(
-        `🔔 startPolling: Polling every ${CONFIG.NOTIFICATION_CHECK_INTERVAL}ms`
-      );
+
     },
 
     stopPolling() {
@@ -1650,18 +1631,62 @@
   const DriverPanel = {
     async loadTasks(silent = false) {
       if (!state.currentUser) return;
-      try {
-        state.tasks = await API.getTasks({
-          date: state.currentDate,
-          userId: state.currentUser.id,
-        });
+
+      const targetDate = state.currentDate;
+
+      // 1. SWR: Pokazujemy to co mamy w cache'u OD RAZU
+      if (state.taskCache[targetDate]) {
+        state.tasks = state.taskCache[targetDate];
         this.sortTasks();
         this.updateStats();
         this.renderTasks();
+      }
+
+      try {
+        // 2. Pobieramy świeże dane w tle
+        const freshTasks = await API.getTasks({
+          date: targetDate,
+          userId: state.currentUser.id,
+        });
+
+        // 3. Sprawdzamy czy coś się zmieniło
+        const hasChanged = JSON.stringify(freshTasks) !== JSON.stringify(state.taskCache[targetDate]);
+
+        state.taskCache[targetDate] = freshTasks;
+
+        if (hasChanged || state.tasks.length === 0) {
+          state.tasks = freshTasks;
+          this.sortTasks();
+          this.updateStats();
+          this.renderTasks();
+        }
+
+        // 4. Pre-fetch sąsiednich dat w tle
+        this.prefetchNeighboringDates();
+
       } catch (error) {
-        if (!silent) Toast.error("Nie udało się załadować zadań");
+        if (!silent && !state.taskCache[targetDate]) {
+          Toast.error("Nie udało się załadować zadań");
+        }
         console.error(error);
       }
+    },
+
+    async prefetchNeighboringDates() {
+      if (!state.currentUser) return;
+      const yesterday = Utils.addDays(state.currentDate, -1);
+      const tomorrow = Utils.addDays(state.currentDate, 1);
+
+      [yesterday, tomorrow].forEach(async (date) => {
+        if (!state.taskCache[date]) {
+          try {
+            const tasks = await API.getTasks({ date, userId: state.currentUser.id });
+            state.taskCache[date] = tasks;
+          } catch (e) {
+            // Ignorujemy błędy pre-fetchu
+          }
+        }
+      });
     },
 
     sortTasks() {
@@ -1693,12 +1718,20 @@
     },
 
     updateStats() {
-      const pending = state.tasks.filter((t) => t.status === "pending" || t.status === "paused").length;
+      const getEffectiveStatus = (t) => {
+        if (t.has_completed) return "completed";
+        if (t.has_paused) return "paused";
+        return t.status;
+      };
+
+      const pending = state.tasks.filter(
+        (t) => getEffectiveStatus(t) === "pending" || getEffectiveStatus(t) === "paused"
+      ).length;
       const inProgress = state.tasks.filter(
-        (t) => t.status === "in_progress"
+        (t) => getEffectiveStatus(t) === "in_progress"
       ).length;
       const completed = state.tasks.filter(
-        (t) => t.status === "completed"
+        (t) => getEffectiveStatus(t) === "completed"
       ).length;
 
       Utils.$("#driver-stat-pending").textContent = pending;
@@ -1710,18 +1743,21 @@
       const tasksList = Utils.$("#driver-tasks-list");
       const emptyState = Utils.$("#driver-tasks-empty");
 
+      const getEffectiveStatus = (t) => {
+        if (t.has_completed) return "completed";
+        if (t.has_paused) return "paused";
+        return t.status;
+      };
+
       let filteredTasks = state.tasks;
       if (state.currentFilter !== "all") {
-        if (state.currentFilter === "pending") {
-          // Kierowcy widzą wstrzymane jako "Oczekujące" (do wzięcia)
-          filteredTasks = state.tasks.filter(
-            (t) => t.status === "pending" || t.status === "paused"
-          );
-        } else {
-          filteredTasks = state.tasks.filter(
-            (t) => t.status === state.currentFilter
-          );
-        }
+        filteredTasks = state.tasks.filter((t) => {
+          const effStatus = getEffectiveStatus(t);
+          if (state.currentFilter === "pending") {
+            return effStatus === "pending" || effStatus === "paused";
+          }
+          return effStatus === state.currentFilter;
+        });
       }
 
       if (filteredTasks.length === 0) {
@@ -1832,7 +1868,7 @@
                     </button>
                 `;
       } else if (task.status === "in_progress") {
-        if (isParticipating && !task.has_completed) {
+        if (isParticipating && !task.has_completed && !task.has_paused) {
           actionButtons = `
                         <button class="task-action-btn" data-action="pause" data-id="${task.id}" title="Wstrzymaj">
                             ⏸️
@@ -1844,8 +1880,14 @@
                             ✅
                         </button>
                     `;
+        } else if (task.has_paused) {
+          actionButtons = `
+                        <button class="task-action-btn btn-start" data-action="resume" data-id="${task.id}">
+                            ▶️ Wznów
+                        </button>
+                    `;
         } else {
-          // Jeśli już zakończyłem swoją część (has_completed), pokazać Dołącz
+          // Jeśli nie uczestniczę LUB już zakończyłem swoją część (has_completed)
           actionButtons = `
                         <button class="task-action-btn btn-join" data-action="join" data-id="${task.id}">
                             👥 Dołącz
@@ -2638,19 +2680,69 @@
   const AdminPanel = {
     async loadTasks(silent = false) {
       if (!state.currentUser) return;
-      try {
-        state.tasks = await API.getTasks({
-          date: state.currentDate,
-          userId: state.currentUser.id,
-        });
+
+      const targetDate = state.currentDate;
+
+      // 1. SWR: Pokazujemy to co mamy w cache'u OD RAZU
+      if (state.taskCache[targetDate]) {
+        state.tasks = state.taskCache[targetDate];
         this.sortTasks();
         this.updateStats();
         this.updateDateDisplay();
         this.renderTasks();
+      } else if (!silent) {
+        // Jeśli nie ma w cache, można pokazać loader
+        Utils.$("#admin-tasks-list").innerHTML = '<div class="loading-inline">Ładowanie zadań...</div>';
+      }
+
+      try {
+        // 2. Pobieramy świeże dane w tle
+        const freshTasks = await API.getTasks({
+          date: targetDate,
+          userId: state.currentUser.id,
+        });
+
+        // 3. Sprawdzamy czy coś się zmieniło względem tego co wyświetliliśmy
+        const hasChanged = JSON.stringify(freshTasks) !== JSON.stringify(state.taskCache[targetDate]);
+
+        // Zapisz do cache
+        state.taskCache[targetDate] = freshTasks;
+
+        // Jeśli dane się zmieniły ALBO nie było ich wcześniej w cache - odśwież UI
+        if (hasChanged || state.tasks.length === 0) {
+          state.tasks = freshTasks;
+          this.sortTasks();
+          this.updateStats();
+          this.updateDateDisplay();
+          this.renderTasks();
+        }
+
+        // 4. Pre-fetch sąsiednich dat w tle
+        this.prefetchNeighboringDates();
+
       } catch (error) {
-        if (!silent) Toast.error("Nie udało się załadować zadań");
+        if (!silent && !state.taskCache[targetDate]) {
+          Toast.error("Nie udało się załadować zadań");
+        }
         console.error(error);
       }
+    },
+
+    async prefetchNeighboringDates() {
+      if (!state.currentUser) return;
+      const yesterday = Utils.addDays(state.currentDate, -1);
+      const tomorrow = Utils.addDays(state.currentDate, 1);
+
+      [yesterday, tomorrow].forEach(async (date) => {
+        if (!state.taskCache[date]) {
+          try {
+            const tasks = await API.getTasks({ date, userId: state.currentUser.id });
+            state.taskCache[date] = tasks;
+          } catch (e) {
+            // Ignorujemy
+          }
+        }
+      });
     },
 
     sortTasks() {
@@ -4321,7 +4413,7 @@
             user_id: externalId,
           });
 
-          console.log("✅ OneSignal: User logged in successfully");
+
         } catch (e) {
           console.error("❌ OneSignal Login Error:", e);
         }
