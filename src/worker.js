@@ -1322,14 +1322,15 @@ async function getReports(period, env, corsHeaders) {
   for (const driver of drivers.results) {
     const tasks = await env.DB.prepare(
       `
-            SELECT t.id, t.description, t.status, t.started_at, t.completed_at, t.scheduled_date
+            SELECT t.id, t.description, t.status, t.started_at, t.completed_at, t.scheduled_date,
+            (SELECT created_at FROM task_logs WHERE task_id = t.id AND user_id = ? AND log_type = 'status_change' AND message LIKE 'Zakończył swoją część%' ORDER BY created_at DESC LIMIT 1) as personal_completed_at
             FROM tasks t LEFT JOIN task_drivers td ON t.id = td.task_id
             WHERE (t.assigned_to = ? OR td.user_id = ?) ${dateCondition}
             AND t.started_at IS NOT NULL
             ORDER BY t.started_at
         `
     )
-      .bind(driver.id, driver.id)
+      .bind(driver.id, driver.id, driver.id)
       .all();
 
     const delays = await env.DB.prepare(
@@ -1361,7 +1362,10 @@ async function getReports(period, env, corsHeaders) {
       let endObj;
       let endStr;
 
-      if (t.completed_at) {
+      if (t.personal_completed_at) {
+        endStr = t.personal_completed_at;
+        endObj = new Date(endStr);
+      } else if (t.completed_at) {
         endObj = new Date(t.completed_at);
         endStr = t.completed_at;
       } else {

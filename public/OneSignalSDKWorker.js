@@ -1,9 +1,6 @@
+self.onmessage = function (e) { };
 // Fix for Chrome: Event handler of 'message' event must be added on the initial evaluation of worker script.
 // Must be at the very top for some Chrome versions.
-self.addEventListener('message', () => {
-    // Empty listener to satisfy Chrome initialization check
-});
-
 importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js");
 
 // Obsługa kliknięcia w powiadomienie (dla naszych lokalnych notyfikacji)

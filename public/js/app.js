@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 2.11
+// Wersja 2.13
 // =============================================
 
 (function () {
@@ -887,7 +887,8 @@
 
 
 
-        // Sprawdź czy mamy nowe nieprzeczytane
+        /* 
+        // WYŁĄCZONE: Nie pokazuj systemowych powiadomień z pollingu (bo mamy OneSignal Push)
         if (response.unreadCount > state.unreadNotifications) {
           const latest = response.notifications[0];
           if (latest && !latest.is_read) {
@@ -898,6 +899,7 @@
             );
           }
         }
+        */
 
         state.notifications = response.notifications || [];
         state.unreadNotifications = response.unreadCount || 0;
@@ -4241,7 +4243,7 @@
   // 15. INIT
   // =============================================
   async function init() {
-    console.log("🚛 TransportTracker v2.11 initializing...");
+    console.log("🚛 TransportTracker v2.0 initializing...");
 
     // OneSignal Init (Global)
     // Czekamy chwilę aż biblioteka się załaduje
@@ -4383,9 +4385,14 @@
             OneSignal.Notifications.addEventListener(
               "foregroundWillDisplay",
               (event) => {
+                // Zapobiegaj pokazaniu systemowego okienka gdy apka jest otwarta (Android/PWA)
+                event.preventDefault();
+
                 // Odśwież powiadomienia w dzwoneczku
                 Notifications.load();
-                Toast.info(event.notification.body || "Nowe powiadomienie");
+
+                // Pokaż tylko Toast
+                Toast.info(event.notification.body || event.notification.title || "Nowe powiadomienie");
               }
             );
 
