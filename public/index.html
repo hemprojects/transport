@@ -14,7 +14,7 @@
   <title>Hemarpol - Transport Tracker</title>
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
   <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
-  <link rel="stylesheet" href="css/style.css?v=2.16" />
+  <link rel="stylesheet" href="css/style.css?v=2.18" />
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>" />
   <link rel="apple-touch-icon"
@@ -967,7 +967,6 @@
                 <span>🏢 Dział</span>
               </label>
             </div>
-            </div>
           </div>
 
           <div class="form-group">
@@ -1135,10 +1134,11 @@
   </div>
 
     <div id="modal-map" class="modal hidden">
-      <div class="modal-content modal-large">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-large">
         <div class="modal-header">
           <h2>🗺️ Mapa Zakładu</h2>
-          <button class="close-btn" onclick="Modal.close('modal-map')">&times;</button>
+          <button class="modal-close" data-close="modal-map">×</button>
         </div>
         <div class="modal-body">
           <p class="section-desc">Kliknij na mapie aby zaznaczyć wybrane miejsce.</p>
@@ -1150,13 +1150,13 @@
           </div>
         </div>
         <div class="modal-footer">
-          <button class="btn btn-secondary" onclick="Modal.close('modal-map')">Anuluj</button>
+          <button class="btn btn-secondary" data-close="modal-map">Zamknij</button>
           <button class="btn btn-primary" id="map-save-btn">Zapisz pozycję</button>
         </div>
       </div>
     </div>
     
-  <script src="js/app.js?v=2.16"></script>
+  <script src="js/app.js?v=2.18"></script>
 </body>
 
 </html>

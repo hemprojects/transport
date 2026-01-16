@@ -130,7 +130,9 @@
       if (diffMins < 60) return `${diffMins} min temu`;
       if (diffHours < 24) return `${diffHours} godz. temu`;
       if (diffDays < 7) return `${diffDays} dni temu`;
-      return this.formatDateShort(dateTimeStr.split(" ")[0] || dateTimeStr.split("T")[0]);
+      return this.formatDateShort(
+        dateTimeStr.split(" ")[0] || dateTimeStr.split("T")[0]
+      );
     },
 
     getToday() {
@@ -482,8 +484,6 @@
       });
     },
 
-
-
     // REPORTS
     async getReports(period = "week") {
       const timestamp = new Date().getTime();
@@ -514,8 +514,6 @@
      * @param {function} rollbackFn - Funkcja do przywrócenia stanu w razie błędu
      */
     async enqueue(actionName, data, optimisticFn, rollbackFn) {
-
-
       // 1. Wykonaj optymistyczną zmianę (UI)
       let oldState = null;
       if (optimisticFn) {
@@ -532,7 +530,7 @@
         name: actionName,
         data,
         timestamp: Date.now(),
-        attempts: 0
+        attempts: 0,
       };
       this.queue.push(action);
       this.persistQueue();
@@ -549,14 +547,13 @@
 
       this.isProcessing = true;
 
-
       const actionsToProcess = [...this.queue];
 
       for (const action of actionsToProcess) {
         try {
           await this.executeAction(action);
           // Sukces - usuń z kolejki
-          this.queue = this.queue.filter(a => a.id !== action.id);
+          this.queue = this.queue.filter((a) => a.id !== action.id);
           this.persistQueue();
         } catch (error) {
           console.error(`[Sync] Action ${action.name} failed:`, error);
@@ -564,7 +561,7 @@
 
           // Jeśli to błąd krytyczny (np. 403, 400) lub za dużo prób - usuń i ewentualnie rollback
           if (action.attempts >= 3) {
-            this.queue = this.queue.filter(a => a.id !== action.id);
+            this.queue = this.queue.filter((a) => a.id !== action.id);
             this.persistQueue();
             Toast.error(`Błąd synchronizacji: ${action.name}`);
             // Tu można dodać wymuszenie odświeżenia całego stanu
@@ -579,17 +576,24 @@
 
     async executeAction(action) {
       switch (action.name) {
-        case 'updateTaskStatus':
-          return await API.updateTaskStatus(action.data.id, action.data.status, action.data.userId);
-        case 'joinTask':
+        case "updateTaskStatus":
+          return await API.updateTaskStatus(
+            action.data.id,
+            action.data.status,
+            action.data.userId
+          );
+        case "joinTask":
           return await API.joinTask(action.data.taskId, action.data.userId);
-        case 'createTaskLog':
-          return await API.createTaskLog(action.data.taskId, action.data.logData);
-        case 'deleteReadNotifications':
+        case "createTaskLog":
+          return await API.createTaskLog(
+            action.data.taskId,
+            action.data.logData
+          );
+        case "deleteReadNotifications":
           return await API.deleteReadNotifications(action.data.userId);
-        case 'markNotificationRead':
+        case "markNotificationRead":
           return await API.markNotificationRead(action.data.notificationId);
-        case 'createTask':
+        case "createTask":
           return await API.createTask(action.data.taskData);
         default:
           console.warn(`[Sync] Unknown action: ${action.name}`);
@@ -597,11 +601,11 @@
     },
 
     persistQueue() {
-      localStorage.setItem('tt_sync_queue', JSON.stringify(this.queue));
+      localStorage.setItem("tt_sync_queue", JSON.stringify(this.queue));
     },
 
     loadQueue() {
-      const saved = localStorage.getItem('tt_sync_queue');
+      const saved = localStorage.getItem("tt_sync_queue");
       if (saved) {
         try {
           this.queue = JSON.parse(saved);
@@ -609,7 +613,7 @@
           this.queue = [];
         }
       }
-    }
+    },
   };
 
   // =============================================
@@ -685,7 +689,10 @@
 
     open(modalId) {
       const modal = Utils.$(`#${modalId}`);
-      if (!modal) return;
+      if (!modal) {
+        console.warn(`[Modal] Element with ID "${modalId}" not found in DOM.`);
+        return;
+      }
 
       Utils.show(modal);
       this.openModals.push(modalId);
@@ -747,16 +754,19 @@
 
     init() {
       Utils.$$("[data-close]").forEach((btn) => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
           const modalId = btn.getAttribute("data-close");
           this.close(modalId);
         });
       });
 
       Utils.$$(".modal-overlay").forEach((overlay) => {
-        overlay.addEventListener("click", () => {
-          const modal = overlay.closest(".modal");
-          if (modal) this.close(modal.id);
+        overlay.addEventListener("click", (e) => {
+          if (e.target === overlay) {
+            const modal = overlay.closest(".modal");
+            if (modal) this.close(modal.id);
+          }
         });
       });
 
@@ -875,11 +885,7 @@
       }
 
       try {
-
-
         const response = await API.getNotifications(state.currentUser.id);
-
-
 
         /* 
         // WYŁĄCZONE: Nie pokazuj systemowych powiadomień z pollingu (bo mamy OneSignal Push)
@@ -897,8 +903,6 @@
 
         state.notifications = response.notifications || [];
         state.unreadNotifications = response.unreadCount || 0;
-
-
 
         this.updateBadge();
 
@@ -934,7 +938,6 @@
     async showSystemNotification(title, body, taskId) {
       // ❌ Na iOS nie pokazuj systemowych - i tak nie działają w tle
       if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
-
         return;
       }
 
@@ -942,7 +945,6 @@
         !("Notification" in window) ||
         Notification.permission !== "granted"
       ) {
-
         return;
       }
 
@@ -1025,7 +1027,9 @@
 
       // Instant UI update
       state.notifications = state.notifications.filter((n) => !n.is_read);
-      state.unreadNotifications = state.notifications.filter(n => !n.is_read).length; // Recalculate unread just in case
+      state.unreadNotifications = state.notifications.filter(
+        (n) => !n.is_read
+      ).length; // Recalculate unread just in case
       this.renderList();
       Toast.success(`Usunięto ${readCount} przeczytanych`);
 
@@ -1042,8 +1046,6 @@
     },
 
     updateBadge() {
-
-
       const driverBadge = Utils.$("#driver-notification-badge");
       const adminBadge = Utils.$("#admin-notification-badge");
 
@@ -1051,17 +1053,13 @@
       const badge =
         state.currentUser?.role === "admin" ? adminBadge : driverBadge;
 
-
-
       if (badge) {
         if (state.unreadNotifications > 0) {
           badge.textContent =
             state.unreadNotifications > 99 ? "99+" : state.unreadNotifications;
           badge.classList.remove("hidden");
-
         } else {
           badge.classList.add("hidden");
-
         }
       } else {
         console.error("❌ updateBadge: Badge element NOT FOUND!");
@@ -1074,14 +1072,12 @@
             .setAppBadge(state.unreadNotifications)
             .catch((e) => console.log("Badge error:", e));
         } else {
-          navigator.clearAppBadge().catch(() => { });
+          navigator.clearAppBadge().catch(() => {});
         }
       }
     },
 
     startPolling() {
-
-
       // Natychmiast załaduj powiadomienia
       this.load();
 
@@ -1101,8 +1097,6 @@
           AdminPanel.loadTasks(true);
         }
       }, CONFIG.NOTIFICATION_CHECK_INTERVAL);
-
-
     },
 
     stopPolling() {
@@ -1132,19 +1126,20 @@
                 <div class="notification-icon">${this.getIcon(notif.type)}</div>
                 <div class="notification-content">
                     <div class="notification-title">${Utils.escapeHtml(
-            notif.title
-          )}</div>
+                      notif.title
+                    )}</div>
                     <div class="notification-message">${Utils.escapeHtml(
-            notif.message
-          )}</div>
+                      notif.message
+                    )}</div>
                     <div class="notification-time">${Utils.formatRelativeTime(
-            notif.created_at
-          )}</div>
+                      notif.created_at
+                    )}</div>
                 </div>
-                ${notif.is_read
-              ? ""
-              : '<div class="notification-unread-dot"></div>'
-            }
+                ${
+                  notif.is_read
+                    ? ""
+                    : '<div class="notification-unread-dot"></div>'
+                }
             </div>
         `
         )
@@ -1174,7 +1169,7 @@
             if (notif) notif.is_read = 1;
 
             // Sync w tle (nie czekamy)
-            API.markNotificationRead(id).catch(() => { });
+            API.markNotificationRead(id).catch(() => {});
           }
 
           if (taskId) {
@@ -1238,11 +1233,11 @@
     initEventListeners() {
       Utils.$("#driver-notifications-btn")?.addEventListener("click", () => {
         this.open();
-        this.requestPermission();
+        OneSignalService.requestPermission();
       });
       Utils.$("#admin-notifications-btn")?.addEventListener("click", () => {
         this.open();
-        this.requestPermission();
+        OneSignalService.requestPermission();
       });
       Utils.$("#mark-all-read-btn")?.addEventListener("click", () =>
         this.markAllRead()
@@ -1323,7 +1318,7 @@
 
   const MapManager = {
     // State
-    mode: 'view', // 'view' | 'pick'
+    mode: "view", // 'view' | 'pick'
     targetLocationId: null,
     tempCoords: null, // {x, y}
     panzoomInstance: null,
@@ -1332,16 +1327,17 @@
       // Panzoom init is done when modal opens
     },
 
-    open(mode = 'view', locationId = null) {
+    open(mode = "view", locationId = null) {
       this.mode = mode;
       this.targetLocationId = locationId;
       this.tempCoords = null;
 
-      const title = mode === 'pick' ? '📍 Zaznacz lokalizację' : '🗺️ Mapa Zakładu';
-      Utils.$('#modal-map h2').textContent = title;
-      
-      const saveBtn = Utils.$('#map-save-btn');
-      if (mode === 'pick') {
+      const title =
+        mode === "pick" ? "📍 Zaznacz lokalizację" : "🗺️ Mapa Zakładu";
+      Utils.$("#modal-map h2").textContent = title;
+
+      const saveBtn = Utils.$("#map-save-btn");
+      if (mode === "pick") {
         Utils.show(saveBtn);
         saveBtn.disabled = true;
       } else {
@@ -1349,165 +1345,182 @@
       }
 
       this.renderPins();
-      Modal.open('modal-map');
+      Modal.open("modal-map");
 
       // Initialize Panzoom after modal is visible
       setTimeout(() => {
-          this.initPanzoom();
-          // Center on target if provided
-          if (locationId) {
-             this.focusOnLocation(locationId);
-          }
+        this.initPanzoom();
+        // Center on target if provided
+        if (locationId) {
+          this.focusOnLocation(locationId);
+        }
       }, 300);
     },
 
     initPanzoom() {
-       const elem = document.getElementById('map-container');
-       if (!elem) return;
+      const elem = document.getElementById("map-container");
+      if (!elem) return;
 
-       if (this.panzoomInstance) {
-           this.panzoomInstance.dispose();
-       }
+      // Destroy existing instance if any
+      if (this.panzoomInstance) {
+        this.panzoomInstance.destroy();
+        this.panzoomInstance = null;
+      }
 
-       this.panzoomInstance = Panzoom(elem, {
-           maxScale: 5,
-           minScale: 0.5,
-           contain: 'outside',
-           startScale: 1
-       });
+      this.panzoomInstance = Panzoom(elem, {
+        maxScale: 5,
+        minScale: 0.5,
+        contain: "outside",
+        startScale: 1,
+      });
 
-       // Enable Mouse Wheel
-       elem.parentElement.addEventListener('wheel', this.panzoomInstance.zoomWithWheel);
-       
-       // Add Controls if not exist
-       this.renderControls();
+      // Enable Mouse Wheel
+      elem.parentElement.addEventListener(
+        "wheel",
+        this.panzoomInstance.zoomWithWheel
+      );
+
+      // Add Controls if not exist
+      this.renderControls();
     },
 
     renderControls() {
-        const wrapper = Utils.$('.map-wrapper');
-        if (wrapper.querySelector('.map-controls')) return;
+      const wrapper = Utils.$(".map-wrapper");
+      if (wrapper.querySelector(".map-controls")) return;
 
-        const controls = document.createElement('div');
-        controls.className = 'map-controls';
-        controls.innerHTML = `
+      const controls = document.createElement("div");
+      controls.className = "map-controls";
+      controls.innerHTML = `
             <button id="zoom-in" class="btn-icon layer-btn" title="Przybliż">+</button>
             <button id="zoom-out" class="btn-icon layer-btn" title="Oddal">-</button>
             <button id="zoom-reset" class="btn-icon layer-btn" title="Wyśrodkuj">⟲</button>
         `;
-        wrapper.appendChild(controls);
+      wrapper.appendChild(controls);
 
-        wrapper.querySelector('#zoom-in').addEventListener('click', () => this.panzoomInstance.zoomIn());
-        wrapper.querySelector('#zoom-out').addEventListener('click', () => this.panzoomInstance.zoomOut());
-        wrapper.querySelector('#zoom-reset').addEventListener('click', () => this.panzoomInstance.reset());
+      wrapper
+        .querySelector("#zoom-in")
+        .addEventListener("click", () => this.panzoomInstance.zoomIn());
+      wrapper
+        .querySelector("#zoom-out")
+        .addEventListener("click", () => this.panzoomInstance.zoomOut());
+      wrapper
+        .querySelector("#zoom-reset")
+        .addEventListener("click", () => this.panzoomInstance.reset());
     },
 
     renderPins() {
-       // Remove old pins
-       Utils.$$('.map-pin').forEach(el => el.remove());
+      // Remove old pins
+      Utils.$$(".map-pin").forEach((el) => el.remove());
 
-       const list = [...state.locations, ...state.departments];
-       list.forEach(loc => {
-           if (loc.map_x != null && loc.map_y != null) {
-               this.createPinElement(loc);
-           }
-       });
+      const list = [...state.locations, ...state.departments];
+      list.forEach((loc) => {
+        if (loc.map_x != null && loc.map_y != null) {
+          this.createPinElement(loc);
+        }
+      });
     },
 
     createPinElement(loc, isTemp = false) {
-       const pin = document.createElement('div');
-       pin.className = `map-pin ${loc.type === 'department' ? 'pin-dept' : 'pin-loc'} ${isTemp ? 'pin-temp' : ''}`;
-       if (isTemp) pin.id = 'temp-pin';
-       
-       pin.style.left = `${loc.map_x}%`;
-       pin.style.top = `${loc.map_y}%`;
-       
-       // Icon
-       const icon = loc.type === 'department' ? '🏢' : '📍';
-       
-       pin.innerHTML = `
+      const pin = document.createElement("div");
+      pin.className = `map-pin ${
+        loc.type === "department" ? "pin-dept" : "pin-loc"
+      } ${isTemp ? "pin-temp" : ""}`;
+      if (isTemp) pin.id = "temp-pin";
+
+      pin.style.left = `${loc.map_x}%`;
+      pin.style.top = `${loc.map_y}%`;
+
+      // Icon
+      const icon = loc.type === "department" ? "🏢" : "📍";
+
+      pin.innerHTML = `
           <div class="pin-icon">${icon}</div>
           <div class="pin-label">${Utils.escapeHtml(loc.name)}</div>
        `;
 
-       // Eventy
-       if (!isTemp && this.mode === 'view') {
-           pin.addEventListener('click', (e) => {
-               e.stopPropagation(); // Don't trigger map click
-               Toast.info(`Lokalizacja: ${loc.name}`);
-               // TODO: Show nice popover
-           });
-           
-           // Highlight if target
-           if (this.targetLocationId === loc.id) {
-               pin.classList.add('pin-active');
-           }
-       }
+      // Eventy
+      if (!isTemp && this.mode === "view") {
+        pin.addEventListener("click", (e) => {
+          e.stopPropagation(); // Don't trigger map click
+          Toast.info(`Lokalizacja: ${loc.name}`);
+          // TODO: Show nice popover
+        });
 
-       Utils.$('#map-container').appendChild(pin);
+        // Highlight if target
+        if (this.targetLocationId === loc.id) {
+          pin.classList.add("pin-active");
+        }
+      }
+
+      Utils.$("#map-container").appendChild(pin);
     },
 
     focusOnLocation(id) {
-        const loc = [...state.locations, ...state.departments].find(l => l.id === id);
-        if (loc && loc.map_x && loc.map_y && this.panzoomInstance) {
-            // Calculate center
-            // This is complex with Panzoom, simpler is to just highlight strongly
-            // Or pan to it. Panzoom.pan(x, y)
-             this.panzoomInstance.zoom(2, { animate: true });
-             setTimeout(() => {
-                 // Simple reset for now as finding coordinates relative to view is hard without calc
-             }, 500);
-        }
+      const loc = [...state.locations, ...state.departments].find(
+        (l) => l.id === id
+      );
+      if (loc && loc.map_x && loc.map_y && this.panzoomInstance) {
+        // Calculate center
+        // This is complex with Panzoom, simpler is to just highlight strongly
+        // Or pan to it. Panzoom.pan(x, y)
+        this.panzoomInstance.zoom(2, { animate: true });
+        setTimeout(() => {
+          // Simple reset for now as finding coordinates relative to view is hard without calc
+        }, 500);
+      }
     },
 
     onMapClick(e) {
-      if (this.mode !== 'pick') return;
-      
-      // Panzoom changes logic! 
+      if (this.mode !== "pick") return;
+
+      // Panzoom changes logic!
       // Need to calculate click relative to the Scaled Container
-      const container = Utils.$('#map-container');
+      const container = Utils.$("#map-container");
       const rect = container.getBoundingClientRect();
       const scale = this.panzoomInstance.getScale();
-      
+
       const x = ((e.clientX - rect.left) / rect.width) * 100;
       const y = ((e.clientY - rect.top) / rect.height) * 100;
 
       this.tempCoords = { x, y };
 
       // Usuń stary temp pin
-      const oldTemp = Utils.$('#temp-pin');
+      const oldTemp = Utils.$("#temp-pin");
       if (oldTemp) oldTemp.remove();
 
       // Dodaj nowy
-      this.createPinElement({
-         type: 'location',
-         map_x: x,
-         map_y: y,
-         name: 'Nowa pozycja'
-      }, true);
+      this.createPinElement(
+        {
+          type: "location",
+          map_x: x,
+          map_y: y,
+          name: "Nowa pozycja",
+        },
+        true
+      );
 
       // Aktywuj przycisk zapisu
-      const saveBtn = Utils.$('#map-save-btn');
+      const saveBtn = Utils.$("#map-save-btn");
       if (saveBtn) saveBtn.disabled = false;
     },
 
     async savePickedLocation() {
-       if (!this.tempCoords) return;
+      if (!this.tempCoords) return;
 
-       // Jeśli edytujemy istniejącą (targetLocationId)
-       if (this.targetLocationId) {
-          try {
-             if (AdminPanel.onMapPick) {
-                 AdminPanel.onMapPick(this.tempCoords);
-             }
-
-             Modal.close('modal-map');
-             Toast.success("Lokalizacja wybrana!");
-
-          } catch (e) {
-             Toast.error("Błąd zapisu");
+      // Jeśli edytujemy istniejącą (targetLocationId)
+      if (this.targetLocationId) {
+        try {
+          if (AdminPanel.onMapPick) {
+            AdminPanel.onMapPick(this.tempCoords);
           }
-       }
-    }
+
+          Modal.close("modal-map");
+          Toast.success("Lokalizacja wybrana!");
+        } catch (e) {
+          Toast.error("Błąd zapisu");
+        }
+      }
+    },
   };
 
   // =============================================
@@ -1519,7 +1532,9 @@
       try {
         const cachedUsers = localStorage.getItem(CONFIG.STORAGE_KEYS.USERS);
         const cachedLocs = localStorage.getItem(CONFIG.STORAGE_KEYS.LOCATIONS);
-        const cachedDepts = localStorage.getItem(CONFIG.STORAGE_KEYS.DEPARTMENTS);
+        const cachedDepts = localStorage.getItem(
+          CONFIG.STORAGE_KEYS.DEPARTMENTS
+        );
         const cachedTasks = localStorage.getItem(CONFIG.STORAGE_KEYS.TASKS);
 
         if (cachedUsers) state.users = JSON.parse(cachedUsers);
@@ -1677,9 +1692,7 @@
             }
           }, 2000);
         })
-        .catch((err) => {
-
-        });
+        .catch((err) => {});
     },
 
     showChangePinModal() {
@@ -1745,11 +1758,20 @@
         state.locations = locations.filter((l) => l.type === "location");
         state.departments = locations.filter((l) => l.type === "department");
         state.users = users;
-        
+
         // Update Cache
-        localStorage.setItem(CONFIG.STORAGE_KEYS.LOCATIONS, JSON.stringify(state.locations));
-        localStorage.setItem(CONFIG.STORAGE_KEYS.DEPARTMENTS, JSON.stringify(state.departments));
-        localStorage.setItem(CONFIG.STORAGE_KEYS.USERS, JSON.stringify(state.users));
+        localStorage.setItem(
+          CONFIG.STORAGE_KEYS.LOCATIONS,
+          JSON.stringify(state.locations)
+        );
+        localStorage.setItem(
+          CONFIG.STORAGE_KEYS.DEPARTMENTS,
+          JSON.stringify(state.departments)
+        );
+        localStorage.setItem(
+          CONFIG.STORAGE_KEYS.USERS,
+          JSON.stringify(state.users)
+        );
 
         DataLists.updateAll();
       } catch (error) {
@@ -1812,19 +1834,6 @@
         state.currentUser.id,
         state.currentUser.name
       );
-
-      DriverPanel.loadTasks();
-      Notifications.startPolling();
-    },
-
-    initDriverPanel() {
-      Utils.$("#driver-user-name").textContent = state.currentUser.name;
-      state.currentDate = Utils.getToday();
-      Utils.$("#driver-date-text").textContent = Utils.formatDate(
-        state.currentDate
-      );
-
-      Screen.show("driver");
 
       DriverPanel.loadTasks();
       Notifications.startPolling();
@@ -1914,12 +1923,17 @@
         });
 
         // 3. Sprawdzamy czy coś się zmieniło
-        const hasChanged = JSON.stringify(freshTasks) !== JSON.stringify(state.taskCache[targetDate]);
+        const hasChanged =
+          JSON.stringify(freshTasks) !==
+          JSON.stringify(state.taskCache[targetDate]);
 
         state.taskCache[targetDate] = freshTasks;
-        
+
         // Persist Cache
-        localStorage.setItem(CONFIG.STORAGE_KEYS.TASKS, JSON.stringify(state.taskCache));
+        localStorage.setItem(
+          CONFIG.STORAGE_KEYS.TASKS,
+          JSON.stringify(state.taskCache)
+        );
 
         if (hasChanged || state.tasks.length === 0) {
           state.tasks = freshTasks;
@@ -1930,7 +1944,6 @@
 
         // 4. Pre-fetch sąsiednich dat w tle
         this.prefetchNeighboringDates();
-
       } catch (error) {
         if (!silent && !state.taskCache[targetDate]) {
           Toast.error("Nie udało się załadować zadań");
@@ -1947,7 +1960,10 @@
       [yesterday, tomorrow].forEach(async (date) => {
         if (!state.taskCache[date]) {
           try {
-            const tasks = await API.getTasks({ date, userId: state.currentUser.id });
+            const tasks = await API.getTasks({
+              date,
+              userId: state.currentUser.id,
+            });
             state.taskCache[date] = tasks;
           } catch (e) {
             // Ignorujemy błędy pre-fetchu
@@ -1969,14 +1985,22 @@
 
         // 2a. W obrębie "W trakcie" - moje zadania na samej górze
         if (a.status === "in_progress" && b.status === "in_progress") {
-          const aMine = a.assigned_to === state.currentUser.id || (a.additional_drivers && a.additional_drivers.some(d => d.id === state.currentUser.id));
-          const bMine = b.assigned_to === state.currentUser.id || (b.additional_drivers && b.additional_drivers.some(d => d.id === state.currentUser.id));
+          const aMine =
+            a.assigned_to === state.currentUser.id ||
+            (a.additional_drivers &&
+              a.additional_drivers.some((d) => d.id === state.currentUser.id));
+          const bMine =
+            b.assigned_to === state.currentUser.id ||
+            (b.additional_drivers &&
+              b.additional_drivers.some((d) => d.id === state.currentUser.id));
           if (aMine && !bMine) return -1;
           if (!aMine && bMine) return 1;
         }
 
         // 3. Potem priorytet (Pilne > Normalne > Niski)
-        const priorityDiff = Utils.getPriorityOrder(a.priority) - Utils.getPriorityOrder(b.priority);
+        const priorityDiff =
+          Utils.getPriorityOrder(a.priority) -
+          Utils.getPriorityOrder(b.priority);
         if (priorityDiff !== 0) return priorityDiff;
 
         // 4. Na końcu kolejność ręczna (sort_order)
@@ -1992,7 +2016,9 @@
       };
 
       const pending = state.tasks.filter(
-        (t) => getEffectiveStatus(t) === "pending" || getEffectiveStatus(t) === "paused"
+        (t) =>
+          getEffectiveStatus(t) === "pending" ||
+          getEffectiveStatus(t) === "paused"
       ).length;
       const inProgress = state.tasks.filter(
         (t) => getEffectiveStatus(t) === "in_progress"
@@ -2055,12 +2081,12 @@
         taskDescription += `
                     <div class="task-route">
                         <span>📍 ${Utils.escapeHtml(
-          task.location_from || "?"
-        )}</span>
+                          task.location_from || "?"
+                        )}</span>
                         <span class="task-route-arrow">→</span>
                         <span>📍 ${Utils.escapeHtml(
-          task.location_to || "?"
-        )}</span>
+                          task.location_to || "?"
+                        )}</span>
                     </div>
                 `;
       }
@@ -2108,14 +2134,15 @@
 
         driversHtml = `
                     <span class="task-meta-item" title="${Utils.escapeHtml(
-          driversList
-        )}">
+                      driversList
+                    )}">
                         <span>${icon}</span>
                         <span>${Utils.escapeHtml(driversList)}</span>
-                        ${label
-            ? `<span class="task-drivers-badge">${label}</span>`
-            : ""
-          }
+                        ${
+                          label
+                            ? `<span class="task-drivers-badge">${label}</span>`
+                            : ""
+                        }
                     </span>
                 `;
       }
@@ -2164,40 +2191,50 @@
       }
 
       return `
-                <div class="task-card priority-${task.priority} status-${task.status
-        } ${isLocked ? "task-locked" : ""}" 
+                <div class="task-card priority-${task.priority} status-${
+        task.status
+      } ${isLocked ? "task-locked" : ""}" 
                      data-id="${task.id}">
                     <div class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-          task.status
-        )} ${Utils.getStatusLabel(task.status)}
+                          task.status
+                        )} ${Utils.getStatusLabel(task.status)}
                     </div>
                     
                     <div class="task-header">
                         <div class="task-badges">
-                            <span class="task-type-badge type-${task.task_type
-        }">
+                            <span class="task-type-badge type-${
+                              task.task_type
+                            }">
                                 ${Utils.getTaskTypeIcon(
-          task.task_type
-        )} ${Utils.getTaskTypeLabel(task.task_type)}
+                                  task.task_type
+                                )} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
-                            <span class="task-priority-badge priority-${task.priority
-        }">
+                            <span class="task-priority-badge priority-${
+                              task.priority
+                            }">
                                 ${Utils.getPriorityIcon(
-          task.priority
-        )} ${Utils.getPriorityLabel(task.priority)}
+                                  task.priority
+                                )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
                         <div class="task-creator-info" style="font-size: 0.8em; color: var(--text-secondary); margin-top: 4px;">
-                            ${task.creator_name ? `Zlecił: <strong>${Utils.escapeHtml(task.creator_name)}</strong>` : ''}
+                            ${
+                              task.creator_name
+                                ? `Zlecił: <strong>${Utils.escapeHtml(
+                                    task.creator_name
+                                  )}</strong>`
+                                : ""
+                            }
                         </div>
                     </div>
                     
-                    <div class="task-body" data-action="details" data-id="${task.id
-        }">
+                    <div class="task-body" data-action="details" data-id="${
+                      task.id
+                    }">
                         <div class="task-title">${Utils.escapeHtml(
-          task.description
-        )}</div>
+                          task.description
+                        )}</div>
                         <div class="task-description">
                             ${taskDescription}
                             ${materialHtml}
@@ -2207,17 +2244,18 @@
                     
                     <div class="task-footer">
                         <div class="task-meta">
-                            ${task.scheduled_time
-          ? `
+                            ${
+                              task.scheduled_time
+                                ? `
                                 <span class="task-meta-item">
                                     <span>🕐</span>
                                     <span>${Utils.formatTime(
-            task.scheduled_time
-          )}</span>
+                                      task.scheduled_time
+                                    )}</span>
                                 </span>
                             `
-          : ""
-        }
+                                : ""
+                            }
                             ${driversHtml}
                         </div>
                         <div class="task-actions">
@@ -2311,12 +2349,14 @@
               this.renderTasks();
               Toast.success("Zadanie oznaczone jako zakończone! 🎉");
             }
-          ).then(() => {
-            // Po faktycznym zakończeniu sync, możemy odświeżyć żeby sprawdzić "partial"
-            this.loadTasks(true);
-          }).finally(() => {
-            this._completingTask = false;
-          });
+          )
+            .then(() => {
+              // Po faktycznym zakończeniu sync, możemy odświeżyć żeby sprawdzić "partial"
+              this.loadTasks(true);
+            })
+            .finally(() => {
+              this._completingTask = false;
+            });
         },
         "Zakończ",
         false
@@ -2373,7 +2413,8 @@
       Utils.$("#join-task-id").value = taskId;
       Utils.$(
         "#join-task-message"
-      ).textContent = `Czy chcesz dołączyć do zadania "${task?.description || ""
+      ).textContent = `Czy chcesz dołączyć do zadania "${
+        task?.description || ""
       }" i pomagać przy jego realizacji?`;
       Modal.open("modal-join-task");
     },
@@ -2383,13 +2424,9 @@
       Notifications.markRelatedRead(taskId);
       Modal.close("modal-join-task");
 
-      Sync.enqueue(
-        "joinTask",
-        { taskId, userId: state.currentUser.id },
-        () => {
-          Toast.success("Dołączyłeś do zadania! 👥");
-        }
-      ).then(() => {
+      Sync.enqueue("joinTask", { taskId, userId: state.currentUser.id }, () => {
+        Toast.success("Dołączyłeś do zadania! 👥");
+      }).then(() => {
         this.loadTasks(true);
       });
     },
@@ -2452,13 +2489,9 @@
       Toast.success("Zapisano! 📝");
 
       // Sync w tle
-      Sync.enqueue(
-        "createTaskLog",
-        { taskId, logData },
-        () => {
-          // Możemy tu dodać optymistyczne dodanie logu do state.tasks[id].logs jeśli chcemy
-        }
-      ).then(() => {
+      Sync.enqueue("createTaskLog", { taskId, logData }, () => {
+        // Możemy tu dodać optymistyczne dodanie logu do state.tasks[id].logs jeśli chcemy
+      }).then(() => {
         this.loadTasks(true); // silent refresh
       });
 
@@ -2480,7 +2513,8 @@
       const content = Utils.$("#task-detail-content");
       const isDriver = state.currentUser.role === "driver";
       const isMyTask = task.assigned_to === state.currentUser.id;
-      const isJoined = task.additional_drivers &&
+      const isJoined =
+        task.additional_drivers &&
         task.additional_drivers.some((d) => d.id === state.currentUser.id);
       const isParticipating = isMyTask || isJoined;
 
@@ -2490,14 +2524,14 @@
                     <div class="task-detail-row">
                         <span class="task-detail-label">Skąd</span>
                         <span class="task-detail-value">📍 ${Utils.escapeHtml(
-          task.location_from || "-"
-        )}</span>
+                          task.location_from || "-"
+                        )}</span>
                     </div>
                     <div class="task-detail-row">
                         <span class="task-detail-label">Dokąd</span>
                         <span class="task-detail-value">📍 ${Utils.escapeHtml(
-          task.location_to || "-"
-        )}</span>
+                          task.location_to || "-"
+                        )}</span>
                     </div>
                 `;
       } else {
@@ -2505,8 +2539,8 @@
                     <div class="task-detail-row">
                         <span class="task-detail-label">Dział</span>
                         <span class="task-detail-value">🏢 ${Utils.escapeHtml(
-          task.department || "-"
-        )}</span>
+                          task.department || "-"
+                        )}</span>
                     </div>
                 `;
       }
@@ -2517,33 +2551,35 @@
                     <div class="task-logs-section">
                         <h4>Historia i uwagi</h4>
                         ${task.logs
-            .map(
-              (log) => `
+                          .map(
+                            (log) => `
                             <div class="task-log-item log-${log.log_type}">
                                 <span class="task-log-icon">${Utils.getLogTypeIcon(
-                log.log_type
-              )}</span>
+                                  log.log_type
+                                )}</span>
                                 <div class="task-log-content">
                                     <div class="task-log-message">
-                                        ${log.log_type === "delay"
-                  ? `<strong>${Utils.getDelayReasonLabel(
-                    log.delay_reason
-                  )}</strong> (${log.delay_minutes || 0
-                  } min)<br>`
-                  : ""
-                }
+                                        ${
+                                          log.log_type === "delay"
+                                            ? `<strong>${Utils.getDelayReasonLabel(
+                                                log.delay_reason
+                                              )}</strong> (${
+                                                log.delay_minutes || 0
+                                              } min)<br>`
+                                            : ""
+                                        }
                                         ${Utils.escapeHtml(log.message || "")}
                                     </div>
                                                                         <div class="task-log-meta">
                                         ${Utils.escapeHtml(
-                  log.user_name || "Nieznany"
-                )} • ${Utils.formatTime(log.created_at)}
+                                          log.user_name || "Nieznany"
+                                        )} • ${Utils.formatTime(log.created_at)}
                                     </div>
                                 </div>
                             </div>
                         `
-            )
-            .join("")}
+                          )
+                          .join("")}
                     </div>
                 `;
       }
@@ -2580,7 +2616,10 @@
                             </button>
                         </div>
                     `;
-        } else if (task.status === "in_progress" && (task.has_completed || !isParticipating)) {
+        } else if (
+          task.status === "in_progress" &&
+          (task.has_completed || !isParticipating)
+        ) {
           actionsHtml = `
                         <div class="task-detail-actions">
                             <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.openJoinModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
@@ -2606,75 +2645,81 @@
                 <div class="task-detail-header">
                     <span class="task-type-badge type-${task.task_type}">
                         ${Utils.getTaskTypeIcon(
-        task.task_type
-      )} ${Utils.getTaskTypeLabel(task.task_type)}
+                          task.task_type
+                        )} ${Utils.getTaskTypeLabel(task.task_type)}
                     </span>
                     <span class="task-priority-badge priority-${task.priority}">
                         ${Utils.getPriorityIcon(
-        task.priority
-      )} ${Utils.getPriorityLabel(task.priority)}
+                          task.priority
+                        )} ${Utils.getPriorityLabel(task.priority)}
                     </span>
                     <span class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-        task.status
-      )} ${Utils.getStatusLabel(task.status)}
+                          task.status
+                        )} ${Utils.getStatusLabel(task.status)}
                     </span>
                 </div>
                 
                 <h3 class="task-detail-title">${Utils.escapeHtml(
-        task.description
-      )}</h3>
+                  task.description
+                )}</h3>
                 
                 <div class="task-detail-section">
                     <h4>Szczegóły</h4>
                     ${locationInfo}
-                    ${task.material
-          ? `
+                    ${
+                      task.material
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Materiał</span>
                             <span class="task-detail-value">📦 ${Utils.escapeHtml(
-            task.material
-          )}</span>
+                              task.material
+                            )}</span>
                         </div>
                     `
-          : ""
-        }
+                        : ""
+                    }
                     <div class="task-detail-row">
                         <span class="task-detail-label">Data</span>
                         <span class="task-detail-value">📅 ${Utils.formatDate(
-          task.scheduled_date
-        )}</span>
+                          task.scheduled_date
+                        )}</span>
                     </div>
-                    ${task.scheduled_time
-          ? `
+                    ${
+                      task.scheduled_time
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Godzina</span>
                             <span class="task-detail-value">🕐 ${Utils.formatTime(
-            task.scheduled_time
-          )}</span>
+                              task.scheduled_time
+                            )}</span>
                         </div>
                     `
-          : ""
-        }
-                    ${task.assigned_name
-          ? `
+                        : ""
+                    }
+                    ${
+                      task.assigned_name
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Przypisany</span>
                             <span class="task-detail-value">👤 ${Utils.escapeHtml(
-            task.assigned_name
-          )}</span>
+                              task.assigned_name
+                            )}</span>
                         </div>
                     `
-          : ""
-        }
+                        : ""
+                    }
                     <div class="task-detail-row">
                         <span class="task-detail-label">Zlecił</span>
-                        <span class="task-detail-value">👔 ${Utils.escapeHtml(task.creator_name || 'System')}</span>
+                        <span class="task-detail-value">👔 ${Utils.escapeHtml(
+                          task.creator_name || "System"
+                        )}</span>
                     </div>
                 </div>
                 
-                ${task.notes
-          ? `
+                ${
+                  task.notes
+                    ? `
                     <div class="task-detail-section">
                         <h4>Uwagi</h4>
                         <div class="task-notes-preview">
@@ -2683,8 +2728,8 @@
                         </div>
                     </div>
                 `
-          : ""
-        }
+                    : ""
+                }
                 
                 ${logsHtml}
                 ${actionsHtml}
@@ -2916,27 +2961,27 @@
 
       // --- OPTIMISTIC UI UPDATE ---
       const optimisticTask = { ...data };
-      
+
       // Setup Defaults for preview
       if (!isEdit) {
-         optimisticTask.id = "temp-" + Date.now();
-         optimisticTask.status = "pending";
-         optimisticTask.creator_name = state.currentUser.name;
-         optimisticTask.created_by = state.currentUser.id;
+        optimisticTask.id = "temp-" + Date.now();
+        optimisticTask.status = "pending";
+        optimisticTask.creator_name = state.currentUser.name;
+        optimisticTask.created_by = state.currentUser.id;
       } else {
-         // Preserve existing fields
-         const existing = state.tasks.find(t => t.id == taskId);
-         if (existing) {
-             Object.assign(optimisticTask, existing, data);
-         }
+        // Preserve existing fields
+        const existing = state.tasks.find((t) => t.id == taskId);
+        if (existing) {
+          Object.assign(optimisticTask, existing, data);
+        }
       }
 
       // 1. Update LOCAL State
       if (isEdit) {
-         const idx = state.tasks.findIndex(t => t.id == taskId);
-         if (idx !== -1) state.tasks[idx] = optimisticTask;
+        const idx = state.tasks.findIndex((t) => t.id == taskId);
+        if (idx !== -1) state.tasks[idx] = optimisticTask;
       } else {
-         state.tasks.push(optimisticTask);
+        state.tasks.push(optimisticTask);
       }
 
       // 2. Render Immediately
@@ -2944,11 +2989,11 @@
       Toast.success(isEdit ? "Zadanie zaktualizowane!" : "Zadanie dodane!");
 
       if (state.currentUser.role === "admin") {
-          AdminPanel.renderTasks(); // Assuming AdminPanel has renderTasks or similar
+        AdminPanel.renderTasks(); // Assuming AdminPanel has renderTasks or similar
       } else {
-          DriverPanel.sortTasks();
-          DriverPanel.updateStats();
-          DriverPanel.renderTasks();
+        DriverPanel.sortTasks();
+        DriverPanel.updateStats();
+        DriverPanel.renderTasks();
       }
 
       // 3. Sync with Server
@@ -2959,42 +3004,46 @@
         } else {
           result = await API.createTask(data);
           // Update temp ID with Real ID
-          const tempIdx = state.tasks.findIndex(t => t.id === optimisticTask.id);
+          const tempIdx = state.tasks.findIndex(
+            (t) => t.id === optimisticTask.id
+          );
           if (tempIdx !== -1) {
-             state.tasks[tempIdx].id = result.id;
-             // Update Cache with real ID
-             const dateKey = optimisticTask.scheduled_date;
-             if (state.taskCache[dateKey]) {
-                 state.taskCache[dateKey] = [...state.tasks]; // Update cache ref
-                 localStorage.setItem(CONFIG.STORAGE_KEYS.TASKS, JSON.stringify(state.taskCache));
-             }
+            state.tasks[tempIdx].id = result.id;
+            // Update Cache with real ID
+            const dateKey = optimisticTask.scheduled_date;
+            if (state.taskCache[dateKey]) {
+              state.taskCache[dateKey] = [...state.tasks]; // Update cache ref
+              localStorage.setItem(
+                CONFIG.STORAGE_KEYS.TASKS,
+                JSON.stringify(state.taskCache)
+              );
+            }
           }
         }
-        
+
         // Refresh full list quietly to ensure consistency
         if (state.currentUser.role === "admin") {
-           await AdminPanel.loadTasks(true);
+          await AdminPanel.loadTasks(true);
         } else {
-           await DriverPanel.loadTasks(true);
+          await DriverPanel.loadTasks(true);
         }
-
       } catch (error) {
         console.error("Optimistic update failed:", error);
         Toast.error("Błąd zapisu! Cofam zmiany...");
-        
+
         // ROLLBACK
         if (isEdit) {
-            // Need to reload original state - easiest is to fetch again
-            // Or undo change if we kept copy. 
-            // For now: Force reload
+          // Need to reload original state - easiest is to fetch again
+          // Or undo change if we kept copy.
+          // For now: Force reload
         } else {
-            state.tasks = state.tasks.filter(t => t.id !== optimisticTask.id);
+          state.tasks = state.tasks.filter((t) => t.id !== optimisticTask.id);
         }
-        
+
         if (state.currentUser.role === "admin") {
-            AdminPanel.loadTasks();
+          AdminPanel.loadTasks();
         } else {
-            DriverPanel.renderTasks();
+          DriverPanel.renderTasks();
         }
       } finally {
         this._submitting = false;
@@ -3042,7 +3091,9 @@
         });
 
         // 3. Sprawdzamy czy coś się zmieniło względem tego co wyświetliliśmy
-        const hasChanged = JSON.stringify(freshTasks) !== JSON.stringify(state.taskCache[targetDate]);
+        const hasChanged =
+          JSON.stringify(freshTasks) !==
+          JSON.stringify(state.taskCache[targetDate]);
 
         // Zapisz do cache
         state.taskCache[targetDate] = freshTasks;
@@ -3058,7 +3109,6 @@
 
         // 4. Pre-fetch sąsiednich dat w tle
         this.prefetchNeighboringDates();
-
       } catch (error) {
         if (!silent && !state.taskCache[targetDate]) {
           Toast.error("Nie udało się załadować zadań");
@@ -3075,7 +3125,10 @@
       [yesterday, tomorrow].forEach(async (date) => {
         if (!state.taskCache[date]) {
           try {
-            const tasks = await API.getTasks({ date, userId: state.currentUser.id });
+            const tasks = await API.getTasks({
+              date,
+              userId: state.currentUser.id,
+            });
             state.taskCache[date] = tasks;
           } catch (e) {
             // Ignorujemy
@@ -3106,7 +3159,9 @@
     },
 
     updateStats() {
-      const pending = state.tasks.filter((t) => t.status === "pending" || t.status === "paused").length;
+      const pending = state.tasks.filter(
+        (t) => t.status === "pending" || t.status === "paused"
+      ).length;
       const inProgress = state.tasks.filter(
         (t) => t.status === "in_progress"
       ).length;
@@ -3138,16 +3193,16 @@
       // Log removed
     },
 
-
     toggleViewMode() {
-      state.viewMode = state.viewMode === 'list' ? 'tiles' : 'list';
+      state.viewMode = state.viewMode === "list" ? "tiles" : "list";
       const list = Utils.$("#admin-tasks-list");
-      list.classList.toggle('view-list', state.viewMode === 'list');
+      list.classList.toggle("view-list", state.viewMode === "list");
 
       const btn = Utils.$("#admin-view-toggle-btn");
       if (btn) {
-        btn.innerHTML = state.viewMode === 'list' ? '📱' : '📝';
-        btn.title = state.viewMode === 'list' ? 'Widok kafelkowy' : 'Widok listy';
+        btn.innerHTML = state.viewMode === "list" ? "📱" : "📝";
+        btn.title =
+          state.viewMode === "list" ? "Widok kafelkowy" : "Widok listy";
       }
     },
 
@@ -3180,17 +3235,17 @@
 
       // Ensure view mode class is applied
       const btn = Utils.$("#admin-view-toggle-btn");
-      if (state.viewMode === 'list') {
-        tasksList.classList.add('view-list');
+      if (state.viewMode === "list") {
+        tasksList.classList.add("view-list");
         if (btn) {
-          btn.innerHTML = '📱';
-          btn.title = 'Widok kafelkowy';
+          btn.innerHTML = "📱";
+          btn.title = "Widok kafelkowy";
         }
       } else {
-        tasksList.classList.remove('view-list');
+        tasksList.classList.remove("view-list");
         if (btn) {
-          btn.innerHTML = '📝';
-          btn.title = 'Widok listy';
+          btn.innerHTML = "📝";
+          btn.title = "Widok listy";
         }
       }
 
@@ -3220,12 +3275,12 @@
         taskDescription = `
                     <div class="task-route">
                         <span>📍 ${Utils.escapeHtml(
-          task.location_from || "?"
-        )}</span>
+                          task.location_from || "?"
+                        )}</span>
                         <span class="task-route-arrow">→</span>
                         <span>📍 ${Utils.escapeHtml(
-          task.location_to || "?"
-        )}</span>
+                          task.location_to || "?"
+                        )}</span>
                     </div>
                 `;
       } else {
@@ -3233,8 +3288,8 @@
                     <div class="task-department">
                         <span>🏢</span>
                         <span>${Utils.escapeHtml(
-          task.department || "Nie określono"
-        )}</span>
+                          task.department || "Nie określono"
+                        )}</span>
                     </div>
                 `;
       }
@@ -3263,10 +3318,16 @@
         const label = allDrivers.length > 1 ? "Współdzielone" : "";
 
         driversHtml = `
-                    <span class="task-meta-item" title="${Utils.escapeHtml(driversList)}">
+                    <span class="task-meta-item" title="${Utils.escapeHtml(
+                      driversList
+                    )}">
                         <span>${icon}</span>
                         <span>${Utils.escapeHtml(driversList)}</span>
-                        ${label ? `<span class="task-drivers-badge">${label}</span>` : ""}
+                        ${
+                          label
+                            ? `<span class="task-drivers-badge">${label}</span>`
+                            : ""
+                        }
                     </span>
                 `;
       }
@@ -3275,7 +3336,9 @@
         ? `
                 <span class="task-meta-item" title="Utworzył">
                     <span>✏️</span>
-                    <span>${Utils.escapeHtml(task.creator_name)} (${Utils.formatTime(task.created_at)})</span>
+                    <span>${Utils.escapeHtml(
+                      task.creator_name
+                    )} (${Utils.formatTime(task.created_at)})</span>
                 </span>
             `
         : "";
@@ -3302,17 +3365,20 @@
       }
 
       return `
-                <div class="task-card priority-${task.priority} status-${task.status
-        }" 
+                <div class="task-card priority-${task.priority} status-${
+        task.status
+      }" 
                      data-id="${task.id}" 
-                     draggable="${state.isReorderMode &&
-        !isCompleted &&
-        !isInProgress &&
-        canEdit
-        }">
+                     draggable="${
+                       state.isReorderMode &&
+                       !isCompleted &&
+                       !isInProgress &&
+                       canEdit
+                     }">
                     
-                    ${state.isReorderMode && canEdit
-          ? `
+                    ${
+                      state.isReorderMode && canEdit
+                        ? `
                     <div class="task-drag-handle">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <circle cx="9" cy="6" r="2"/>
@@ -3323,45 +3389,50 @@
                             <circle cx="15" cy="18" r="2"/>
                         </svg>
                     </div>`
-          : ""
-        }
+                        : ""
+                    }
                     
                     <div class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-          task.status
-        )} ${Utils.getStatusLabel(task.status)}
+                          task.status
+                        )} ${Utils.getStatusLabel(task.status)}
                     </div>
                     
                     <div class="task-header">
                         <div class="task-badges">
                             <span class="task-order-badge">#${order}</span>
-                            <span class="task-type-badge type-${task.task_type
-        }">
+                            <span class="task-type-badge type-${
+                              task.task_type
+                            }">
                                 ${Utils.getTaskTypeIcon(
-          task.task_type
-        )} ${Utils.getTaskTypeLabel(task.task_type)}
+                                  task.task_type
+                                )} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
-                            <span class="task-priority-badge priority-${task.priority
-        }" 
-                                  data-action="${canEdit ? "change-priority" : ""
-        }" data-id="${task.id}" 
+                            <span class="task-priority-badge priority-${
+                              task.priority
+                            }" 
+                                  data-action="${
+                                    canEdit ? "change-priority" : ""
+                                  }" data-id="${task.id}" 
                                   title="Zmień priorytet" 
-                                  style="${canEdit
-          ? "cursor:pointer"
-          : "cursor:default"
-        }">
+                                  style="${
+                                    canEdit
+                                      ? "cursor:pointer"
+                                      : "cursor:default"
+                                  }">
                                 ${Utils.getPriorityIcon(
-          task.priority
-        )} ${Utils.getPriorityLabel(task.priority)}
+                                  task.priority
+                                )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
                     </div>
                     
-                    <div class="task-body" data-action="details" data-id="${task.id
-        }">
+                    <div class="task-body" data-action="details" data-id="${
+                      task.id
+                    }">
                         <div class="task-title">${Utils.escapeHtml(
-          task.description
-        )}</div>
+                          task.description
+                        )}</div>
                         <div class="task-description">
                             ${taskDescription}
                             ${materialHtml}
@@ -3370,17 +3441,18 @@
                     
                     <div class="task-footer">
                         <div class="task-meta">
-                            ${task.scheduled_time
-          ? `
+                            ${
+                              task.scheduled_time
+                                ? `
                                 <span class="task-meta-item">
                                     <span>🕐</span>
                                     <span>${Utils.formatTime(
-            task.scheduled_time
-          )}</span>
+                                      task.scheduled_time
+                                    )}</span>
                                 </span>
                             `
-          : ""
-        }
+                                : ""
+                            }
                             ${driversHtml}
                             ${creatorHtml}
                         </div>
@@ -3740,7 +3812,8 @@
 
       Utils.hide(emptyState);
 
-      const canManageUsers = state.currentUser.id === 1 || state.currentUser.perm_users;
+      const canManageUsers =
+        state.currentUser.id === 1 || state.currentUser.perm_users;
       const renderActions = (userId) => {
         if (!canManageUsers) return "";
         return `
@@ -3759,18 +3832,20 @@
                       <div class="user-details">
                           <h3>${Utils.escapeHtml(user.name)}</h3>
                           <p class="user-role text-muted">
-                              ${user.role === "admin"
-                ? "👔 Kierownik"
-                : "🚗 Kierowca"
-              }
-                              ${user.role === "admin"
-                ? `<br><small style="font-size: 0.8em; opacity: 0.8;">
+                              ${
+                                user.role === "admin"
+                                  ? "👔 Kierownik"
+                                  : "🚗 Kierowca"
+                              }
+                              ${
+                                user.role === "admin"
+                                  ? `<br><small style="font-size: 0.8em; opacity: 0.8;">
                                   ${user.perm_reports ? "📊" : ""} 
                                   ${user.perm_users ? "👥" : ""} 
                                   ${user.perm_locations ? "📍" : ""}
                               </small>`
-                : ""
-              }
+                                  : ""
+                              }
                           </p>
                       </div>
                   </div>
@@ -3981,62 +4056,73 @@
     },
 
     openAddLocationModal() {
-        Utils.$("#location-id").value = "";  // Hidden ID field needed in HTML
-        Utils.$("#location-name").value = "";
-        Utils.$("#location-map-x").value = "";
-        Utils.$("#location-map-y").value = "";
-        
-        // Reset radio
-        const locRadio = document.querySelector('input[name="location-type"][value="location"]');
-        if (locRadio) locRadio.checked = true;
+      Utils.$("#location-id").value = ""; // Hidden ID field needed in HTML
+      Utils.$("#location-name").value = "";
+      Utils.$("#location-map-x").value = "";
+      Utils.$("#location-map-y").value = "";
 
-        Utils.$("#modal-location h2").textContent = "Dodaj lokalizację";
-        Modal.open("modal-location");
+      // Reset radio
+      const locRadio = document.querySelector(
+        'input[name="location-type"][value="location"]'
+      );
+      if (locRadio) locRadio.checked = true;
+
+      Utils.$("#modal-location h2").textContent = "Dodaj lokalizację";
+      Modal.open("modal-location");
     },
 
     openEditLocationModal(id) {
-        const item = [...state.locations, ...state.departments].find(l => l.id == id);
-        if (!item) return;
+      const item = [...state.locations, ...state.departments].find(
+        (l) => l.id == id
+      );
+      if (!item) return;
 
-        Utils.$("#location-id").value = item.id;
-        Utils.$("#location-name").value = item.name;
-        Utils.$("#location-map-x").value = item.map_x || "";
-        Utils.$("#location-map-y").value = item.map_y || "";
+      Utils.$("#location-id").value = item.id;
+      Utils.$("#location-name").value = item.name;
+      Utils.$("#location-map-x").value = item.map_x || "";
+      Utils.$("#location-map-y").value = item.map_y || "";
 
-        // Set radio
-        const radio = document.querySelector(`input[name="location-type"][value="${item.type}"]`);
-        if (radio) radio.checked = true;
+      // Set radio
+      const radio = document.querySelector(
+        `input[name="location-type"][value="${item.type}"]`
+      );
+      if (radio) radio.checked = true;
 
-        Utils.$("#modal-location h2").textContent = "Edytuj lokalizację";
-        Modal.open("modal-location");
+      Utils.$("#modal-location h2").textContent = "Edytuj lokalizację";
+      Modal.open("modal-location");
     },
-    
+
     // Callback z MapManager
     onMapPick(coords) {
-        Utils.$("#location-map-x").value = coords.x;
-        Utils.$("#location-map-y").value = coords.y;
-        
-        // Jeśli modal lokalizacji jest zamknięty (bo mapa go przykryła lub zamknęliśmy), otwórz go
-        // Ale normalnie MapManager zamyka mapę i my wracamy do modala lokalizacji
-        Modal.open("modal-location"); 
+      Utils.$("#location-map-x").value = coords.x;
+      Utils.$("#location-map-y").value = coords.y;
+
+      // Jeśli modal lokalizacji jest zamknięty (bo mapa go przykryła lub zamknęliśmy), otwórz go
+      // Ale normalnie MapManager zamyka mapę i my wracamy do modala lokalizacji
+      Modal.open("modal-location");
     },
 
     initLocationListeners() {
-        Utils.$("#add-location-btn")?.addEventListener("click", () => this.openAddLocationModal());
-        
-        Utils.$("#location-form")?.addEventListener("submit", (e) => this.handleLocationSubmit(e));
-        
-        Utils.$("#pick-location-btn")?.addEventListener("click", () => {
-             // Tymczasowo zamknij modal locations żeby widzieć mapę
-             Modal.close("modal-location");
-             MapManager.open('pick');
-        });
+      Utils.$("#add-location-btn")?.addEventListener("click", () =>
+        this.openAddLocationModal()
+      );
+
+      Utils.$("#location-form")?.addEventListener("submit", (e) =>
+        this.handleLocationSubmit(e)
+      );
+
+      Utils.$("#pick-location-btn")?.addEventListener("click", () => {
+        // Tymczasowo zamknij modal locations żeby widzieć mapę
+        Modal.close("modal-location");
+        MapManager.open("pick");
+      });
     },
 
     renderLocations() {
       const locationsList = Utils.$("#locations-list");
       const departmentsList = Utils.$("#departments-list");
-      const canManageLocations = state.currentUser.id === 1 || state.currentUser.perm_locations;
+      const canManageLocations =
+        state.currentUser.id === 1 || state.currentUser.perm_locations;
 
       const renderDeleteBtn = (id) =>
         canManageLocations
@@ -4081,6 +4167,11 @@
           .join("") || '<p class="text-muted text-center">Brak działów</p>';
 
       if (canManageLocations) {
+        Utils.$$('[data-action="edit-location"]').forEach((btn) => {
+          btn.addEventListener("click", () =>
+            this.openEditLocationModal(btn.dataset.id)
+          );
+        });
         Utils.$$('[data-action="delete-location"]').forEach((btn) => {
           btn.addEventListener("click", () =>
             this.deleteLocation(btn.dataset.id)
@@ -4114,11 +4205,18 @@
 
       // Tymczasowo dodaj do UI
       const tempId = Date.now(); // Tymczasowe ID
-      
+
       const mapX = Utils.$("#location-map-x").value;
       const mapY = Utils.$("#location-map-y").value;
 
-      const newItem = { id: tempId, name, type, active: 1, map_x: mapX, map_y: mapY };
+      const newItem = {
+        id: tempId,
+        name,
+        type,
+        active: 1,
+        map_x: mapX,
+        map_y: mapY,
+      };
 
       if (type === "department") {
         state.departments.push(newItem);
@@ -4134,27 +4232,36 @@
         const id = Utils.$("#location-id").value; // Get ID from hidden field
 
         if (id) {
-             // UPDATE
-             result = await API.updateLocation(id, { name, type, map_x: newItem.map_x, map_y: newItem.map_y }); // Assuming API.updateLocation exists
-             newItem.id = parseInt(id); // Ensure ID is preserved
-             
-             // Update local state (replace old item)
-             state.locations = state.locations.filter(l => l.id != id);
-             state.departments = state.departments.filter(d => d.id != id);
-             if (type === "department") state.departments.push(newItem);
-             else state.locations.push(newItem);
+          // UPDATE
+          result = await API.updateLocation(id, {
+            name,
+            type,
+            map_x: newItem.map_x,
+            map_y: newItem.map_y,
+          }); // Assuming API.updateLocation exists
+          newItem.id = parseInt(id); // Ensure ID is preserved
 
+          // Update local state (replace old item)
+          state.locations = state.locations.filter((l) => l.id != id);
+          state.departments = state.departments.filter((d) => d.id != id);
+          if (type === "department") state.departments.push(newItem);
+          else state.locations.push(newItem);
         } else {
-             // CREATE
-             result = await API.createLocation({ name, type, map_x: newItem.map_x, map_y: newItem.map_y });
-                // Zaktualizuj prawdziwe ID
-                if (type === "department") {
-                  const item = state.departments.find((d) => d.id === tempId);
-                  if (item) item.id = result.id;
-                } else {
-                  const item = state.locations.find((l) => l.id === tempId);
-                  if (item) item.id = result.id;
-                }
+          // CREATE
+          result = await API.createLocation({
+            name,
+            type,
+            map_x: newItem.map_x,
+            map_y: newItem.map_y,
+          });
+          // Zaktualizuj prawdziwe ID
+          if (type === "department") {
+            const item = state.departments.find((d) => d.id === tempId);
+            if (item) item.id = result.id;
+          } else {
+            const item = state.locations.find((l) => l.id === tempId);
+            if (item) item.id = result.id;
+          }
         }
       } catch (error) {
         // Revert
@@ -4231,7 +4338,7 @@
       const totalTasks = data.drivers.reduce((sum, d) => sum + d.tasksCount, 0);
       const avgKpi = Math.round(
         data.drivers.reduce((sum, d) => sum + d.kpi, 0) /
-        (data.drivers.length || 1)
+          (data.drivers.length || 1)
       );
 
       statsContainer.innerHTML = `
@@ -4274,16 +4381,22 @@
                             </button>
                             <div id="details-${index}" class="details-container">
                                 ${driver.details
-                  .map(
-                    (d) => `
+                                  .map(
+                                    (d) => `
                                     <div class="details-row type-${d.type}">
-                                        <span class="details-time">${d.time} - ${d.endTime || '?'}</span>
-                                        <span class="details-desc">${Utils.escapeHtml(d.desc)}</span>
-                                        <span class="details-duration">${d.duration}m</span>
+                                        <span class="details-time">${
+                                          d.time
+                                        } - ${d.endTime || "?"}</span>
+                                        <span class="details-desc">${Utils.escapeHtml(
+                                          d.desc
+                                        )}</span>
+                                        <span class="details-duration">${
+                                          d.duration
+                                        }m</span>
                                     </div>
                                 `
-                  )
-                  .join("")}
+                                  )
+                                  .join("")}
                             </div>
                         `;
             }
@@ -4298,40 +4411,45 @@
                                 <div class="user-avatar">🚗</div>
                                 <div>
                                     <h3>${Utils.escapeHtml(driver.name)}</h3>
-                                    <span class="text-muted" style="font-size:12px">KPI: ${driver.kpi
-            }%</span>
+                                    <span class="text-muted" style="font-size:12px">KPI: ${
+                                      driver.kpi
+                                    }%</span>
                                 </div>
                             </div>
-                            <div class="report-driver-kpi ${kpiColor}">${driver.kpi
-            }%</div>
+                            <div class="report-driver-kpi ${kpiColor}">${
+            driver.kpi
+          }%</div>
                         </div>
 
                         <div class="kpi-grid">
                             <div class="kpi-box">
                                 <div class="kpi-value">${this.formatDuration(
-              driver.workTime
-            )}</div>
+                                  driver.workTime
+                                )}</div>
                                 <div class="kpi-label">Praca</div>
                             </div>
                             <div class="kpi-box">
                                 <div class="kpi-value" style="color:var(--danger)">${this.formatDuration(
-              driver.delayTime
-            )}</div>
+                                  driver.delayTime
+                                )}</div>
                                 <div class="kpi-label">Przestoje</div>
                             </div>
                             <div class="kpi-box">
-                                <div class="kpi-value">${driver.tasksCount
-            }</div>
+                                <div class="kpi-value">${
+                                  driver.tasksCount
+                                }</div>
                                 <div class="kpi-label">Zadań</div>
                             </div>
                         </div>
 
-                        <div class="timeline-container ${driver.isSingleDay ? "" : "bar-chart"
-            }" 
-                             style="${driver.isSingleDay
-              ? ""
-              : "height:150px; overflow-x:auto; overflow-y:hidden;"
-            }">
+                        <div class="timeline-container ${
+                          driver.isSingleDay ? "" : "bar-chart"
+                        }" 
+                             style="${
+                               driver.isSingleDay
+                                 ? ""
+                                 : "height:150px; overflow-x:auto; overflow-y:hidden;"
+                             }">
                             ${chartHtml}
                         </div>
                         ${labelsHtml}
@@ -4369,25 +4487,26 @@
       return `
                 <div style="display:flex; gap:10px; height:100%; align-items:flex-end; padding:10px;">
                     ${days
-          .map(
-            (d) => `
+                      .map(
+                        (d) => `
                         <div style="flex:1; display:flex; flex-direction:column; align-items:center; min-width:30px;">
                             <div style="font-size:10px; margin-bottom:4px; font-weight:bold;">${this.formatDuration(
-              d.minutes
-            )}</div>
+                              d.minutes
+                            )}</div>
                             <div style="width:100%; background:var(--bg-tertiary); height:80px; border-radius:4px; position:relative; overflow:hidden;">
-                                <div style="position:absolute; bottom:0; left:0; right:0; height:${d.percent
-              }%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(
-                d.date
-              )}"></div>
+                                <div style="position:absolute; bottom:0; left:0; right:0; height:${
+                                  d.percent
+                                }%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(
+                          d.date
+                        )}"></div>
                             </div>
                             <div style="font-size:9px; margin-top:4px; color:var(--text-secondary); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${Utils.formatDateShort(
-                d.date
-              )}</div>
+                              d.date
+                            )}</div>
                         </div>
                     `
-          )
-          .join("")}
+                      )
+                      .join("")}
                 </div>
             `;
     },
@@ -4399,7 +4518,7 @@
       let minHour = 6;
       let maxHour = 18;
 
-      events.forEach(e => {
+      events.forEach((e) => {
         const s = new Date(e.start).getHours();
         const end = new Date(e.end);
         const en = end.getHours() + (end.getMinutes() > 0 ? 1 : 0);
@@ -4446,14 +4565,18 @@
       // Generowanie markerów godzin
       let markersHtml = '<div class="timeline-markers">';
       for (let h = startHour; h <= endHour; h++) {
-        const left = ((h - startHour) * 60 / totalMinutes) * 100;
+        const left = (((h - startHour) * 60) / totalMinutes) * 100;
         markersHtml += `
           <div class="timeline-marker" style="left: ${left}%">
-            ${h % 2 === 0 || totalMinutes < 720 ? `<div class="timeline-time">${h}:00</div>` : ''}
+            ${
+              h % 2 === 0 || totalMinutes < 720
+                ? `<div class="timeline-time">${h}:00</div>`
+                : ""
+            }
           </div>
         `;
       }
-      markersHtml += '</div>';
+      markersHtml += "</div>";
 
       // Renderowanie pasków
       const barsHtml = rows
@@ -4470,7 +4593,7 @@
               // Uważaj na daty - jeśli event.start ma inną datę niż dayStart, musimy normalizować
               const startH = start.getHours();
               const startM = start.getMinutes();
-              const eventStartMins = (startH * 60) + startM;
+              const eventStartMins = startH * 60 + startM;
               const dayStartMins = startHour * 60;
 
               const startDiff = eventStartMins - dayStartMins;
@@ -4488,8 +4611,12 @@
 
               return `
                         <div class="timeline-bar ${event.type}" 
-                             style="left: ${left}%; width: ${width}%; height: ${height - 2}%; top: ${top}%;"
-                             data-title="${Utils.escapeHtml(event.desc)} (${Math.round(duration)} min)">
+                             style="left: ${left}%; width: ${width}%; height: ${
+                height - 2
+              }%; top: ${top}%;"
+                             data-title="${Utils.escapeHtml(
+                               event.desc
+                             )} (${Math.round(duration)} min)">
                         </div>
                     `;
             })
@@ -4560,18 +4687,18 @@
       Utils.$("#admin-view-toggle-btn")?.addEventListener("click", () =>
         this.toggleViewMode()
       );
-      Utils.$('#map-save-btn')?.addEventListener('click', () => {
-         this.savePickedLocation();
+      Utils.$("#map-save-btn")?.addEventListener("click", () => {
+        this.savePickedLocation();
       });
 
       // Driver Map Button
-      Utils.$('#driver-map-btn')?.addEventListener('click', () => {
-         MapManager.open('view');
+      Utils.$("#driver-map-btn")?.addEventListener("click", () => {
+        MapManager.open("view");
       });
 
       // Admin Map Button
-      Utils.$('#admin-map-btn')?.addEventListener('click', () => {
-         MapManager.open('view');
+      Utils.$("#admin-map-btn")?.addEventListener("click", () => {
+        MapManager.open("view");
       });
 
       Utils.$("#save-reorder-btn")?.addEventListener("click", () =>
@@ -4604,7 +4731,7 @@
 
       // Locations
       Utils.$("#add-location-btn")?.addEventListener("click", () =>
-        Modal.open("modal-location")
+        this.openAddLocationModal()
       );
       Utils.$("#location-form")?.addEventListener("submit", (e) =>
         this.handleLocationSubmit(e)
@@ -4701,8 +4828,8 @@
         if (event.data.type === "PUSH_RECEIVED") {
           Toast.info(
             event.data.data?.message ||
-            event.data.data?.title ||
-            "Nowe powiadomienie"
+              event.data.data?.title ||
+              "Nowe powiadomienie"
           );
           Notifications.load();
           if (state.currentUser?.role === "driver") {
@@ -4788,15 +4915,14 @@
               serviceWorkerPath: "/OneSignalSDKWorker.js",
               serviceWorkerParam: { scope: "/" },
             }).catch((err) => {
-               console.warn("⚠️ OneSignal Init Warning:", err);
+              console.warn("⚠️ OneSignal Init Warning:", err);
             });
 
-             if (!OneSignal) {
-                 console.warn("OneSignal not loaded");
-                 resolve(false);
-                 return;
-             }
-
+            if (!OneSignal) {
+              console.warn("OneSignal not loaded");
+              resolve(false);
+              return;
+            }
 
             OneSignalService.initialized = true;
 
@@ -4811,7 +4937,11 @@
                 Notifications.load();
 
                 // Pokaż tylko Toast
-                Toast.info(event.notification.body || event.notification.title || "Nowe powiadomienie");
+                Toast.info(
+                  event.notification.body ||
+                    event.notification.title ||
+                    "Nowe powiadomienie"
+                );
               }
             );
 
@@ -4840,7 +4970,6 @@
 
     async login(userId, role) {
       if (!this.initialized) {
-
         return;
       }
 
@@ -4868,8 +4997,6 @@
             role: role,
             user_id: externalId,
           });
-
-
         } catch (e) {
           console.error("❌ OneSignal Login Error:", e);
         }
