@@ -13,7 +13,8 @@
   <meta name="description" content="Hemarpol - Transport Tracker - System zarządzania transportem wewnętrznym" />
   <title>Hemarpol - Transport Tracker</title>
   <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <link rel="stylesheet" href="css/style.css?v=2.15" />
+  <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+  <link rel="stylesheet" href="css/style.css?v=2.16" />
   <link rel="icon"
     href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>" />
   <link rel="apple-touch-icon"
@@ -75,7 +76,7 @@
           </form>
         </div>
         <div class="login-footer">
-          <p>© 2026 Hemarpol - Transport Tracker by Creatiiivo 1.0.0 - beta</p>
+          <p>© 2026 Hemarpol - Transport Tracker by Creatiiivo v.1.0.0 beta</p>
           <div class="login-legal-links">
             <a href="#" id="open-terms-link">Regulamin</a>
             <span class="legal-separator">|</span>
@@ -1128,11 +1129,9 @@
   <!-- ========== TOAST CONTAINER ========== -->
   <div id="toast-container"></div>
 
-  <!-- ========== PULL TO REFRESH ========== -->
   <div id="pull-to-refresh" class="pull-to-refresh hidden">
     <div class="pull-spinner"></div>
     <span>Odśwież</span>
-  </div>
   </div>
 
     <div id="modal-map" class="modal hidden">
@@ -1157,7 +1156,7 @@
       </div>
     </div>
     
-  <script src="js/app.js?v=2.15"></script>
+  <script src="js/app.js?v=2.16"></script>
 </body>
 
 </html>

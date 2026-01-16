@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 1.1.0 - beta
+// Wersja 1.0.0 - beta
 // =============================================
 
 (function () {
@@ -482,36 +482,7 @@
       });
     },
 
-    async deleteRead() {
-      if (!state.currentUser) return;
-      if (this._deletingRead) return; // Blokada wielokrotnego klikania
 
-      const readNotifications = state.notifications.filter((n) => n.is_read);
-      const readCount = readNotifications.length;
-
-      if (readCount === 0) {
-        Toast.info("Brak przeczytanych powiadomień do usunięcia");
-        return;
-      }
-
-      this._deletingRead = true;
-
-      // Instant UI update
-      state.notifications = state.notifications.filter((n) => !n.is_read);
-      this.renderList();
-      Toast.success(`Usunięto ${readCount} przeczytanych`);
-
-      // Sync w tle
-      try {
-        await API.deleteReadNotifications(state.currentUser.id);
-      } catch (error) {
-        // Revert on error
-        await this.load();
-        Toast.error("Błąd synchronizacji");
-      } finally {
-        this._deletingRead = false;
-      }
-    },
 
     // REPORTS
     async getReports(period = "week") {
@@ -1036,6 +1007,38 @@
         state.unreadNotifications - related.length
       );
       this.updateBadge();
+    },
+
+    async deleteRead() {
+      if (!state.currentUser) return;
+      if (this._deletingRead) return; // Blokada wielokrotnego klikania
+
+      const readNotifications = state.notifications.filter((n) => n.is_read);
+      const readCount = readNotifications.length;
+
+      if (readCount === 0) {
+        Toast.info("Brak przeczytanych powiadomień do usunięcia");
+        return;
+      }
+
+      this._deletingRead = true;
+
+      // Instant UI update
+      state.notifications = state.notifications.filter((n) => !n.is_read);
+      state.unreadNotifications = state.notifications.filter(n => !n.is_read).length; // Recalculate unread just in case
+      this.renderList();
+      Toast.success(`Usunięto ${readCount} przeczytanych`);
+
+      // Sync w tle
+      try {
+        await API.deleteReadNotifications(state.currentUser.id);
+      } catch (error) {
+        // Revert on error
+        await this.load();
+        Toast.error("Błąd synchronizacji");
+      } finally {
+        this._deletingRead = false;
+      }
     },
 
     updateBadge() {
