@@ -694,7 +694,9 @@
         return;
       }
 
-      Utils.show(modal);
+      modal.classList.remove("hidden");
+      modal.classList.add("active");
+      
       this.openModals.push(modalId);
       document.body.style.overflow = "hidden";
 
@@ -710,7 +712,9 @@
       const modal = Utils.$(`#${modalId}`);
       if (!modal) return;
 
-      Utils.hide(modal);
+      modal.classList.remove("active");
+      modal.classList.add("hidden");
+      
       this.openModals = this.openModals.filter((id) => id !== modalId);
 
       if (this.openModals.length === 0) {
