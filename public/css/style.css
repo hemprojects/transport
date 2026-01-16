@@ -298,64 +298,176 @@ ol {
 /* =============================================
    6. LOADING SCREEN
    ============================================= */
+/* =============================================
+   6. LOADING SCREEN - PREMIUM
+   ============================================= */
 #screen-loading {
-  background: linear-gradient(135deg,
-      var(--primary) 0%,
-      var(--primary-dark) 100%);
+  background: linear-gradient(135deg, #000000 0%, #1c1c1e 100%);
   justify-content: center;
   align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Tło z efektem glow */
+#screen-loading::before {
+  content: "";
+  position: absolute;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(
+    circle,
+    rgba(0, 122, 255, 0.15) 0%,
+    transparent 60%
+  );
+  animation: glow-pulse 4s ease-in-out infinite;
+  pointer-events: none;
 }
 
 .loading-container {
   text-align: center;
-  color: #ffffff;
+  position: relative;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
-.loading-icon {
-  font-size: 80px;
-  margin-bottom: var(--spacing-lg);
-  animation: bounce 1s ease infinite;
+/* Kontener dla logo z pierścieniami */
+.premium-loader-wrapper {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: var(--spacing-xl);
+}
+
+/* Pierścień zewnętrzny */
+.loader-ring-1 {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-top-color: var(--primary);
+  animation: spin-right 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  box-shadow: 0 0 20px rgba(0, 122, 255, 0.3);
+}
+
+/* Pierścień środkowy */
+.loader-ring-2 {
+  position: absolute;
+  width: 80%;
+  height: 80%;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-right-color: var(--info);
+  animation: spin-left 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Pierścień wewnętrzny */
+.loader-ring-3 {
+  position: absolute;
+  width: 60%;
+  height: 60%;
+  border-radius: 50%;
+  border: 3px solid transparent;
+  border-bottom-color: var(--primary-light);
+  animation: spin-right 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Logo w środku */
+.loading-icon-premium {
+  font-size: 40px;
+  animation: pulse-logo 2s ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(255, 255, 255, 0.3));
 }
 
 .loading-title {
-  font-size: var(--font-size-3xl);
-  font-weight: var(--font-weight-bold);
-  margin-bottom: var(--spacing-sm);
+  font-size: var(--font-size-2xl);
+  font-weight: 700;
+  margin-bottom: var(--spacing-xs);
   color: #ffffff;
+  letter-spacing: 0.5px;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
 
 .loading-subtitle {
-  font-size: var(--font-size-md);
-  opacity: 0.8;
-  margin-bottom: var(--spacing-xl);
-  color: #ffffff;
+  font-size: var(--font-size-sm);
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 2px;
 }
 
-.loading-spinner {
-  width: 40px;
-  height: 40px;
-  margin: 0 auto;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: #ffffff;
+/* Mały loader do list */
+.loader-inline-wrapper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  color: var(--text-secondary);
+}
+
+.loader-inline {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--bg-tertiary);
+  border-top-color: var(--primary);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin-right 0.8s linear infinite;
+  margin-bottom: var(--spacing-sm);
 }
 
-@keyframes spin {
-  to {
+/* Animacje GPU Optimized */
+@keyframes spin-right {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
     transform: rotate(360deg);
   }
 }
 
-@keyframes bounce {
-
-  0%,
-  100% {
-    transform: translateY(0);
+@keyframes spin-left {
+  0% {
+    transform: rotate(0deg);
   }
+  100% {
+    transform: rotate(-360deg);
+  }
+}
 
+@keyframes pulse-logo {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
   50% {
-    transform: translateY(-10px);
+    transform: scale(1.05);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+}
+
+@keyframes glow-pulse {
+  0% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
   }
 }
 
@@ -363,9 +475,11 @@ ol {
    7. LOGIN SCREEN - NAPRAWIONE
    ============================================= */
 #screen-login {
-  background: linear-gradient(135deg,
-      var(--primary) 0%,
-      var(--primary-dark) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--primary) 0%,
+    var(--primary-dark) 100%
+  );
   justify-content: center;
   align-items: center;
   padding: var(--spacing-md);
@@ -636,7 +750,6 @@ ol {
 }
 
 @keyframes pulse {
-
   0%,
   100% {
     transform: scale(1);
@@ -680,6 +793,99 @@ ol {
   font-size: var(--font-size-lg);
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+}
+
+/* Map Controls */
+.map-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--border-radius-lg);
+  background: #1c1c1e; /* Dark bg for map */
+}
+
+.map-controls {
+  position: absolute;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10;
+}
+
+.map-controls .btn-icon {
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 18px;
+}
+
+.map-controls .btn-icon:hover {
+  background: var(--primary);
+}
+
+/* Map Pins */
+.map-pin {
+  position: absolute;
+  transform: translate(-50%, -100%); /* Point to bottom center */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  z-index: 5;
+  transition: transform 0.2s ease;
+}
+
+.pin-icon {
+  font-size: 24px;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.pin-label {
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  margin-top: -2px;
+  white-space: nowrap;
+  backdrop-filter: blur(2px);
+  pointer-events: none; /* Let clicks pass to pin */
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.map-pin:hover {
+  z-index: 20;
+  transform: translate(-50%, -100%) scale(1.2);
+}
+
+.map-pin:hover .pin-label {
+  opacity: 1;
+  background: var(--primary);
+}
+
+.pin-active .pin-icon {
+  animation: bounce 1s infinite;
+}
+
+.pin-dept .pin-icon {
+  font-size: 28px; /* Departments slightly bigger */
+}
+
+.pin-temp {
+  opacity: 0.8;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
 
 /* Date Picker Section - Nowy design */
@@ -1128,7 +1334,7 @@ ol {
   transition: all var(--transition-fast);
 }
 
-.task-type-option input:checked+.task-type-card {
+.task-type-option input:checked + .task-type-card {
   border-color: var(--primary);
   background: var(--primary-bg);
 }
@@ -1144,17 +1350,17 @@ ol {
   text-align: center;
 }
 
-.task-type-option[data-type="unloading"] input:checked+.task-type-card {
+.task-type-option[data-type="unloading"] input:checked + .task-type-card {
   border-color: var(--type-unloading);
   background: var(--type-unloading-bg);
 }
 
-.task-type-option[data-type="transport"] input:checked+.task-type-card {
+.task-type-option[data-type="transport"] input:checked + .task-type-card {
   border-color: var(--type-transport);
   background: var(--type-transport-bg);
 }
 
-.task-type-option[data-type="loading"] input:checked+.task-type-card {
+.task-type-option[data-type="loading"] input:checked + .task-type-card {
   border-color: var(--type-loading);
   background: var(--type-loading-bg);
 }
@@ -1212,21 +1418,21 @@ ol {
   transition: all var(--transition-fast);
 }
 
-.priority-option input:checked+span {
+.priority-option input:checked + span {
   color: #ffffff;
 }
 
-.priority-high input:checked+span {
+.priority-high input:checked + span {
   background: var(--priority-high);
   border-color: var(--priority-high);
 }
 
-.priority-normal input:checked+span {
+.priority-normal input:checked + span {
   background: var(--priority-normal);
   border-color: var(--priority-normal);
 }
 
-.priority-low input:checked+span {
+.priority-low input:checked + span {
   background: var(--priority-low);
   border-color: var(--priority-low);
 }
@@ -1302,8 +1508,8 @@ ol {
   transition: all var(--transition-fast);
 }
 
-.role-option input:checked+.role-card,
-.location-type-option input:checked+span {
+.role-option input:checked + .role-card,
+.location-type-option input:checked + span {
   border-color: var(--primary);
   background: var(--primary-bg);
 }
@@ -1372,9 +1578,11 @@ ol {
 
 /* Status styles */
 .task-card.status-in_progress {
-  background: linear-gradient(135deg,
-      var(--bg-secondary) 0%,
-      var(--primary-bg) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bg-secondary) 0%,
+    var(--primary-bg) 100%
+  );
 }
 
 .task-card.status-completed {
@@ -2169,7 +2377,7 @@ ol {
   font-size: var(--font-size-sm);
 }
 
-.log-type-option input:checked+.log-type-card {
+.log-type-option input:checked + .log-type-card {
   border-color: var(--primary);
   background: var(--primary-bg);
 }
@@ -2624,7 +2832,6 @@ ol {
    31. PRINT & ACCESSIBILITY
    ============================================= */
 @media print {
-
   .header,
   .tabs,
   .filters-row,
@@ -2649,7 +2856,6 @@ ol {
 }
 
 @media (prefers-reduced-motion: reduce) {
-
   *,
   *::before,
   *::after {
@@ -2850,14 +3056,16 @@ input[type="date"] {
   background: var(--info);
   /* Niebieski */
   opacity: 0.9;
-  background-image: linear-gradient(45deg,
-      rgba(255, 255, 255, 0.15) 25%,
-      transparent 25%,
-      transparent 50%,
-      rgba(255, 255, 255, 0.15) 50%,
-      rgba(255, 255, 255, 0.15) 75%,
-      transparent 75%,
-      transparent);
+  background-image: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.15) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.15) 75%,
+    transparent 75%,
+    transparent
+  );
   background-size: 1rem 1rem;
   animation: progress-stripes 1s linear infinite;
 }
@@ -2973,7 +3181,6 @@ input[type="date"] {
   font-size: 20px;
 }
 
-
 /* =============================================
    33. NEW FEATURES (2025 Updates)
    ============================================= */
@@ -3010,7 +3217,6 @@ input[type="date"] {
    34. PC VISUAL POLISH (Centering & Layout)
    ============================================= */
 @media (min-width: 768px) {
-
   /* Center Filters & Remove Scroll */
   .filters-row {
     justify-content: center;
@@ -3084,12 +3290,12 @@ input[type="date"] {
   color: white;
 }
 
-#driver-tasks-list .task-action-btn[data-action='pause'] {
+#driver-tasks-list .task-action-btn[data-action="pause"] {
   background-color: var(--warning);
   color: white;
 }
 
-#driver-tasks-list .task-action-btn[data-action='add-log'] {
+#driver-tasks-list .task-action-btn[data-action="add-log"] {
   background-color: var(--bg-tertiary);
   color: var(--text-primary);
 }

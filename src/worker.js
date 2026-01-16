@@ -121,7 +121,7 @@ async function migratePendingTasks(env) {
   const tasksToMigrate = await env.DB.prepare(
     `SELECT id, scheduled_date, status, description 
      FROM tasks 
-     WHERE scheduled_date < ? 
+     WHERE scheduled_date <= ? 
      AND status IN ('pending', 'paused')
      ORDER BY scheduled_date ASC`
   )
@@ -605,6 +605,13 @@ async function deleteUser(id, env, corsHeaders) {
 // --- LOCATIONS ---
 
 async function getLocations(env, corsHeaders) {
+  // Ensure schema is up to date (lazy migration)
+  try {
+    await setup_schema(env);
+  } catch (e) {
+    // ignore
+  }
+
   const r = await env.DB.prepare(
     "SELECT * FROM locations WHERE active = 1 ORDER BY type, name"
   ).all();
@@ -612,7 +619,7 @@ async function getLocations(env, corsHeaders) {
 }
 
 async function createLocation(request, env, corsHeaders) {
-  const { name, type } = await request.json();
+  const { name, type, map_x, map_y } = await request.json();
   const ex = await env.DB.prepare(
     "SELECT id, active FROM locations WHERE name = ?"
   )
@@ -621,9 +628,9 @@ async function createLocation(request, env, corsHeaders) {
   if (ex) {
     if (ex.active === 0) {
       await env.DB.prepare(
-        "UPDATE locations SET active = 1, type = ? WHERE id = ?"
+        "UPDATE locations SET active = 1, type = ?, map_x = ?, map_y = ? WHERE id = ?"
       )
-        .bind(type, ex.id)
+        .bind(type, map_x || null, map_y || null, ex.id)
         .run();
       return new Response(JSON.stringify({ id: ex.id, name, type }), {
         headers: corsHeaders,
@@ -635,13 +642,36 @@ async function createLocation(request, env, corsHeaders) {
     });
   }
   const r = await env.DB.prepare(
-    "INSERT INTO locations (name, type) VALUES (?, ?)"
+    "INSERT INTO locations (name, type, map_x, map_y) VALUES (?, ?, ?, ?)"
   )
-    .bind(name, type)
+    .bind(name, type, map_x || null, map_y || null)
     .run();
   return new Response(JSON.stringify({ id: r.meta.last_row_id, name, type }), {
     headers: corsHeaders,
   });
+}
+
+async function updateLocation(id, request, env, corsHeaders) {
+  const { name, type, map_x, map_y } = await request.json();
+  
+  // Dynamic query builder
+  let q = "UPDATE locations SET ";
+  let p = [];
+  let u = [];
+  
+  if (name) { u.push("name = ?"); p.push(name); }
+  if (type) { u.push("type = ?"); p.push(type); }
+  if (map_x !== undefined) { u.push("map_x = ?"); p.push(map_x); }
+  if (map_y !== undefined) { u.push("map_y = ?"); p.push(map_y); }
+  
+  if (u.length === 0) return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+  
+  q += u.join(", ") + " WHERE id = ?";
+  p.push(id);
+  
+  await env.DB.prepare(q).bind(...p).run();
+  
+  return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
 }
 
 async function deleteLocation(id, env, corsHeaders) {
@@ -651,6 +681,21 @@ async function deleteLocation(id, env, corsHeaders) {
   return new Response(JSON.stringify({ success: true }), {
     headers: corsHeaders,
   });
+}
+
+async function setup_schema(env) {
+  // Check if columns exist
+  try {
+    const tableInfo = await env.DB.prepare("PRAGMA table_info(locations)").all();
+    const hasMapX = tableInfo.results.some(c => c.name === 'map_x');
+    
+    if (!hasMapX) {
+      await env.DB.prepare("ALTER TABLE locations ADD COLUMN map_x REAL").run();
+      await env.DB.prepare("ALTER TABLE locations ADD COLUMN map_y REAL").run();
+    }
+  } catch (e) {
+    console.error("Schema migration error:", e);
+  }
 }
 
 // --- TASKS ---

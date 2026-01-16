@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 2.13
+// Wersja 1.1.0 - beta
 // =============================================
 
 (function () {
@@ -17,6 +17,10 @@
     STORAGE_KEYS: {
       USER: "tt_user",
       THEME: "tt_theme",
+      TASKS: "tt_tasks_cache",
+      LOCATIONS: "tt_locations",
+      DEPARTMENTS: "tt_departments",
+      USERS: "tt_users",
     },
     ONESIGNAL_APP_ID: "7080dabd-158d-471a-b5e4-00b620b33004", // Zmień to na swoje ID z OneSignal!
   };
@@ -25,6 +29,7 @@
   // 2. STAN APLIKACJI
   // =============================================
   const state = {
+    // ... existnig state ...
     currentUser: null,
     currentScreen: "loading",
     currentDate: new Date().toISOString().split("T")[0],
@@ -46,6 +51,8 @@
     notificationInterval: null,
     taskCache: {}, // { "YYYY-MM-DD": tasks[] }
   };
+
+  // ... Utils ...
 
   // =============================================
   // 3. UTILS
@@ -273,6 +280,15 @@
     isChrome() {
       return /Chrome/i.test(navigator.userAgent) && !this.isSamsungBrowser();
     },
+
+    getLoaderHtml() {
+      return `
+        <div class="loader-inline-wrapper">
+          <div class="loader-inline"></div>
+          <div>Ładowanie danych...</div>
+        </div>
+      `;
+    },
   };
 
   // =============================================
@@ -359,6 +375,13 @@
     async createLocation(data) {
       return await this.request("/locations", {
         method: "POST",
+        body: data,
+      });
+    },
+
+    async updateLocation(id, data) {
+      return await this.request(`/locations/${id}`, {
+        method: "PUT",
         body: data,
       });
     },
@@ -1290,11 +1313,220 @@
       this.updateDriverSelect();
     },
   };
+
+  // =============================================
+  // 17. MAP MANAGER
+  // =============================================
+
+  const MapManager = {
+    // State
+    mode: 'view', // 'view' | 'pick'
+    targetLocationId: null,
+    tempCoords: null, // {x, y}
+    panzoomInstance: null,
+
+    init() {
+      // Panzoom init is done when modal opens
+    },
+
+    open(mode = 'view', locationId = null) {
+      this.mode = mode;
+      this.targetLocationId = locationId;
+      this.tempCoords = null;
+
+      const title = mode === 'pick' ? '📍 Zaznacz lokalizację' : '🗺️ Mapa Zakładu';
+      Utils.$('#modal-map h2').textContent = title;
+      
+      const saveBtn = Utils.$('#map-save-btn');
+      if (mode === 'pick') {
+        Utils.show(saveBtn);
+        saveBtn.disabled = true;
+      } else {
+        Utils.hide(saveBtn);
+      }
+
+      this.renderPins();
+      Modal.open('modal-map');
+
+      // Initialize Panzoom after modal is visible
+      setTimeout(() => {
+          this.initPanzoom();
+          // Center on target if provided
+          if (locationId) {
+             this.focusOnLocation(locationId);
+          }
+      }, 300);
+    },
+
+    initPanzoom() {
+       const elem = document.getElementById('map-container');
+       if (!elem) return;
+
+       if (this.panzoomInstance) {
+           this.panzoomInstance.dispose();
+       }
+
+       this.panzoomInstance = Panzoom(elem, {
+           maxScale: 5,
+           minScale: 0.5,
+           contain: 'outside',
+           startScale: 1
+       });
+
+       // Enable Mouse Wheel
+       elem.parentElement.addEventListener('wheel', this.panzoomInstance.zoomWithWheel);
+       
+       // Add Controls if not exist
+       this.renderControls();
+    },
+
+    renderControls() {
+        const wrapper = Utils.$('.map-wrapper');
+        if (wrapper.querySelector('.map-controls')) return;
+
+        const controls = document.createElement('div');
+        controls.className = 'map-controls';
+        controls.innerHTML = `
+            <button id="zoom-in" class="btn-icon layer-btn" title="Przybliż">+</button>
+            <button id="zoom-out" class="btn-icon layer-btn" title="Oddal">-</button>
+            <button id="zoom-reset" class="btn-icon layer-btn" title="Wyśrodkuj">⟲</button>
+        `;
+        wrapper.appendChild(controls);
+
+        wrapper.querySelector('#zoom-in').addEventListener('click', () => this.panzoomInstance.zoomIn());
+        wrapper.querySelector('#zoom-out').addEventListener('click', () => this.panzoomInstance.zoomOut());
+        wrapper.querySelector('#zoom-reset').addEventListener('click', () => this.panzoomInstance.reset());
+    },
+
+    renderPins() {
+       // Remove old pins
+       Utils.$$('.map-pin').forEach(el => el.remove());
+
+       const list = [...state.locations, ...state.departments];
+       list.forEach(loc => {
+           if (loc.map_x != null && loc.map_y != null) {
+               this.createPinElement(loc);
+           }
+       });
+    },
+
+    createPinElement(loc, isTemp = false) {
+       const pin = document.createElement('div');
+       pin.className = `map-pin ${loc.type === 'department' ? 'pin-dept' : 'pin-loc'} ${isTemp ? 'pin-temp' : ''}`;
+       if (isTemp) pin.id = 'temp-pin';
+       
+       pin.style.left = `${loc.map_x}%`;
+       pin.style.top = `${loc.map_y}%`;
+       
+       // Icon
+       const icon = loc.type === 'department' ? '🏢' : '📍';
+       
+       pin.innerHTML = `
+          <div class="pin-icon">${icon}</div>
+          <div class="pin-label">${Utils.escapeHtml(loc.name)}</div>
+       `;
+
+       // Eventy
+       if (!isTemp && this.mode === 'view') {
+           pin.addEventListener('click', (e) => {
+               e.stopPropagation(); // Don't trigger map click
+               Toast.info(`Lokalizacja: ${loc.name}`);
+               // TODO: Show nice popover
+           });
+           
+           // Highlight if target
+           if (this.targetLocationId === loc.id) {
+               pin.classList.add('pin-active');
+           }
+       }
+
+       Utils.$('#map-container').appendChild(pin);
+    },
+
+    focusOnLocation(id) {
+        const loc = [...state.locations, ...state.departments].find(l => l.id === id);
+        if (loc && loc.map_x && loc.map_y && this.panzoomInstance) {
+            // Calculate center
+            // This is complex with Panzoom, simpler is to just highlight strongly
+            // Or pan to it. Panzoom.pan(x, y)
+             this.panzoomInstance.zoom(2, { animate: true });
+             setTimeout(() => {
+                 // Simple reset for now as finding coordinates relative to view is hard without calc
+             }, 500);
+        }
+    },
+
+    onMapClick(e) {
+      if (this.mode !== 'pick') return;
+      
+      // Panzoom changes logic! 
+      // Need to calculate click relative to the Scaled Container
+      const container = Utils.$('#map-container');
+      const rect = container.getBoundingClientRect();
+      const scale = this.panzoomInstance.getScale();
+      
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+      this.tempCoords = { x, y };
+
+      // Usuń stary temp pin
+      const oldTemp = Utils.$('#temp-pin');
+      if (oldTemp) oldTemp.remove();
+
+      // Dodaj nowy
+      this.createPinElement({
+         type: 'location',
+         map_x: x,
+         map_y: y,
+         name: 'Nowa pozycja'
+      }, true);
+
+      // Aktywuj przycisk zapisu
+      const saveBtn = Utils.$('#map-save-btn');
+      if (saveBtn) saveBtn.disabled = false;
+    },
+
+    async savePickedLocation() {
+       if (!this.tempCoords) return;
+
+       // Jeśli edytujemy istniejącą (targetLocationId)
+       if (this.targetLocationId) {
+          try {
+             if (AdminPanel.onMapPick) {
+                 AdminPanel.onMapPick(this.tempCoords);
+             }
+
+             Modal.close('modal-map');
+             Toast.success("Lokalizacja wybrana!");
+
+          } catch (e) {
+             Toast.error("Błąd zapisu");
+          }
+       }
+    }
+  };
+
   // =============================================
   // 11. AUTH
   // =============================================
   const Auth = {
     async init() {
+      // 1. Ładowanie CACHE (Optymistyczny start)
+      try {
+        const cachedUsers = localStorage.getItem(CONFIG.STORAGE_KEYS.USERS);
+        const cachedLocs = localStorage.getItem(CONFIG.STORAGE_KEYS.LOCATIONS);
+        const cachedDepts = localStorage.getItem(CONFIG.STORAGE_KEYS.DEPARTMENTS);
+        const cachedTasks = localStorage.getItem(CONFIG.STORAGE_KEYS.TASKS);
+
+        if (cachedUsers) state.users = JSON.parse(cachedUsers);
+        if (cachedLocs) state.locations = JSON.parse(cachedLocs);
+        if (cachedDepts) state.departments = JSON.parse(cachedDepts);
+        if (cachedTasks) state.taskCache = JSON.parse(cachedTasks);
+      } catch (e) {
+        console.warn("Błąd ładowania cache:", e);
+      }
+
       const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
 
       if (savedUser) {
@@ -1510,6 +1742,12 @@
         state.locations = locations.filter((l) => l.type === "location");
         state.departments = locations.filter((l) => l.type === "department");
         state.users = users;
+        
+        // Update Cache
+        localStorage.setItem(CONFIG.STORAGE_KEYS.LOCATIONS, JSON.stringify(state.locations));
+        localStorage.setItem(CONFIG.STORAGE_KEYS.DEPARTMENTS, JSON.stringify(state.departments));
+        localStorage.setItem(CONFIG.STORAGE_KEYS.USERS, JSON.stringify(state.users));
+
         DataLists.updateAll();
       } catch (error) {
         console.error("Failed to load common data:", error);
@@ -1553,7 +1791,9 @@
       AdminPanel.loadLocations();
       AdminPanel.updateDateButtons();
       AdminPanel.loadReports("week");
+      AdminPanel.loadReports("week");
       Notifications.startPolling();
+      AdminPanel.initLocationListeners();
     },
 
     initDriverPanel() {
@@ -1658,6 +1898,9 @@
         this.sortTasks();
         this.updateStats();
         this.renderTasks();
+      } else if (!silent) {
+        Utils.$("#driver-tasks-list").innerHTML = Utils.getLoaderHtml();
+        Utils.hide("#driver-tasks-empty");
       }
 
       try {
@@ -1671,6 +1914,9 @@
         const hasChanged = JSON.stringify(freshTasks) !== JSON.stringify(state.taskCache[targetDate]);
 
         state.taskCache[targetDate] = freshTasks;
+        
+        // Persist Cache
+        localStorage.setItem(CONFIG.STORAGE_KEYS.TASKS, JSON.stringify(state.taskCache));
 
         if (hasChanged || state.tasks.length === 0) {
           state.tasks = freshTasks;
@@ -1802,8 +2048,8 @@
       const isLocked = isInProgress && !isParticipating;
 
       let taskDescription = "";
-      if (task.task_type === "transport") {
-        taskDescription = `
+      if (task.location_from || task.location_to) {
+        taskDescription += `
                     <div class="task-route">
                         <span>📍 ${Utils.escapeHtml(
           task.location_from || "?"
@@ -1814,13 +2060,13 @@
         )}</span>
                     </div>
                 `;
-      } else {
-        taskDescription = `
+      }
+
+      if (task.department) {
+        taskDescription += `
                     <div class="task-department">
                         <span>🏢</span>
-                        <span>${Utils.escapeHtml(
-          task.department || "Nie określono"
-        )}</span>
+                        <span>${Utils.escapeHtml(task.department)}</span>
                     </div>
                 `;
       }
@@ -1938,6 +2184,9 @@
           task.priority
         )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
+                        </div>
+                        <div class="task-creator-info" style="font-size: 0.8em; color: var(--text-secondary); margin-top: 4px;">
+                            ${task.creator_name ? `Zlecił: <strong>${Utils.escapeHtml(task.creator_name)}</strong>` : ''}
                         </div>
                     </div>
                     
@@ -2660,21 +2909,90 @@
 
       this._submitting = true;
       const taskId = Utils.$("#task-id").value;
+      const isEdit = !!taskId;
 
-      // Instant - zamknij modal i pokaż sukces
+      // --- OPTIMISTIC UI UPDATE ---
+      const optimisticTask = { ...data };
+      
+      // Setup Defaults for preview
+      if (!isEdit) {
+         optimisticTask.id = "temp-" + Date.now();
+         optimisticTask.status = "pending";
+         optimisticTask.creator_name = state.currentUser.name;
+         optimisticTask.created_by = state.currentUser.id;
+      } else {
+         // Preserve existing fields
+         const existing = state.tasks.find(t => t.id == taskId);
+         if (existing) {
+             Object.assign(optimisticTask, existing, data);
+         }
+      }
+
+      // 1. Update LOCAL State
+      if (isEdit) {
+         const idx = state.tasks.findIndex(t => t.id == taskId);
+         if (idx !== -1) state.tasks[idx] = optimisticTask;
+      } else {
+         state.tasks.push(optimisticTask);
+      }
+
+      // 2. Render Immediately
       Modal.close("modal-task");
-      Toast.success(taskId ? "Zadanie zaktualizowane!" : "Zadanie dodane!");
+      Toast.success(isEdit ? "Zadanie zaktualizowane!" : "Zadanie dodane!");
 
-      // Sync w tle
+      if (state.currentUser.role === "admin") {
+          AdminPanel.renderTasks(); // Assuming AdminPanel has renderTasks or similar
+      } else {
+          DriverPanel.sortTasks();
+          DriverPanel.updateStats();
+          DriverPanel.renderTasks();
+      }
+
+      // 3. Sync with Server
       try {
-        if (taskId) {
+        let result;
+        if (isEdit) {
           await API.updateTask(taskId, data);
         } else {
-          await API.createTask(data);
+          result = await API.createTask(data);
+          // Update temp ID with Real ID
+          const tempIdx = state.tasks.findIndex(t => t.id === optimisticTask.id);
+          if (tempIdx !== -1) {
+             state.tasks[tempIdx].id = result.id;
+             // Update Cache with real ID
+             const dateKey = optimisticTask.scheduled_date;
+             if (state.taskCache[dateKey]) {
+                 state.taskCache[dateKey] = [...state.tasks]; // Update cache ref
+                 localStorage.setItem(CONFIG.STORAGE_KEYS.TASKS, JSON.stringify(state.taskCache));
+             }
+          }
         }
-        await AdminPanel.loadTasks();
+        
+        // Refresh full list quietly to ensure consistency
+        if (state.currentUser.role === "admin") {
+           await AdminPanel.loadTasks(true);
+        } else {
+           await DriverPanel.loadTasks(true);
+        }
+
       } catch (error) {
-        Toast.error("Błąd zapisu - odśwież stronę");
+        console.error("Optimistic update failed:", error);
+        Toast.error("Błąd zapisu! Cofam zmiany...");
+        
+        // ROLLBACK
+        if (isEdit) {
+            // Need to reload original state - easiest is to fetch again
+            // Or undo change if we kept copy. 
+            // For now: Force reload
+        } else {
+            state.tasks = state.tasks.filter(t => t.id !== optimisticTask.id);
+        }
+        
+        if (state.currentUser.role === "admin") {
+            AdminPanel.loadTasks();
+        } else {
+            DriverPanel.renderTasks();
+        }
       } finally {
         this._submitting = false;
       }
@@ -2710,7 +3028,7 @@
         this.renderTasks();
       } else if (!silent) {
         // Jeśli nie ma w cache, można pokazać loader
-        Utils.$("#admin-tasks-list").innerHTML = '<div class="loading-inline">Ładowanie zadań...</div>';
+        Utils.$("#admin-tasks-list").innerHTML = Utils.getLoaderHtml();
       }
 
       try {
@@ -3659,6 +3977,59 @@
       }
     },
 
+    openAddLocationModal() {
+        Utils.$("#location-id").value = "";  // Hidden ID field needed in HTML
+        Utils.$("#location-name").value = "";
+        Utils.$("#location-map-x").value = "";
+        Utils.$("#location-map-y").value = "";
+        
+        // Reset radio
+        const locRadio = document.querySelector('input[name="location-type"][value="location"]');
+        if (locRadio) locRadio.checked = true;
+
+        Utils.$("#modal-location h2").textContent = "Dodaj lokalizację";
+        Modal.open("modal-location");
+    },
+
+    openEditLocationModal(id) {
+        const item = [...state.locations, ...state.departments].find(l => l.id == id);
+        if (!item) return;
+
+        Utils.$("#location-id").value = item.id;
+        Utils.$("#location-name").value = item.name;
+        Utils.$("#location-map-x").value = item.map_x || "";
+        Utils.$("#location-map-y").value = item.map_y || "";
+
+        // Set radio
+        const radio = document.querySelector(`input[name="location-type"][value="${item.type}"]`);
+        if (radio) radio.checked = true;
+
+        Utils.$("#modal-location h2").textContent = "Edytuj lokalizację";
+        Modal.open("modal-location");
+    },
+    
+    // Callback z MapManager
+    onMapPick(coords) {
+        Utils.$("#location-map-x").value = coords.x;
+        Utils.$("#location-map-y").value = coords.y;
+        
+        // Jeśli modal lokalizacji jest zamknięty (bo mapa go przykryła lub zamknęliśmy), otwórz go
+        // Ale normalnie MapManager zamyka mapę i my wracamy do modala lokalizacji
+        Modal.open("modal-location"); 
+    },
+
+    initLocationListeners() {
+        Utils.$("#add-location-btn")?.addEventListener("click", () => this.openAddLocationModal());
+        
+        Utils.$("#location-form")?.addEventListener("submit", (e) => this.handleLocationSubmit(e));
+        
+        Utils.$("#pick-location-btn")?.addEventListener("click", () => {
+             // Tymczasowo zamknij modal locations żeby widzieć mapę
+             Modal.close("modal-location");
+             MapManager.open('pick');
+        });
+    },
+
     renderLocations() {
       const locationsList = Utils.$("#locations-list");
       const departmentsList = Utils.$("#departments-list");
@@ -3668,6 +4039,7 @@
         canManageLocations
           ? `
                 <div class="location-actions">
+                    <button class="task-action-btn btn-edit" data-action="edit-location" data-id="${id}">✏️</button>
                     <button class="task-action-btn btn-delete" data-action="delete-location" data-id="${id}">🗑️</button>
                 </div>
             `
@@ -3739,7 +4111,11 @@
 
       // Tymczasowo dodaj do UI
       const tempId = Date.now(); // Tymczasowe ID
-      const newItem = { id: tempId, name, type, active: 1 };
+      
+      const mapX = Utils.$("#location-map-x").value;
+      const mapY = Utils.$("#location-map-y").value;
+
+      const newItem = { id: tempId, name, type, active: 1, map_x: mapX, map_y: mapY };
 
       if (type === "department") {
         state.departments.push(newItem);
@@ -3751,14 +4127,31 @@
 
       // Sync w tle
       try {
-        const result = await API.createLocation({ name, type });
-        // Zaktualizuj prawdziwe ID
-        if (type === "department") {
-          const item = state.departments.find((d) => d.id === tempId);
-          if (item) item.id = result.id;
+        let result;
+        const id = Utils.$("#location-id").value; // Get ID from hidden field
+
+        if (id) {
+             // UPDATE
+             result = await API.updateLocation(id, { name, type, map_x: newItem.map_x, map_y: newItem.map_y }); // Assuming API.updateLocation exists
+             newItem.id = parseInt(id); // Ensure ID is preserved
+             
+             // Update local state (replace old item)
+             state.locations = state.locations.filter(l => l.id != id);
+             state.departments = state.departments.filter(d => d.id != id);
+             if (type === "department") state.departments.push(newItem);
+             else state.locations.push(newItem);
+
         } else {
-          const item = state.locations.find((l) => l.id === tempId);
-          if (item) item.id = result.id;
+             // CREATE
+             result = await API.createLocation({ name, type, map_x: newItem.map_x, map_y: newItem.map_y });
+                // Zaktualizuj prawdziwe ID
+                if (type === "department") {
+                  const item = state.departments.find((d) => d.id === tempId);
+                  if (item) item.id = result.id;
+                } else {
+                  const item = state.locations.find((l) => l.id === tempId);
+                  if (item) item.id = result.id;
+                }
         }
       } catch (error) {
         // Revert
@@ -4164,6 +4557,20 @@
       Utils.$("#admin-view-toggle-btn")?.addEventListener("click", () =>
         this.toggleViewMode()
       );
+      Utils.$('#map-save-btn')?.addEventListener('click', () => {
+         this.savePickedLocation();
+      });
+
+      // Driver Map Button
+      Utils.$('#driver-map-btn')?.addEventListener('click', () => {
+         MapManager.open('view');
+      });
+
+      // Admin Map Button
+      Utils.$('#admin-map-btn')?.addEventListener('click', () => {
+         MapManager.open('view');
+      });
+
       Utils.$("#save-reorder-btn")?.addEventListener("click", () =>
         this.saveReorder()
       );
@@ -4250,6 +4657,7 @@
     window.OneSignalDeferred = window.OneSignalDeferred || [];
     OneSignalService.init();
     Sync.init();
+    MapManager.init();
 
     Toast.init();
     Modal.init();
@@ -4376,7 +4784,15 @@
               allowLocalhostAsSecureOrigin: true,
               serviceWorkerPath: "/OneSignalSDKWorker.js",
               serviceWorkerParam: { scope: "/" },
+            }).catch((err) => {
+               console.warn("⚠️ OneSignal Init Warning:", err);
             });
+
+             if (!OneSignal) {
+                 console.warn("OneSignal not loaded");
+                 resolve(false);
+                 return;
+             }
 
 
             OneSignalService.initialized = true;
