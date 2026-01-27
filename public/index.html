@@ -24,7 +24,7 @@
       defer
     ></script>
     <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.43" />
+    <link rel="stylesheet" href="css/style.css?v=2.49" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>"
@@ -1628,7 +1628,7 @@
     </div>
 
     <!-- ========== MODAL: Mapa Zakładu ========== -->
-    <div id="modal-map" class="modal hidden">
+    <div id="modal-map" class="modal modal-map hidden">
       <div class="modal-overlay"></div>
       <div class="modal-container modal-large">
         <div class="modal-header">
@@ -1648,8 +1648,16 @@
                 id="facility-map"
                 class="map-image"
                 onerror="
-                  this.src =
-                    'https://placehold.co/1200x800/1c1c1e/8e8e93?text=Mapa+niedostępna'
+                  if (!this.src.includes('placehold.co')) {
+                    if (this.src.includes('.webp')) {
+                      console.warn('Map WebP failed, trying PNG');
+                      this.src = 'img/mapa.png';
+                    } else {
+                      console.error('All map images failed');
+                      this.src =
+                        'https://placehold.co/1200x800/1c1c1e/8e8e93?text=Mapa+niedostępna';
+                    }
+                  }
                 "
               />
             </div>
@@ -1824,55 +1832,8 @@
       <span>Odśwież</span>
     </div>
 
-    <div id="modal-map" class="modal hidden">
-      <div class="modal-overlay"></div>
-      <div class="modal-container modal-large">
-        <div class="modal-header">
-          <h2>🗺️ Mapa Zakładu</h2>
-          <button class="modal-close" data-close="modal-map">×</button>
-        </div>
-        <div class="modal-body">
-          <p class="section-desc">
-            Kliknij na mapie aby zaznaczyć wybrane miejsce.
-          </p>
-          <div class="map-wrapper">
-            <div id="map-container" class="map-container">
-              <!-- Placeholder: Użytkownik podmieni sobie 'map.jpg' w folderze public/img -->
-              <img
-                data-src="img/mapa.webp"
-                src="img/mapa.webp"
-                alt="Mapa Zakładu"
-                id="facility-map"
-                class="map-image"
-                onerror="
-                  if (!this.src.includes('placehold.co')) {
-                    if (this.src.includes('.webp')) {
-                      console.warn('Map WebP failed, trying PNG');
-                      this.src = 'img/mapa.png';
-                    } else {
-                      console.error('All map images failed');
-                      this.src =
-                        'https://placehold.co/1200x800/1c1c1e/FFF?text=Brak+pliku+img/mapa.webp';
-                    }
-                  }
-                "
-              />
-            </div>
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-secondary" data-close="modal-map">
-            Zamknij
-          </button>
-          <button class="btn btn-primary" id="map-save-btn">
-            Zapisz pozycję
-          </button>
-        </div>
-      </div>
-    </div>
-
     <div id="printable-report" class="hidden-print"></div>
 
-    <script src="js/app.js?v=2.43"></script>
+    <script src="js/app.js?v=2.49"></script>
   </body>
 </html>

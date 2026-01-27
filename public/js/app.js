@@ -838,6 +838,7 @@
   // =============================================
   const Screen = {
     show(screenId) {
+      console.log(`📺 Screen.show("${screenId}") called`);
       Utils.$$(".screen").forEach((screen) => {
         screen.classList.remove("active");
       });
@@ -848,11 +849,13 @@
         state.currentScreen = screenId;
 
         // BŁYSKAWICZNE ODŚWIEŻANIE przy przełączaniu ekranów
-        if (screenId === "driver-tasks") {
+        if (screenId === "driver") {
           DriverPanel.loadTasks(true);
-        } else if (screenId === "admin-tasks") {
+        } else if (screenId === "admin") {
           AdminPanel.loadTasks(true);
         }
+      } else {
+        console.error(`❌ Screen.show: Screen ID "#screen-${screenId}" NOT FOUND!`);
       }
     },
   };
@@ -1370,8 +1373,8 @@
       const img = Utils.$("#facility-map");
       const baseSrc = img.getAttribute('data-src') || 'img/mapa.webp';
 
-      // Ensure we have a fresh load if needed
-      if (!img.src || img.src.includes('placehold.co') || img.src === window.location.href) {
+      // Always ensure we have a fresh load if we're not using placehold.co
+      if (!img.src || img.src.includes('placehold.co') || img.src === window.location.href || !img.src.includes('?v=')) {
         img.src = baseSrc + '?v=' + Date.now();
       }
 
@@ -1409,7 +1412,9 @@
     },
 
     hideLoading() {
-      const loader = Utils.$(".map-loading-overlay");
+      const wrapper = Utils.$(".map-wrapper");
+      if (!wrapper) return;
+      const loader = wrapper.querySelector(".map-loading-overlay");
       if (loader) loader.style.display = "none";
     },
 
@@ -1422,13 +1427,17 @@
       // CRITICAL: Wait for modal/image to have real dimensions
       // FIX: Use a Promise-based wait instead of just checking once
       const waitForDimensions = async () => {
-          let attempts = 0;
-          while(attempts < 50) {
-              if(wrapper.offsetWidth > 0 && img.naturalWidth > 0 && img.clientHeight > 0) return true;
-              await new Promise(r => setTimeout(r, 100));
-              attempts++;
-          }
-          return false;
+        let attempts = 0;
+        while (attempts < 80) {
+          // Check for width, height and image readiness
+          const hasDim = wrapper.offsetWidth > 10 && wrapper.offsetHeight > 100;
+          const imgReady = img.naturalWidth > 0 && img.complete;
+          if (hasDim && imgReady) return true;
+
+          await new Promise((r) => setTimeout(r, 100));
+          attempts++;
+        }
+        return false;
       };
 
       waitForDimensions().then((ok) => {
@@ -1454,7 +1463,9 @@
 
       // Important: transform-origin MUST be 0 0 for Panzoom
       elem.style.transformOrigin = "0 0";
-      elem.style.display = "inline-block";
+      elem.style.display = "block";
+      elem.style.width = img.naturalWidth + 'px';
+      elem.style.height = img.naturalHeight + 'px';
       elem.style.opacity = "1";
       elem.style.visibility = "visible";
 
@@ -1505,10 +1516,15 @@
 
       requestAnimationFrame(forceCenter);
       setTimeout(forceCenter, 50);
-      setTimeout(forceCenter, 350);
+      setTimeout(forceCenter, 150);
+      setTimeout(forceCenter, 400);
 
       // FINAL STEP: Pokazujemy mapę i rzucamy pinezki
       this.hideLoading();
+      
+      // Ensure visibility one more time
+      elem.style.opacity = "1";
+      elem.style.visibility = "visible";
       this.renderPins();
       this.renderControls();
 
@@ -1672,12 +1688,13 @@
       const wrapper = Utils.$(".map-wrapper");
       if (!wrapper) return;
       
-      // Remove existing toolbar
-      const existing = wrapper.querySelector(".map-draw-toolbar");
-      if (existing) existing.remove();
-      
       // Only show for Admin ID 1
-      if (!state.currentUser || state.currentUser.id !== 1) return;
+      const existing = wrapper.querySelector(".map-draw-toolbar");
+      if (!state.currentUser || state.currentUser.id != 1) {
+        if (existing) existing.remove();
+        return;
+      }
+      if (existing) existing.remove();
       
       const toolbar = document.createElement("div");
       toolbar.className = "map-draw-toolbar hidden";
@@ -1771,7 +1788,6 @@
              if (isStart || isEnd || isDept) {
                  pin.classList.add('pin-highlight');
                  pin.style.zIndex = '100';
-                 pin.style.transform = 'scale(1.2) translate(-50%, -100%)'; // Override default transform to scale up
              } else {
                  pin.classList.add('pin-dimmed');
              }
@@ -2105,45 +2121,112 @@
     },
 
     async onLoginSuccess() {
-      Utils.$("#login-form")?.reset();
+      try {
+        Utils.$("#login-form")?.reset();
 
-      if (state.currentUser.force_pin_change) {
-        this.showChangePinModal();
-        return;
+        if (state.currentUser.force_pin_change) {
+          this.showChangePinModal();
+          return;
+        }
+
+        // 1. Ładowanie danych wspólnych (lokalizacje, działy)
+        await this.loadCommonData();
+
+        // 2. Inicjalizacja UI (ustawienie nazw, dat) - BEZ przełączania ekranu jeszcze
+        const role = state.currentUser.role;
+        if (role === "admin") {
+          this.setupAdminUI();
+        } else {
+          this.setupDriverUI();
+        }
+
+        // 3. Pobieranie ŚWIEŻEJ listy zadań przed pokazaniem aplikacji
+        // Robimy to z timeoutem, żeby nie blokować usera w razie problemów z siecią
+        const loadPromise = role === "admin" 
+          ? AdminPanel.loadTasks(false) 
+          : DriverPanel.loadTasks(false);
+        
+        const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000));
+
+        console.log("⏳ Syncing initial data...");
+        await Promise.race([loadPromise, timeoutPromise]).catch(e => console.warn("Initial sync error:", e));
+
+        // 4. Dopiero teraz przechodzimy do głównego ekranu
+        Screen.show(role);
+
+        // 5. Inicjalizacja usług tła
+        Notifications.startPolling();
+        
+        // OneSignal - inicjalizuj SDK (nie blokuje UI)
+        OneSignalService.init()
+          .then(() => {
+            setTimeout(async () => {
+              const hasPermission = await OneSignalService.requestPermission();
+              if (hasPermission && state.currentUser) {
+                await OneSignalService.login(
+                  state.currentUser.id,
+                  state.currentUser.role
+                );
+              }
+            }, 2000);
+          })
+          .catch((err) => { });
+          
+      } catch (error) {
+        console.error("FATAL: onLoginSuccess failed", error);
+        // Fallback: show the screen anyway to not stay stuck
+        if (state.currentUser?.role) Screen.show(state.currentUser.role);
       }
+    },
 
-      await this.loadCommonData();
+    setupAdminUI() {
+      Utils.$("#admin-user-name").textContent = state.currentUser.name;
+      state.currentDate = Utils.getToday();
+      Utils.$("#admin-date-picker").value = state.currentDate;
 
-      if (state.currentUser.role === "admin") {
-        this.initAdminPanel();
-      } else {
-        this.initDriverPanel();
-      }
+      // Ukryj zakładki bez uprawnień
+      const user = state.currentUser;
+      const tabReports = document.querySelector('[data-tab="reports"]');
+      const tabUsers = document.querySelector('[data-tab="users"]');
+      const tabLocations = document.querySelector('[data-tab="locations"]');
 
-      // AGRESYWNY PRE-FETCH (Wczoraj, Dzisiaj, Jutro) od razu po zalogowaniu
-      if (state.currentUser.role === "admin") {
-        AdminPanel.loadTasks(true);
-        AdminPanel.prefetchNeighboringDates();
-      } else {
-        DriverPanel.loadTasks(true);
-        DriverPanel.prefetchNeighboringDates();
-      }
+      if (tabReports) tabReports.classList.toggle("hidden", user.id !== 1 && !user.perm_reports);
+      if (tabUsers) tabUsers.classList.toggle("hidden", user.id !== 1 && !user.perm_users);
+      if (tabLocations) tabLocations.classList.toggle("hidden", user.id !== 1 && !user.perm_locations);
 
-      // OneSignal - inicjalizuj SDK (nie blokuje UI)
-      OneSignalService.init()
-        .then(() => {
-          // Po 2 sekundach poproś o zgodę (jeśli jeszcze nie mamy)
-          setTimeout(async () => {
-            const hasPermission = await OneSignalService.requestPermission();
-            if (hasPermission && state.currentUser) {
-              await OneSignalService.login(
-                state.currentUser.id,
-                state.currentUser.role
-              );
-            }
-          }, 2000);
-        })
-        .catch((err) => { });
+      AdminPanel.switchTab("tasks");
+      AdminPanel.loadUsers();
+      AdminPanel.loadLocations();
+      AdminPanel.updateDateButtons();
+      AdminPanel.loadReports("week");
+      AdminPanel.initLocationListeners();
+
+      // MAP BUTTON
+      Utils.$("#admin-map-btn")?.addEventListener("click", () => MapManager.open("view"));
+    },
+
+    setupDriverUI() {
+      Utils.$("#driver-user-name").textContent = state.currentUser.name;
+      state.currentDate = Utils.getToday();
+      Utils.$("#driver-date-text").textContent = Utils.formatDate(state.currentDate);
+
+      // MAP BUTTON
+      Utils.$("#driver-map-btn")?.addEventListener("click", () => MapManager.open("view"));
+
+      console.log("🚀 Driver UI prepared for:", state.currentUser.name);
+    },
+
+    // Legacy support or direct init if needed (though onLoginSuccess is preferred now)
+    initAdminPanel() {
+      this.setupAdminUI();
+      Screen.show("admin");
+      AdminPanel.loadTasks();
+    },
+
+    initDriverPanel() {
+      this.setupDriverUI();
+      Screen.show("driver");
+      DriverPanel.loadTasks();
     },
 
     showChangePinModal() {
@@ -2230,65 +2313,6 @@
       }
     },
 
-    initAdminPanel() {
-      Utils.$("#admin-user-name").textContent = state.currentUser.name;
-      state.currentDate = Utils.getToday();
-      Utils.$("#admin-date-picker").value = state.currentDate;
-      Screen.show("admin");
-
-      // Ukryj zakładki bez uprawnień
-      const user = state.currentUser;
-
-      const tabReports = document.querySelector('[data-tab="reports"]');
-      const tabUsers = document.querySelector('[data-tab="users"]');
-      const tabLocations = document.querySelector('[data-tab="locations"]');
-
-      // Pokaż wszystkie najpierw (reset)
-      if (tabReports) tabReports.classList.remove("hidden");
-      if (tabUsers) tabUsers.classList.remove("hidden");
-      if (tabLocations) tabLocations.classList.remove("hidden");
-
-      // Ukryj te bez uprawnień (ID 1 = główny admin - widzi wszystko)
-      if (user.id !== 1) {
-        if (!user.perm_reports) {
-          if (tabReports) tabReports.classList.add("hidden");
-        }
-        if (!user.perm_users) {
-          if (tabUsers) tabUsers.classList.add("hidden");
-        }
-        if (!user.perm_locations) {
-          if (tabLocations) tabLocations.classList.add("hidden");
-        }
-      }
-
-      AdminPanel.switchTab("tasks");
-      AdminPanel.loadTasks();
-      AdminPanel.loadUsers();
-      AdminPanel.loadLocations();
-      AdminPanel.updateDateButtons();
-      AdminPanel.loadReports("week");
-      Notifications.startPolling();
-      AdminPanel.initLocationListeners();
-    },
-
-    initDriverPanel() {
-      Utils.$("#driver-user-name").textContent = state.currentUser.name;
-      state.currentDate = Utils.getToday();
-      Utils.$("#driver-date-text").textContent = Utils.formatDate(
-        state.currentDate
-      );
-      Screen.show("driver");
-
-      console.log(
-        "🚀 Driver panel initialized for user:",
-        state.currentUser.id,
-        state.currentUser.name
-      );
-
-      DriverPanel.loadTasks();
-      Notifications.startPolling();
-    },
-
     logout(force = false) {
       const performLogout = () => {
         state.currentUser = null;
@@ -2360,7 +2384,7 @@
         state.tasks = state.taskCache[targetDate];
         this.renderTasks();
         this.updateStats(); // Dodano: przelicz statystyki przy ładowaniu z cache
-      } else if (!silent) {
+      } else if (!silent && list) {
         // Jeśli nie ma w cache i nie jest to ciche odświeżanie - pokaż loader
         list.innerHTML = Utils.getLoaderHtml();
       }
@@ -3818,7 +3842,7 @@
         this.updateStats();
         this.updateDateDisplay();
         this.renderTasks();
-      } else if (!silent) {
+      } else if (!silent && list) {
         // Jeśli nie ma w cache, można pokazać loader
         list.innerHTML = Utils.getLoaderHtml();
       }

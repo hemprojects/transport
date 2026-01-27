@@ -1456,9 +1456,8 @@ async function getReports(period, env, corsHeaders) {
   } else if (period === "week") {
     dateCondition = `AND t.scheduled_date >= date('now', '-7 days')`;
   } else if (period === "today") {
-    dateCondition = `AND t.scheduled_date = date('now')`;
-  } else if (period === "today") {
-    dateCondition = `AND t.scheduled_date = date('now')`;
+    const today = getPolishToday();
+    dateCondition = `AND t.scheduled_date = '${today}'`;
     isSingleDay = true;
   }
 

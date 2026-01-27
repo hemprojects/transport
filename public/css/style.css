@@ -298,28 +298,24 @@ ol {
 }
 
 /* =============================================
-   6. LOADING SCREEN
-   ============================================= */
-/* =============================================
    6. LOADING SCREEN - PREMIUM
    ============================================= */
+#screen-loading.active {
+  display: flex;
+}
+
 #screen-loading {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  width: 100vw;
-  height: 100dvh;
   background: #000000;
-  /* Fallback for white bar */
   background: linear-gradient(135deg, #000000 0%, #1c1c1e 100%);
   justify-content: center;
   align-items: center;
   z-index: 9999;
   overflow: hidden;
-  /* Wymuszenie pokrycia safe area na iOS */
-  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* Tło z efektem glow */
@@ -814,44 +810,7 @@ ol {
   color: var(--text-primary);
 }
 
-/* Map Controls */
-.map-wrapper {
-  position: relative;
-  width: 100%;
-  height: calc(85vh - 200px);
-  /* Responsive height */
-  min-height: 400px;
-  overflow: hidden;
-  border-radius: var(--border-radius-lg);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  display: block;
-  position: relative;
-}
 
-.map-container {
-  position: relative;
-  display: inline-block;
-  /* Przywrócono inline-block - Panzoom potrzebuje tego do granic */
-  cursor: grab;
-  /* transform-origin removed to let Panzoom handle it */
-  transition: opacity 0.3s ease;
-  will-change: transform;
-}
-
-.map-container:active {
-  cursor: grabbing;
-}
-
-.map-image {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: none;
-  user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: none;
-}
 
 /* Map Loading State */
 .map-loading-overlay {
@@ -2541,6 +2500,7 @@ ol {
   flex-direction: column;
   overflow: hidden;
   /* Disable internal scroll for map */
+  min-height: 400px;
 }
 
 .modal-map .map-wrapper {
@@ -3669,23 +3629,6 @@ input[type="date"] {
   background: var(--bg-tertiary);
 }
 
-/* Map Loading Overlay Refinement */
-.map-loading-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(28, 28, 30, 0.82);
-  backdrop-filter: blur(8px);
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  z-index: 10;
-  color: #ffffff;
-  border-radius: var(--border-radius-lg);
-}
 
 .map-loading-spinner {
   width: 40px;
@@ -3922,7 +3865,7 @@ input[type="date"] {
 }
 
 /* =============================================
-   MAP MODAL STYLES
+   MAP SECTION (Consolidated)
    ============================================= */
 .map-wrapper {
   position: relative;
@@ -3932,14 +3875,18 @@ input[type="date"] {
   background: var(--bg-tertiary);
   border-radius: var(--border-radius-md);
   overflow: hidden;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .map-container {
   position: relative;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
+  overflow: visible;
   cursor: grab;
+  display: block !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .map-container:active {
@@ -3947,11 +3894,14 @@ input[type="date"] {
 }
 
 .map-image {
-  display: block;
-  max-width: none;
-  height: auto;
+  display: block !important;
+  max-width: none !important;
+  height: auto !important;
   user-select: none;
   -webkit-user-drag: none;
+  pointer-events: auto !important;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 /* Map Controls */
@@ -3962,7 +3912,7 @@ input[type="date"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  z-index: 10;
+  z-index: 101; /* Above Loading Overlay */
 }
 
 .map-controls .btn-icon {
@@ -3978,36 +3928,27 @@ input[type="date"] {
 /* Map Pins */
 .map-pin {
   position: absolute;
-  transform: translate(-50%, -100%);
+  transform: translate(-50%, -100%) scale(calc(0.7 + 0.3 * var(--map-scale, 1)));
   cursor: pointer;
-  z-index: 5;
-  transition: all var(--transition-fast);
+  z-index: 50;
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
   font-size: 24px;
   filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
 }
 
-.map-pin:hover {
-  transform: translate(-50%, -100%) scale(1.2);
-  z-index: 6;
-}
-
-.map-pin.temp-pin {
-  animation: pin-bounce 0.5s ease;
-  z-index: 7;
+.map-pin:hover, .map-pin.pin-popover-open {
+  z-index: 1002 !important;
+  transform: translate(-50%, -100%) scale(1.2) !important;
 }
 
 .map-pin.pin-highlight {
   filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8));
   animation: pin-pulse 1.5s ease-in-out infinite;
+  z-index: 100;
 }
 
 .map-pin.pin-dimmed {
   opacity: 0.3;
-}
-
-@keyframes pin-bounce {
-  0%, 100% { transform: translate(-50%, -100%) scale(1); }
-  50% { transform: translate(-50%, -120%) scale(1.3); }
 }
 
 @keyframes pin-pulse {
@@ -4022,22 +3963,24 @@ input[type="date"] {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.75);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   z-index: 100;
   color: white;
+  backdrop-filter: blur(5px);
 }
 
 .map-loading-spinner {
   width: 40px;
   height: 40px;
-  border: 4px solid rgba(255, 255, 255, 0.3);
+  border: 4px solid rgba(255, 255, 255, 0.2);
   border-top-color: white;
   border-radius: 50%;
   animation: spin-right 0.8s linear infinite;
+  margin-bottom: 10px;
 }
 
 /* Path Drawing Toolbar (Admin Only) */
@@ -4051,16 +3994,16 @@ input[type="date"] {
   background: var(--bg-secondary);
   padding: 8px;
   border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow-lg);
-  z-index: 10;
-}
-
-.map-draw-toolbar .btn {
-  min-width: 100px;
-  font-size: var(--font-size-sm);
+  box-shadow: var(--shadow-xl);
+  z-index: 101;
 }
 
 /* Canvas for paths */
 canvas.map-paths-layer {
   pointer-events: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
 }

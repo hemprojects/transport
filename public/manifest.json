@@ -3,8 +3,8 @@
     "short_name": "Transport",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#ffffff",
-    "theme_color": "#007AFF",
+    "background_color": "#000000",
+    "theme_color": "#000000",
     "gcm_sender_id": "482941778795",
     "icons": [
         {
