@@ -1,0 +1,1878 @@
+<!doctype html>
+<html lang="pl" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="manifest" href="/manifest.json?v=6" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#007AFF" />
+    <meta
+      name="description"
+      content="Hemarpol - Transport Tracker - System zarządzania transportem wewnętrznym"
+    />
+    <title>Hemarpol - Transport Tracker</title>
+    <script
+      src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js"
+      defer
+    ></script>
+    <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
+    <link rel="stylesheet" href="css/style.css?v=2.43" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>"
+    />
+    <link
+      rel="apple-touch-icon"
+      href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>"
+    />
+  </head>
+
+  <body>
+    <div id="app">
+      <!-- ========== EKRAN ŁADOWANIA ========== -->
+      <div id="screen-loading" class="screen active">
+        <div class="loading-container">
+          <div class="premium-loader-wrapper">
+            <div class="loader-ring-1"></div>
+            <div class="loader-ring-2"></div>
+            <div class="loader-ring-3"></div>
+            <div class="loading-icon-premium">🚛</div>
+          </div>
+          <div class="loading-title">Hemarpol</div>
+          <div class="loading-subtitle">Transport Tracker</div>
+        </div>
+      </div>
+
+      <!-- ========== EKRAN LOGOWANIA ========== -->
+      <div id="screen-login" class="screen">
+        <div class="login-wrapper">
+          <div class="login-box">
+            <div class="login-header">
+              <div class="login-icon">🚛</div>
+              <h1>Hemarpol</h1>
+              <p
+                style="
+                  font-size: 1.1em;
+                  color: var(--text-primary);
+                  font-weight: 500;
+                  margin-top: -5px;
+                "
+              >
+                Transport Tracker
+              </p>
+              <p>Zaloguj się aby kontynuować</p>
+            </div>
+
+            <form id="login-form" class="login-form">
+              <div class="form-group">
+                <label for="login-user">Wybierz użytkownika</label>
+                <select id="login-user" required>
+                  <option value="">Ładowanie...</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="login-pin">PIN</label>
+                <div class="pin-input-wrapper">
+                  <input
+                    type="password"
+                    id="login-pin"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="6"
+                    placeholder="••••"
+                    required
+                    autocomplete="off"
+                  />
+                  <button
+                    type="button"
+                    id="toggle-pin"
+                    class="btn-icon-small"
+                    title="Pokaż/ukryj PIN"
+                  >
+                    <span class="eye-icon">👁️</span>
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                class="btn btn-primary btn-block"
+                id="login-submit-btn"
+              >
+                <span class="btn-text">Zaloguj się</span>
+                <span class="btn-loader hidden"></span>
+              </button>
+
+              <div id="login-error" class="alert alert-error hidden"></div>
+            </form>
+          </div>
+          <div class="login-footer">
+            <p>
+              © 2026 Hemarpol - Transport Tracker by Creatiiivo v.1.1.0 beta
+            </p>
+            <div class="login-legal-links">
+              <a href="#" id="open-terms-link">Regulamin</a>
+              <span class="legal-separator">|</span>
+              <a href="#" id="open-privacy-link">Polityka prywatności</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== MODAL: Regulamin ========== -->
+      <div id="modal-terms" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container modal-large modal-scrollable">
+          <div class="modal-header">
+            <h2>📋 Regulamin</h2>
+            <button class="modal-close" data-close="modal-terms">×</button>
+          </div>
+          <div class="modal-body legal-content">
+            <h3>§1. Postanowienia ogólne</h3>
+            <p>
+              1. Niniejszy Regulamin określa zasady korzystania z aplikacji
+              Transport Tracker (zwanej dalej "Aplikacją") służącej do
+              zarządzania transportem wewnętrznym.
+            </p>
+            <p>
+              2. Aplikacja jest własnością firmy Creatiiivo i jest przeznaczona
+              wyłącznie do użytku wewnętrznego w ramach organizacji.
+            </p>
+            <p>
+              3. Użytkownikiem Aplikacji może być wyłącznie osoba upoważniona
+              przez Administratora systemu.
+            </p>
+
+            <h3>§2. Warunki korzystania</h3>
+            <p>
+              1. Dostęp do Aplikacji wymaga posiadania indywidualnego konta
+              użytkownika zabezpieczonego kodem PIN.
+            </p>
+            <p>2. Użytkownik zobowiązuje się do:</p>
+            <ul>
+              <li>Nieudostępniania swoich danych logowania osobom trzecim</li>
+              <li>
+                Niezwłocznego informowania Administratora o podejrzeniu
+                nieuprawnionego dostępu
+              </li>
+              <li>Korzystania z Aplikacji zgodnie z jej przeznaczeniem</li>
+              <li>
+                Rzetelnego wprowadzania danych dotyczących realizowanych zadań
+              </li>
+            </ul>
+            <p>
+              3. Administrator ma prawo do zablokowania konta użytkownika w
+              przypadku naruszenia niniejszego Regulaminu.
+            </p>
+
+            <h3>§3. Zakres funkcjonalności</h3>
+            <p>1. Aplikacja umożliwia:</p>
+            <ul>
+              <li>
+                Przeglądanie i realizację przydzielonych zadań transportowych
+              </li>
+              <li>Raportowanie statusu wykonania zadań</li>
+              <li>Zgłaszanie przestojów i problemów</li>
+              <li>Komunikację z kierownictwem poprzez system powiadomień</li>
+            </ul>
+            <p>
+              2. Dane wprowadzane do Aplikacji są wykorzystywane do celów
+              związanych z organizacją pracy i raportowaniem.
+            </p>
+
+            <h3>§4. Odpowiedzialność</h3>
+            <p>1. Właściciel Aplikacji nie ponosi odpowiedzialności za:</p>
+            <ul>
+              <li>
+                Przerwy w działaniu Aplikacji wynikające z przyczyn technicznych
+              </li>
+              <li>Szkody wynikłe z nieprawidłowego użytkowania Aplikacji</li>
+              <li>Utratę danych spowodowaną działaniem siły wyższej</li>
+            </ul>
+            <p>
+              2. Użytkownik ponosi odpowiedzialność za wszelkie działania
+              wykonane przy użyciu jego konta.
+            </p>
+
+            <h3>§5. Zmiany Regulaminu</h3>
+            <p>
+              1. Właściciel Aplikacji zastrzega sobie prawo do zmiany
+              niniejszego Regulaminu.
+            </p>
+            <p>
+              2. O zmianach użytkownicy będą informowani poprzez komunikat w
+              Aplikacji.
+            </p>
+            <p>
+              3. Dalsze korzystanie z Aplikacji po wprowadzeniu zmian oznacza
+              akceptację nowego Regulaminu.
+            </p>
+
+            <h3>§6. Postanowienia końcowe</h3>
+            <p>
+              1. W sprawach nieuregulowanych niniejszym Regulaminem mają
+              zastosowanie przepisy prawa polskiego.
+            </p>
+            <p>2. Regulamin wchodzi w życie z dniem 1 stycznia 2026 roku.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== MODAL: Polityka Prywatności ========== -->
+      <div id="modal-privacy" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container modal-large modal-scrollable">
+          <div class="modal-header">
+            <h2>🔒 Polityka Prywatności</h2>
+            <button class="modal-close" data-close="modal-privacy">×</button>
+          </div>
+          <div class="modal-body legal-content">
+            <h3>1. Administrator danych</h3>
+            <p>
+              Administratorem danych osobowych przetwarzanych w ramach aplikacji
+              Transport Tracker jest właściciel systemu. Kontakt z
+              Administratorem możliwy jest za pośrednictwem działu IT
+              organizacji.
+            </p>
+
+            <h3>2. Zakres przetwarzanych danych</h3>
+            <p>W ramach Aplikacji przetwarzamy następujące dane osobowe:</p>
+            <ul>
+              <li>Imię i nazwisko użytkownika</li>
+              <li>Rola w systemie (kierowca/kierownik)</li>
+              <li>Godziny pracy</li>
+              <li>Historia realizacji zadań</li>
+              <li>Zgłoszone uwagi i przestoje</li>
+              <li>Dane o czasie rozpoczęcia i zakończenia zadań</li>
+            </ul>
+
+            <h3>3. Cel przetwarzania danych</h3>
+            <p>Dane są przetwarzane w celu:</p>
+            <ul>
+              <li>Organizacji pracy i zarządzania transportem wewnętrznym</li>
+              <li>Raportowania i analizy efektywności pracy</li>
+              <li>Komunikacji służbowej w ramach organizacji</li>
+              <li>Zapewnienia bezpieczeństwa i rozliczalności operacji</li>
+            </ul>
+
+            <h3>4. Podstawa prawna przetwarzania</h3>
+            <p>Dane przetwarzane są na podstawie:</p>
+            <ul>
+              <li>Art. 6 ust. 1 lit. b) RODO - wykonanie umowy o pracę</li>
+              <li>
+                Art. 6 ust. 1 lit. c) RODO - obowiązek prawny ciążący na
+                administratorze
+              </li>
+              <li>
+                Art. 6 ust. 1 lit. f) RODO - prawnie uzasadniony interes
+                administratora
+              </li>
+            </ul>
+
+            <h3>5. Przechowywanie danych</h3>
+            <p>
+              Dane osobowe są przechowywane na serwerach Cloudflare D1
+              zlokalizowanych na terenie Unii Europejskiej, zgodnie z wymogami
+              RODO. Dane są przechowywane przez okres zatrudnienia oraz przez
+              okres wymagany przepisami prawa po jego zakończeniu.
+            </p>
+
+            <h3>6. Prawa użytkownika</h3>
+            <p>Zgodnie z RODO przysługują Państwu następujące prawa:</p>
+            <ul>
+              <li>Prawo dostępu do swoich danych osobowych</li>
+              <li>Prawo do sprostowania nieprawidłowych danych</li>
+              <li>Prawo do usunięcia danych ("prawo do bycia zapomnianym")</li>
+              <li>Prawo do ograniczenia przetwarzania</li>
+              <li>Prawo do przenoszenia danych</li>
+              <li>Prawo do wniesienia sprzeciwu wobec przetwarzania</li>
+              <li>Prawo do wniesienia skargi do Prezesa UODO</li>
+            </ul>
+
+            <h3>7. Bezpieczeństwo danych</h3>
+            <p>
+              Stosujemy odpowiednie środki techniczne i organizacyjne
+              zapewniające bezpieczeństwo danych osobowych, w tym:
+            </p>
+            <ul>
+              <li>Szyfrowanie połączeń (HTTPS/TLS)</li>
+              <li>Hashowanie kodów PIN użytkowników</li>
+              <li>Kontrolę dostępu opartą na rolach</li>
+              <li>
+                Automatyczne blokowanie konta po nieudanych próbach logowania
+              </li>
+              <li>Regularne kopie zapasowe</li>
+            </ul>
+
+            <h3>8. Odbiorcy danych</h3>
+            <p>Dane mogą być udostępniane:</p>
+            <ul>
+              <li>Cloudflare Inc. - dostawca infrastruktury serwerowej</li>
+              <li>
+                Osobom upoważnionym przez Administratora (przełożeni, dział HR)
+              </li>
+            </ul>
+
+            <h3>9. Kontakt</h3>
+            <p>
+              W sprawach dotyczących ochrony danych osobowych prosimy o kontakt
+              z Administratorem za pośrednictwem działu IT lub bezpośredniego
+              przełożonego.
+            </p>
+
+            <p class="legal-date">
+              <em>Data ostatniej aktualizacji: 1 stycznia 2026 r.</em>
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== PANEL KIEROWCY ========== -->
+      <div id="screen-driver" class="screen">
+        <header class="header">
+          <div class="header-left">
+            <span class="header-logo">🚛</span>
+            <span class="header-title">Transport Tracker</span>
+          </div>
+          <div class="header-right">
+            <button
+              id="driver-map-btn"
+              class="btn-icon layer-btn"
+              title="Mapa zakładu"
+            >
+              🗺️
+            </button>
+            <button
+              id="driver-theme-btn"
+              class="btn-icon theme-toggle"
+              title="Zmień motyw"
+            >
+              🌙
+            </button>
+            <button
+              id="driver-notifications-btn"
+              class="btn-icon notification-bell"
+              title="Powiadomienia"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span
+                id="driver-notification-badge"
+                class="notification-badge hidden"
+                >0</span
+              >
+            </button>
+            <span id="driver-user-name" class="user-badge"></span>
+            <button id="driver-logout-btn" class="btn-icon" title="Wyloguj">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="main-content">
+          <div class="date-display">
+            <span class="date-icon">📅</span>
+            <span id="driver-date-text"></span>
+          </div>
+
+          <!-- Statystyki -->
+          <div class="stats-row">
+            <div class="stat-box stat-pending">
+              <span class="stat-number" id="driver-stat-pending">0</span>
+              <span class="stat-label">Oczekuje</span>
+            </div>
+            <div class="stat-box stat-progress">
+              <span class="stat-number" id="driver-stat-progress">0</span>
+              <span class="stat-label">W trakcie</span>
+            </div>
+            <div class="stat-box stat-done">
+              <span class="stat-number" id="driver-stat-done">0</span>
+              <span class="stat-label">Zrobione</span>
+            </div>
+          </div>
+
+          <!-- Filtry -->
+          <div class="filters-row">
+            <button class="filter-btn active" data-filter="all">
+              Wszystkie
+            </button>
+            <button class="filter-btn" data-filter="pending">
+              Oczekujące / Pauza
+            </button>
+            <button class="filter-btn" data-filter="in_progress">
+              W trakcie
+            </button>
+            <button class="filter-btn" data-filter="completed">Zrobione</button>
+          </div>
+
+          <!-- Lista zadań -->
+          <div class="tasks-container">
+            <div class="tasks-list" id="driver-tasks-list">
+              <!-- Zadania ładowane przez JS -->
+            </div>
+            <div id="driver-tasks-empty" class="empty-state hidden">
+              <div class="empty-icon">📋</div>
+              <div class="empty-text">Brak zadań do wyświetlenia</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== PANEL ADMINA ========== -->
+      <div id="screen-admin" class="screen">
+        <header class="header">
+          <div class="header-left">
+            <span class="header-logo">🚛</span>
+            <span class="header-title">Transport Tracker</span>
+          </div>
+          <div class="header-right">
+            <button
+              id="admin-map-btn"
+              class="btn-icon layer-btn"
+              title="Mapa zakładu"
+            >
+              🗺️
+            </button>
+            <button
+              id="admin-view-toggle-btn"
+              class="btn-icon hidden-mobile"
+              title="Widok listy"
+            >
+              📝
+            </button>
+            <button
+              id="admin-theme-btn"
+              class="btn-icon theme-toggle"
+              title="Zmień motyw"
+            >
+              🌙
+            </button>
+            <button
+              id="admin-notifications-btn"
+              class="btn-icon notification-bell"
+              title="Powiadomienia"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+              </svg>
+              <span
+                id="admin-notification-badge"
+                class="notification-badge hidden"
+                >0</span
+              >
+            </button>
+            <span id="admin-user-name" class="user-badge admin-badge"></span>
+            <button id="admin-logout-btn" class="btn-icon" title="Wyloguj">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <polyline points="16 17 21 12 16 7"></polyline>
+                <line x1="21" y1="12" x2="9" y2="12"></line>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- Zakładki -->
+        <div class="tabs">
+          <button class="tab-btn active" data-tab="tasks">📋 Zadania</button>
+          <button class="tab-btn" data-tab="reports">📊 Raporty</button>
+          <button class="tab-btn" data-tab="users">👥 Użytkownicy</button>
+          <button class="tab-btn" data-tab="locations">📍 Lokalizacje</button>
+        </div>
+
+        <!-- TAB: Zadania -->
+        <div class="tab-content active" id="tab-tasks">
+          <div class="main-content">
+            <!-- Wybór daty - NOWY DESIGN -->
+            <div class="date-picker-section">
+              <div class="date-picker-row">
+                <button id="prev-day-btn" class="btn-nav">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline points="15 18 9 12 15 6"></polyline>
+                  </svg>
+                </button>
+                <div class="date-picker-wrapper">
+                  <input type="date" id="admin-date-picker" />
+                </div>
+                <button id="next-day-btn" class="btn-nav">
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <polyline points="9 18 15 12 9 6"></polyline>
+                  </svg>
+                </button>
+              </div>
+              <div class="date-quick-buttons">
+                <button class="date-quick-btn" data-offset="-1">Wczoraj</button>
+                <button class="date-quick-btn active" data-offset="0">
+                  Dziś
+                </button>
+                <button class="date-quick-btn" data-offset="1">Jutro</button>
+                <button class="date-quick-btn" data-offset="2">Pojutrze</button>
+              </div>
+              <div id="admin-date-display" class="date-display-text"></div>
+            </div>
+
+            <!-- Statystyki -->
+            <div class="stats-row">
+              <div class="stat-box stat-pending">
+                <span class="stat-number" id="admin-stat-pending">0</span>
+                <span class="stat-label">Oczekuje</span>
+              </div>
+              <div class="stat-box stat-progress">
+                <span class="stat-number" id="admin-stat-progress">0</span>
+                <span class="stat-label">W trakcie</span>
+              </div>
+              <div class="stat-box stat-done">
+                <span class="stat-number" id="admin-stat-done">0</span>
+                <span class="stat-label">Zrobione</span>
+              </div>
+            </div>
+
+            <!-- Filtry dla admina -->
+            <div class="filters-row" id="admin-filters">
+              <button class="filter-btn active" data-filter="all">
+                Wszystkie
+              </button>
+              <button class="filter-btn" data-filter="pending">
+                Oczekujące / Pauza
+              </button>
+              <button class="filter-btn" data-filter="in_progress">
+                W trakcie
+              </button>
+              <button class="filter-btn" data-filter="completed">
+                Zrobione
+              </button>
+            </div>
+
+            <!-- Przycisk dodawania -->
+            <button id="add-task-btn" class="btn btn-primary btn-block btn-add">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Dodaj nowe zadanie</span>
+            </button>
+
+            <!-- Tryb edycji kolejności -->
+            <div class="reorder-controls">
+              <button
+                id="toggle-reorder-btn"
+                class="btn btn-secondary btn-block"
+              >
+                <svg
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <line x1="3" y1="6" x2="21" y2="6"></line>
+                  <line x1="3" y1="12" x2="21" y2="12"></line>
+                  <line x1="3" y1="18" x2="21" y2="18"></line>
+                </svg>
+                <span>Zmień kolejność</span>
+              </button>
+              <div id="reorder-info" class="reorder-info hidden">
+                <span
+                  >🔄 Przeciągnij zadania (zakończone są ukryte, w trakcie na
+                  górze)</span
+                >
+                <button id="save-reorder-btn" class="btn btn-success btn-small">
+                  Zapisz
+                </button>
+                <button
+                  id="cancel-reorder-btn"
+                  class="btn btn-secondary btn-small"
+                >
+                  Anuluj
+                </button>
+              </div>
+            </div>
+
+            <!-- Lista zadań -->
+            <div class="tasks-container">
+              <div class="tasks-list" id="admin-tasks-list">
+                <!-- Zadania ładowane przez JS -->
+              </div>
+              <div id="admin-tasks-empty" class="empty-state hidden">
+                <div class="empty-icon">📋</div>
+                <div class="empty-text">Brak zadań na wybrany dzień</div>
+                <button class="btn btn-primary" id="add-task-empty-btn">
+                  Dodaj pierwsze zadanie
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Raporty - NOWE -->
+        <div class="tab-content" id="tab-reports">
+          <div class="main-content">
+            <div class="report-card">
+              <div class="report-header">
+                <h3 class="report-title">📊 Statystyki kierowców</h3>
+                <div class="form-group" style="margin: 0; min-width: 140px">
+                  <div
+                    class="report-controls"
+                    style="display: flex; gap: 10px; align-items: center"
+                  >
+                    <select
+                      id="report-period-type"
+                      style="
+                        padding: 8px;
+                        border-radius: 8px;
+                        border: 1px solid var(--border-color);
+                      "
+                    >
+                      <option value="today" selected>Dziś</option>
+                      <option value="week">Ostatnie 7 dni</option>
+                      <option value="month">Konkretny miesiąc</option>
+                      <option value="day">Konkretny dzień</option>
+                    </select>
+
+                    <input
+                      type="month"
+                      id="report-month-picker"
+                      class="hidden"
+                      style="padding: 6px"
+                    />
+                    <input
+                      type="date"
+                      id="report-day-picker"
+                      class="hidden"
+                      style="padding: 6px"
+                    />
+
+                    <button
+                      id="print-report-btn"
+                      class="btn btn-secondary btn-small"
+                      title="Kliknij aby wydrukować lub pobrać PDF"
+                    >
+                      🖨️ PDF
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div id="report-stats" class="report-stats">
+                <!-- Ładowane przez JS -->
+              </div>
+              <div id="report-drivers-list">
+                <!-- Ładowane przez JS -->
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Użytkownicy -->
+        <div class="tab-content" id="tab-users">
+          <div class="main-content">
+            <button id="add-user-btn" class="btn btn-primary btn-block btn-add">
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Dodaj użytkownika</span>
+            </button>
+            <div class="users-list" id="users-list">
+              <!-- Użytkownicy ładowani przez JS -->
+            </div>
+            <div id="users-empty" class="empty-state hidden">
+              <div class="empty-icon">👥</div>
+              <div class="empty-text">Brak użytkowników</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: Lokalizacje -->
+        <div class="tab-content" id="tab-locations">
+          <div class="main-content">
+            <button
+              id="add-location-btn"
+              class="btn btn-primary btn-block btn-add"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+              <span>Dodaj lokalizację</span>
+            </button>
+
+            <div class="locations-section">
+              <h3 class="section-title">📍 Lokalizacje</h3>
+              <div class="locations-list" id="locations-list">
+                <!-- Lokalizacje ładowane przez JS -->
+              </div>
+            </div>
+
+            <div class="locations-section">
+              <h3 class="section-title">🏢 Działy</h3>
+              <div class="locations-list" id="departments-list">
+                <!-- Działy ładowane przez JS -->
+              </div>
+            </div>
+
+            <div id="locations-empty" class="empty-state hidden">
+              <div class="empty-icon">📍</div>
+              <div class="empty-text">Brak lokalizacji</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- ========== MODAL: Dodaj/Edytuj Zadanie ========== -->
+      <div id="modal-task" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container modal-large">
+          <div class="modal-header">
+            <h2 id="modal-task-title">Nowe zadanie</h2>
+            <button class="modal-close" data-close="modal-task">×</button>
+          </div>
+          <form id="task-form" class="modal-body">
+            <input type="hidden" id="task-id" />
+
+            <!-- Typ zadania -->
+            <div class="form-group">
+              <label>Typ zadania</label>
+              <div class="task-type-group">
+                <label class="task-type-option" data-type="unloading">
+                  <input type="radio" name="task-type" value="unloading" />
+                  <div class="task-type-card">
+                    <span class="task-type-icon">📥</span>
+                    <span class="task-type-name">Rozładunek</span>
+                  </div>
+                </label>
+                <label class="task-type-option" data-type="transport">
+                  <input
+                    type="radio"
+                    name="task-type"
+                    value="transport"
+                    checked
+                  />
+                  <div class="task-type-card">
+                    <span class="task-type-icon">🚛</span>
+                    <span class="task-type-name">Przewożenie</span>
+                  </div>
+                </label>
+                <label class="task-type-option" data-type="loading">
+                  <input type="radio" name="task-type" value="loading" />
+                  <div class="task-type-card">
+                    <span class="task-type-icon">📤</span>
+                    <span class="task-type-name">Załadunek</span>
+                  </div>
+                </label>
+              </div>
+              <!-- Inne zadanie - pełna szerokość poniżej -->
+              <label
+                class="task-type-option task-type-other-full"
+                data-type="other"
+                style="display: block; width: 100%; margin-top: 10px"
+              >
+                <input type="radio" name="task-type" value="other" />
+                <div class="task-type-card" style="justify-content: center">
+                  <span class="task-type-icon">📋</span>
+                  <span class="task-type-name">Inne zadanie</span>
+                </div>
+              </label>
+            </div>
+
+            <!-- Pola dla ROZŁADUNKU -->
+            <div id="fields-unloading" class="task-fields hidden">
+              <div class="mode-toggle-group">
+                <button
+                  type="button"
+                  class="mode-btn active"
+                  data-mode="full"
+                  data-target="unloading"
+                >
+                  Pełny
+                </button>
+                <button
+                  type="button"
+                  class="mode-btn"
+                  data-mode="containers"
+                  data-target="unloading"
+                >
+                  Kontenery
+                </button>
+              </div>
+
+              <!-- Organizm: PEŁNY -->
+              <div id="unloading-full-fields">
+                <div class="form-group">
+                  <label for="unloading-material"
+                    >Nazwa/opis rozładunku *</label
+                  >
+                  <input
+                    type="text"
+                    id="unloading-material"
+                    placeholder="np. Paleta cementu 50 worków"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="unloading-department">Na jaki dział *</label>
+                  <select id="unloading-department">
+                    <option value="">Wybierz dział...</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Organizm: KONTENERY -->
+              <div id="unloading-containers-fields" class="hidden">
+                <div class="form-group">
+                  <label for="unloading-customer">Nazwa Klienta *</label>
+                  <input
+                    type="text"
+                    id="unloading-customer"
+                    placeholder="Wpisz nazwę klienta"
+                  />
+                </div>
+
+                <!-- Kontener 1 -->
+                <div class="container-organism-block">
+                  <div class="block-header">📦 Kontener 1</div>
+                  <div class="form-group">
+                    <label>Opis kontenera / Numer</label>
+                    <input
+                      type="text"
+                      id="unloading-c1-desc"
+                      placeholder="Wpisz opis..."
+                    />
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Na jaki dział</label>
+                      <select id="unloading-c1-dept" class="dept-select">
+                        <option value="">Wybierz dział...</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Przypisz do kierowcy</label>
+                      <select id="unloading-c1-driver" class="driver-select">
+                        <option value="">Dowolny kierowca</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Kontener 2 -->
+                <div class="container-organism-block">
+                  <div class="block-header">📦 Kontener 2</div>
+                  <div class="form-group">
+                    <label>Opis kontenera / Numer</label>
+                    <input
+                      type="text"
+                      id="unloading-c2-desc"
+                      placeholder="Wpisz opis..."
+                    />
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Na jaki dział</label>
+                      <select id="unloading-c2-dept" class="dept-select">
+                        <option value="">Wybierz dział...</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Przypisz do kierowcy</label>
+                      <select id="unloading-c2-driver" class="driver-select">
+                        <option value="">Dowolny kierowca</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pola dla PRZEWOŻENIA -->
+            <div id="fields-transport" class="task-fields">
+              <div class="form-group">
+                <label for="transport-material">Materiał/ładunek *</label>
+                <input
+                  type="text"
+                  id="transport-material"
+                  placeholder="np. Paleta cegieł"
+                />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="transport-from">Skąd *</label>
+                  <input
+                    type="text"
+                    id="transport-from"
+                    list="datalist-locations"
+                    placeholder="Wybierz lub wpisz"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="transport-to">Dokąd *</label>
+                  <input
+                    type="text"
+                    id="transport-to"
+                    list="datalist-locations"
+                    placeholder="Wybierz lub wpisz"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Pola dla ZAŁADUNKU -->
+            <div id="fields-loading" class="task-fields hidden">
+              <div class="mode-toggle-group">
+                <button
+                  type="button"
+                  class="mode-btn active"
+                  data-mode="full"
+                  data-target="loading"
+                >
+                  Pełny
+                </button>
+                <button
+                  type="button"
+                  class="mode-btn"
+                  data-mode="containers"
+                  data-target="loading"
+                >
+                  Kontenery
+                </button>
+              </div>
+
+              <!-- Organizm: PEŁNY -->
+              <div id="loading-full-fields">
+                <div class="form-group">
+                  <label for="loading-material">Rodzaj materiału *</label>
+                  <input
+                    type="text"
+                    id="loading-material"
+                    placeholder="np. Paleta z produktami"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="loading-department">Na jakim dziale *</label>
+                  <select id="loading-department">
+                    <option value="">Wybierz dział...</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Organizm: KONTENERY -->
+              <div id="loading-containers-fields" class="hidden">
+                <div class="form-group">
+                  <label for="loading-customer">Nazwa Klienta *</label>
+                  <input
+                    type="text"
+                    id="loading-customer"
+                    placeholder="Wpisz nazwę klienta"
+                  />
+                </div>
+
+                <!-- Kontener 1 -->
+                <div class="container-organism-block">
+                  <div class="block-header">📦 Kontener 1</div>
+                  <div class="form-group">
+                    <label>Opis kontenera / Numer</label>
+                    <input
+                      type="text"
+                      id="loading-c1-desc"
+                      placeholder="Wpisz opis..."
+                    />
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Na jaki dział</label>
+                      <select id="loading-c1-dept" class="dept-select">
+                        <option value="">Wybierz dział...</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Przypisz do kierowcy</label>
+                      <select id="loading-c1-driver" class="driver-select">
+                        <option value="">Dowolny kierowca</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Kontener 2 -->
+                <div class="container-organism-block">
+                  <div class="block-header">📦 Kontener 2</div>
+                  <div class="form-group">
+                    <label>Opis kontenera / Numer</label>
+                    <input
+                      type="text"
+                      id="loading-c2-desc"
+                      placeholder="Wpisz opis..."
+                    />
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label>Na jaki dział</label>
+                      <select id="loading-c2-dept" class="dept-select">
+                        <option value="">Wybierz dział...</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label>Przypisz do kierowcy</label>
+                      <select id="loading-c2-driver" class="driver-select">
+                        <option value="">Dowolny kierowca</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Pola dla INNEGO ZADANIA -->
+            <div id="fields-other" class="task-fields hidden">
+              <div class="form-group">
+                <label for="other-description">Rodzaj zadania *</label>
+                <input
+                  type="text"
+                  id="other-description"
+                  placeholder="np. Pomoc przy rozładunku, Sprzątanie hali"
+                />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="other-from">Skąd</label>
+                  <input
+                    type="text"
+                    id="other-from"
+                    list="datalist-locations"
+                    placeholder="Opcjonalnie"
+                  />
+                </div>
+                <div class="form-group">
+                  <label for="other-to">Dokąd</label>
+                  <input
+                    type="text"
+                    id="other-to"
+                    list="datalist-locations"
+                    placeholder="Opcjonalnie"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Sekcja Kontenerów (Dla przewożenia i innych) -->
+            <div id="containers-section" class="form-group hidden">
+              <label>📦 Kontenery / Części</label>
+              <div id="containers-list" class="containers-list-form">
+                <!-- Dynamiczne kontenery -->
+              </div>
+              <button
+                type="button"
+                id="add-container-btn"
+                class="btn btn-secondary btn-sm"
+                style="margin-top: 10px"
+              >
+                ➕ Dodaj część
+              </button>
+            </div>
+
+            <!-- Datalist lokalizacji -->
+            <datalist id="datalist-locations"></datalist>
+
+            <!-- Data i godzina -->
+            <div class="form-row">
+              <div class="form-group">
+                <label for="task-date">Data *</label>
+                <input type="date" id="task-date" required />
+              </div>
+              <div class="form-group">
+                <label for="task-time">Godzina</label>
+                <input type="time" id="task-time" />
+              </div>
+            </div>
+
+            <!-- Priorytet -->
+            <div class="form-group">
+              <label>Priorytet</label>
+              <div class="priority-group">
+                <label class="priority-option priority-high">
+                  <input type="radio" name="task-priority" value="high" />
+                  <span>🔴 Pilne</span>
+                </label>
+                <label class="priority-option priority-normal">
+                  <input
+                    type="radio"
+                    name="task-priority"
+                    value="normal"
+                    checked
+                  />
+                  <span>🟡 Normalne</span>
+                </label>
+                <label class="priority-option priority-low">
+                  <input type="radio" name="task-priority" value="low" />
+                  <span>🟢 Niski</span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Przypisz do kierowcy -->
+            <div id="global-driver-section" class="form-group">
+              <label for="task-assigned">Przypisz do kierowcy</label>
+              <select id="task-assigned">
+                <option value="">Dowolny kierowca</option>
+              </select>
+            </div>
+
+            <!-- Notatki -->
+            <div class="form-group">
+              <label for="task-notes">Uwagi dla kierowców</label>
+              <textarea
+                id="task-notes"
+                rows="2"
+                placeholder="Dodatkowe informacje..."
+              ></textarea>
+            </div>
+
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-close="modal-task"
+              >
+                Anuluj
+              </button>
+              <button type="submit" class="btn btn-primary">Zapisz</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ========== MODAL: Szczegóły Zadania ========== -->
+      <div id="modal-task-detail" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container modal-large">
+          <div class="modal-header">
+            <h2>Szczegóły zadania</h2>
+            <button class="modal-close" data-close="modal-task-detail">
+              ×
+            </button>
+          </div>
+          <div id="task-detail-content" class="modal-body">
+            <!-- Zawartość ładowana przez JS -->
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== MODAL: Dodaj uwagę/przestój ========== -->
+      <div id="modal-task-log" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container">
+          <div class="modal-header">
+            <h2 id="modal-log-title">Dodaj uwagę</h2>
+            <button class="modal-close" data-close="modal-task-log">×</button>
+          </div>
+          <form id="task-log-form" class="modal-body">
+            <input type="hidden" id="log-task-id" />
+
+            <!-- Typ logu -->
+            <div class="form-group">
+              <label>Typ zgłoszenia</label>
+              <div class="log-type-group">
+                <label class="log-type-option">
+                  <input type="radio" name="log-type" value="note" checked />
+                  <span class="log-type-card">
+                    <span class="log-type-icon">📝</span>
+                    <span>Uwaga</span>
+                  </span>
+                </label>
+                <label class="log-type-option">
+                  <input type="radio" name="log-type" value="delay" />
+                  <span class="log-type-card">
+                    <span class="log-type-icon">⏱️</span>
+                    <span>Przestój</span>
+                  </span>
+                </label>
+                <label class="log-type-option">
+                  <input type="radio" name="log-type" value="problem" />
+                  <span class="log-type-card">
+                    <span class="log-type-icon">⚠️</span>
+                    <span>Problem</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <!-- Pola dla uwagi -->
+            <div id="log-fields-note" class="log-fields">
+              <div class="form-group">
+                <label for="log-message">Treść uwagi *</label>
+                <textarea
+                  id="log-message"
+                  rows="3"
+                  placeholder="Opisz sytuację..."
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- Pola dla przestoju -->
+            <div id="log-fields-delay" class="log-fields hidden">
+              <div class="form-group">
+                <label for="delay-reason">Powód przestoju *</label>
+                <select id="delay-reason">
+                  <option value="">Wybierz powód...</option>
+                  <option value="no_access">Brak dojazdu</option>
+                  <option value="waiting">
+                    Oczekiwanie na załadunek/rozładunek
+                  </option>
+                  <option value="traffic">Korki / utrudnienia</option>
+                  <option value="equipment">Problem z sprzętem</option>
+                  <option value="weather">Warunki pogodowe</option>
+                  <option value="break">Przerwa</option>
+                  <option value="other">Inny powód</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="delay-minutes">Czas przestoju (minuty)</label>
+                <input
+                  type="number"
+                  id="delay-minutes"
+                  min="1"
+                  max="480"
+                  placeholder="np. 30"
+                />
+              </div>
+              <div class="form-group">
+                <label for="delay-details">Dodatkowe informacje</label>
+                <textarea
+                  id="delay-details"
+                  rows="2"
+                  placeholder="Szczegóły..."
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- Pola dla problemu -->
+            <div id="log-fields-problem" class="log-fields hidden">
+              <div class="form-group">
+                <label for="problem-message">Opis problemu *</label>
+                <textarea
+                  id="problem-message"
+                  rows="3"
+                  placeholder="Opisz problem..."
+                ></textarea>
+              </div>
+            </div>
+
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-close="modal-task-log"
+              >
+                Anuluj
+              </button>
+              <button type="submit" class="btn btn-primary">Wyślij</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ========== MODAL: Zmień priorytet ========== -->
+      <div id="modal-priority" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container modal-small">
+          <div class="modal-header">
+            <h2>Zmień priorytet</h2>
+            <button class="modal-close" data-close="modal-priority">×</button>
+          </div>
+          <div class="modal-body">
+            <input type="hidden" id="priority-task-id" />
+            <div class="priority-select-group">
+              <button
+                type="button"
+                class="priority-select-btn priority-high"
+                data-priority="high"
+              >
+                🔴 Pilne
+              </button>
+              <button
+                type="button"
+                class="priority-select-btn priority-normal"
+                data-priority="normal"
+              >
+                🟡 Normalne
+              </button>
+              <button
+                type="button"
+                class="priority-select-btn priority-low"
+                data-priority="low"
+              >
+                🟢 Niski
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== MODAL: Dodaj Użytkownika ========== -->
+      <div id="modal-user" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container modal-small">
+          <div class="modal-header">
+            <h2 id="modal-user-title">Nowy użytkownik</h2>
+            <button class="modal-close" data-close="modal-user">×</button>
+          </div>
+          <form id="user-form" class="modal-body">
+            <input type="hidden" id="user-id" />
+
+            <div class="form-group">
+              <label for="user-name">Imię i nazwisko *</label>
+              <input
+                type="text"
+                id="user-name"
+                required
+                placeholder="np. Jan Kowalski"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="user-pin">PIN (4-6 cyfr) *</label>
+              <input
+                type="text"
+                id="user-pin"
+                pattern="[0-9]{4,6}"
+                maxlength="6"
+                placeholder="np. 1234"
+                inputmode="numeric"
+              />
+              <small class="form-hint" id="pin-hint"
+                >Zostaw puste aby nie zmieniać PIN-u</small
+              >
+            </div>
+
+            <div class="form-group">
+              <label>Rola *</label>
+              <div class="role-group">
+                <label class="role-option">
+                  <input type="radio" name="user-role" value="driver" checked />
+                  <span class="role-card">
+                    <span class="role-icon">🚗</span>
+                    <span>Kierowca</span>
+                  </span>
+                </label>
+                <label class="role-option">
+                  <input type="radio" name="user-role" value="admin" />
+                  <span class="role-card">
+                    <span class="role-icon">👔</span>
+                    <span>Kierownik</span>
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <!-- PERMISSIONS CHECKBOXES (Only for Admin) -->
+            <div
+              id="admin-permissions-fields"
+              class="form-group hidden"
+              style="
+                margin-top: 15px;
+                background: var(--bg-secondary);
+                padding: 10px;
+                border-radius: 8px;
+              "
+            >
+              <label style="margin-bottom: 8px; display: block"
+                >Uprawnienia Kierownika</label
+              >
+              <div style="display: flex; flex-direction: column; gap: 8px">
+                <label
+                  class="checkbox-label"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    cursor: pointer;
+                  "
+                >
+                  <input type="checkbox" id="perm-reports" checked />
+                  <span>📊 Raporty (Dostęp)</span>
+                </label>
+                <label
+                  class="checkbox-label"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    cursor: pointer;
+                  "
+                >
+                  <input type="checkbox" id="perm-users" checked />
+                  <span>👥 Użytkownicy (Dodawanie/Edycja)</span>
+                </label>
+                <label
+                  class="checkbox-label"
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 10px;
+                    cursor: pointer;
+                  "
+                >
+                  <input type="checkbox" id="perm-locations" checked />
+                  <span>📍 Lokalizacje (Dodawanie/Edycja)</span>
+                </label>
+              </div>
+            </div>
+            <div id="driver-hours-fields" class="hidden">
+              <div class="form-group">
+                <label>Godziny pracy (dla raportów)</label>
+                <div class="form-row">
+                  <div class="form-group" style="margin-bottom: 0">
+                    <label for="user-work-start" style="font-size: 11px"
+                      >Start</label
+                    >
+                    <input type="time" id="user-work-start" value="07:00" />
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0">
+                    <label for="user-work-end" style="font-size: 11px"
+                      >Koniec</label
+                    >
+                    <input type="time" id="user-work-end" value="15:00" />
+                  </div>
+                </div>
+                <small class="form-hint">Domyślnie 07:00 - 15:00</small>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-close="modal-user"
+              >
+                Anuluj
+              </button>
+              <button type="submit" class="btn btn-primary">Zapisz</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ========== MODAL: Dodaj Lokalizację ========== -->
+      <div id="modal-location" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container modal-small">
+          <div class="modal-header">
+            <h2>Nowa lokalizacja</h2>
+            <button class="modal-close" data-close="modal-location">×</button>
+          </div>
+          <form id="location-form" class="modal-body">
+            <input type="hidden" id="location-id" />
+            <div class="form-group">
+              <label for="location-name">Nazwa *</label>
+              <input
+                type="text"
+                id="location-name"
+                required
+                placeholder="np. Hala D"
+              />
+            </div>
+
+            <div class="form-group">
+              <label>Typ</label>
+              <div class="location-type-group">
+                <label class="location-type-option">
+                  <input
+                    type="radio"
+                    name="location-type"
+                    value="location"
+                    checked
+                  />
+                  <span>📍 Lokalizacja</span>
+                </label>
+                <label class="location-type-option">
+                  <input type="radio" name="location-type" value="department" />
+                  <span>🏢 Dział</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <button
+                type="button"
+                id="pick-location-btn"
+                class="btn btn-secondary btn-block"
+              >
+                📍 Zaznacz na mapie
+              </button>
+              <input type="hidden" id="location-map-x" />
+              <input type="hidden" id="location-map-y" />
+            </div>
+
+            <div class="modal-footer">
+              <button
+                type="button"
+                class="btn btn-secondary"
+                data-close="modal-location"
+              >
+                Anuluj
+              </button>
+              <button type="submit" class="btn btn-primary">Dodaj</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <!-- ========== MODAL: Powiadomienia ========== -->
+      <div id="modal-notifications" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-container">
+          <div class="modal-header">
+            <h2>🔔 Powiadomienia</h2>
+            <button class="modal-close" data-close="modal-notifications">
+              ×
+            </button>
+          </div>
+          <div class="modal-body notifications-body">
+            <div class="notifications-actions">
+              <button
+                id="mark-all-read-btn"
+                class="btn btn-small btn-secondary"
+              >
+                Oznacz jako przeczytane
+              </button>
+              <button id="delete-read-btn" class="btn btn-small btn-danger">
+                Usuń przeczytane
+              </button>
+            </div>
+          </div>
+          <div id="notifications-list" class="notifications-list">
+            <!-- Powiadomienia ładowane przez JS -->
+          </div>
+          <div id="notifications-empty" class="empty-state hidden">
+            <div class="empty-icon">🔔</div>
+            <div class="empty-text">Brak powiadomień</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: Mapa Zakładu ========== -->
+    <div id="modal-map" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-large">
+        <div class="modal-header">
+          <h2>🗺️ Mapa Zakładu</h2>
+          <button class="modal-close" data-close="modal-map">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc">
+            Kliknij na mapie aby zaznaczyć wybrane miejsce.
+          </p>
+          <div class="map-wrapper">
+            <div id="map-container" class="map-container">
+              <img
+                data-src="img/mapa.webp"
+                src="img/mapa.webp"
+                alt="Mapa Zakładu"
+                id="facility-map"
+                class="map-image"
+                onerror="
+                  this.src =
+                    'https://placehold.co/1200x800/1c1c1e/8e8e93?text=Mapa+niedostępna'
+                "
+              />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-close="modal-map">
+            Zamknij
+          </button>
+          <button class="btn btn-primary hidden" id="map-save-btn">
+            Zapisz pozycję
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: Potwierdzenie ========== -->
+    <div id="modal-confirm" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-small">
+        <div class="modal-header">
+          <h2 id="confirm-title">Potwierdzenie</h2>
+          <button class="modal-close" data-close="modal-confirm">×</button>
+        </div>
+        <div class="modal-body">
+          <p id="confirm-message">Czy na pewno chcesz wykonać tę akcję?</p>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-close="modal-confirm"
+            >
+              Anuluj
+            </button>
+            <button
+              type="button"
+              id="confirm-action-btn"
+              class="btn btn-danger"
+            >
+              Potwierdź
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: Dołącz do zadania ========== -->
+    <div id="modal-join-task" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-small">
+        <div class="modal-header">
+          <h2>Dołącz do zadania</h2>
+          <button class="modal-close" data-close="modal-join-task">×</button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="join-task-id" />
+          <p id="join-task-message">
+            Czy chcesz dołączyć do tego zadania i pomagać przy jego realizacji?
+          </p>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-close="modal-join-task"
+            >
+              Anuluj
+            </button>
+            <button
+              type="button"
+              id="join-task-confirm-btn"
+              class="btn btn-primary"
+            >
+              Dołącz
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: Zmiana PIN (Wymuszona) ========== -->
+    <div id="modal-change-pin" class="modal hidden" style="z-index: 2000">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-small">
+        <div class="modal-header">
+          <h2>🔐 Zmień PIN</h2>
+        </div>
+        <form id="change-pin-form" class="modal-body">
+          <p class="text-muted" style="margin-bottom: 15px">
+            To Twoje pierwsze logowanie lub administrator wymusił zmianę. Ustaw
+            nowy PIN.
+          </p>
+
+          <div class="form-group">
+            <label for="new-pin">Nowy PIN (4-6 cyfr)</label>
+            <input
+              type="password"
+              id="new-pin"
+              required
+              pattern="[0-9]{4,6}"
+              maxlength="6"
+              inputmode="numeric"
+              placeholder="••••"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="confirm-pin">Potwierdź PIN</label>
+            <input
+              type="password"
+              id="confirm-pin"
+              required
+              pattern="[0-9]{4,6}"
+              maxlength="6"
+              inputmode="numeric"
+              placeholder="••••"
+              autocomplete="off"
+            />
+          </div>
+
+          <div class="modal-footer">
+            <button type="submit" class="btn btn-primary btn-block">
+              Zapisz i wejdź
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: Powód zmiany kolejności ========== -->
+    <div id="modal-reorder-reason" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-small">
+        <div class="modal-header">
+          <h2>Zmiana kolejności</h2>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted" style="margin-bottom: 15px">
+            Podaj powód zmiany kolejności zadań:
+          </p>
+          <textarea
+            id="reorder-reason"
+            class="form-control"
+            rows="3"
+            placeholder="np. Awaria wózka, Pilne zamówienie..."
+          ></textarea>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              id="cancel-reorder-reason"
+            >
+              Anuluj
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              id="confirm-reorder-reason"
+            >
+              Zapisz
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== TOAST CONTAINER ========== -->
+    <div id="toast-container"></div>
+
+    <div id="pull-to-refresh" class="pull-to-refresh hidden">
+      <div class="pull-spinner"></div>
+      <span>Odśwież</span>
+    </div>
+
+    <div id="modal-map" class="modal hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-large">
+        <div class="modal-header">
+          <h2>🗺️ Mapa Zakładu</h2>
+          <button class="modal-close" data-close="modal-map">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc">
+            Kliknij na mapie aby zaznaczyć wybrane miejsce.
+          </p>
+          <div class="map-wrapper">
+            <div id="map-container" class="map-container">
+              <!-- Placeholder: Użytkownik podmieni sobie 'map.jpg' w folderze public/img -->
+              <img
+                data-src="img/mapa.webp"
+                src="img/mapa.webp"
+                alt="Mapa Zakładu"
+                id="facility-map"
+                class="map-image"
+                onerror="
+                  if (!this.src.includes('placehold.co')) {
+                    if (this.src.includes('.webp')) {
+                      console.warn('Map WebP failed, trying PNG');
+                      this.src = 'img/mapa.png';
+                    } else {
+                      console.error('All map images failed');
+                      this.src =
+                        'https://placehold.co/1200x800/1c1c1e/FFF?text=Brak+pliku+img/mapa.webp';
+                    }
+                  }
+                "
+              />
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-close="modal-map">
+            Zamknij
+          </button>
+          <button class="btn btn-primary" id="map-save-btn">
+            Zapisz pozycję
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="printable-report" class="hidden-print"></div>
+
+    <script src="js/app.js?v=2.43"></script>
+  </body>
+</html>
