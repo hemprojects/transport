@@ -472,15 +472,15 @@ ol {
   background: #1c1c1e;
 }
 
-/* PC - Modal dopasowany do rozmiaru mapy (wąski dla pionowej mapy 1920x3380) */
+/* PC - Modal dopasowany do rozmiaru mapy (WIĘKSZY dla lepszego widoku) */
 @media (min-width: 1024px) {
   .modal-map .modal-container {
-    /* Dla mapy 1920x3380 (aspect ratio ~0.568), modal będzie WĄSKI i WYSOKI */
+    /* ZWIĘKSZONO: 45vw→60vw dla większej mapy, 92vh→96vh dla max wysokości */
     width: auto;
     min-width: 400px;
-    max-width: 45vw; /* ZMNIEJSZONO z 70vw - teraz wąski modal! */
-    height: 92vh; /* ZWIĘKSZONO z 88vh - maksymalna wysokość */
-    max-height: 92vh;
+    max-width: 60vw; /* Większy modal = większa mapa */
+    height: 96vh; /* Prawie pełna wysokość ekranu */
+    max-height: 96vh;
   }
 }
 
@@ -561,23 +561,21 @@ ol {
   user-select: none;
   -webkit-user-select: none;
   
-  /* STRATEGIA DLA iOS/Safari - ZMIANA!
-     Safari ma problem z crisp-edges i pixelated - powoduje artefakty.
-     Zamiast tego używamy auto + sharpen filter */
-  image-rendering: auto;
-  image-rendering: -webkit-optimize-contrast; /* Safari - najważniejsze! */
+  /* NOWA STRATEGIA: Priorytet dla crisp-edges WSZĘDZIE - nawet iOS */
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: -moz-crisp-edges;
   
-  /* KLUCZOWA ZMIANA: Sharpen filter dla iOS/Safari
-     Dodaje ostrość bez artefaktów crisp-edges */
-  -webkit-filter: contrast(1.05) saturate(1.1);
-  filter: contrast(1.05) saturate(1.1);
+  /* BARDZO SILNE filtry sharpen dla kompensacji */
+  -webkit-filter: contrast(1.25) saturate(1.4) brightness(1.05);
+  filter: contrast(1.25) saturate(1.4) brightness(1.05);
   
   /* GPU Acceleration - KLUCZOWE dla iOS */
-  transform: translate3d(0, 0, 0); /* Lepsze niż translateZ dla iOS */
+  transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
-  perspective: 1000px; /* Wymusza GPU rendering na iOS */
+  perspective: 1000px;
   -webkit-perspective: 1000px;
   will-change: transform;
   
@@ -586,32 +584,21 @@ ol {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Desktop/Android - możemy użyć crisp-edges (nie ma artefaktów) */
-@supports not (-webkit-touch-callout: none) {
-  /* Jeśli NIE jest iOS */
-  .map-image {
-    image-rendering: crisp-edges;
-    image-rendering: -moz-crisp-edges;
-    image-rendering: pixelated;
-  }
-}
-
-/* Alternatywnie dla super wysokiej jakości (może być wolniejsze) */
+/* Retina/High-DPI - JESZCZE silniejsze filtry */
 @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
   .map-image {
-    /* Na ekranach Retina/High-DPI - więcej ostrości */
-    -webkit-filter: contrast(1.08) saturate(1.15) brightness(1.02);
-    filter: contrast(1.08) saturate(1.15) brightness(1.02);
+    -webkit-filter: contrast(1.3) saturate(1.5) brightness(1.06);
+    filter: contrast(1.3) saturate(1.5) brightness(1.06);
   }
 }
 
-/* Specjalna optymalizacja dla iOS 15+ */
+/* iOS 15+ - MAKSYMALNE wartości */
 @supports (-webkit-backdrop-filter: blur(1px)) {
   .map-image {
-    /* iOS 15+ - użyj najnowszych API WebKit */
     image-rendering: -webkit-optimize-contrast;
-    -webkit-filter: contrast(1.1) saturate(1.2) brightness(1.03);
-    filter: contrast(1.1) saturate(1.2) brightness(1.03);
+    image-rendering: crisp-edges;
+    -webkit-filter: contrast(1.35) saturate(1.6) brightness(1.08) sharpen(2);
+    filter: contrast(1.35) saturate(1.6) brightness(1.08);
   }
 }
 
@@ -632,11 +619,11 @@ ol {
 /* Pin na mapie - Smart Scaling + GPU Accelerated */
 .map-pin {
   position: absolute;
-  /* ZMNIEJSZONO: było 12px, teraz 8px */
-  width: 8px;
-  height: 8px;
-  /* Smart Scaling: kompensuje zoom, POPRAWIONE - mniejszy współczynnik 0.15 zamiast 0.3 */
-  transform: translate(-50%, -100%) scale(calc((1 / var(--map-scale, 1)) * (1 + 0.15 * var(--map-scale, 1))));
+  /* DRASTYCZNIE ZMNIEJSZONO: było 8px, teraz 5px - BARDZO MAŁE pinezki */
+  width: 5px;
+  height: 5px;
+  /* Smart Scaling: MINIMALNY wzrost przy zoomie - 0.08 zamiast 0.15 */
+  transform: translate(-50%, -100%) scale(calc((1 / var(--map-scale, 1)) * (1 + 0.08 * var(--map-scale, 1))));
   transform-origin: bottom center;
   z-index: 100;
   pointer-events: auto;
@@ -658,19 +645,22 @@ ol {
   text-rendering: optimizeLegibility;
 }
 
-/* Loading overlay */
+/* Loading overlay - IMPROVED */
 .map-wrapper.loading::after {
-  content: "Ładowanie mapy...";
+  content: "⏳ Ładowanie mapy...";
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.85);
   color: white;
-  padding: 10px 20px;
-  border-radius: 8px;
-  z-index: 200;
-  font-weight: bold;
+  padding: 20px 40px;
+  border-radius: 12px;
+  z-index: 9999;
+  font-weight: 600;
+  font-size: 16px;
+  letter-spacing: 0.5px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
 }
 
 .modal-map .modal-footer {
@@ -2509,12 +2499,9 @@ ol {
   background: var(--bg-secondary);
 }
 
-/* Special case: Map in Modal */
-.modal-map .modal-container {
-  max-width: 95vw;
-  max-height: 95vh;
-  width: 1200px;
-}
+/* REMOVED conflicting rule: .modal-map .modal-container z max-width: 95vw
+   PC używa reguły z linii ~481: max-width: 45vw, height: 92vh */
+
 
 .modal-map .modal-body {
   padding: 10px;

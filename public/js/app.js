@@ -1573,6 +1573,9 @@
           const scaleX = wrapperW / containerW;
           const scaleY = wrapperH / containerH;
           const fitScale = Math.min(scaleX, scaleY);
+          
+          // ZWIĘKSZONY ZOOM: 1.2x fitScale dla bliższego widoku początkowego
+          const initialZoom = fitScale * 1.2;
 
           // 3. Apply Styles
           container.style.width = containerW + "px";
@@ -1581,11 +1584,25 @@
 
           img.style.width = "100%";
           img.style.height = "100%";
-          img.style.objectFit = "cover"; // Cover na wszelki wypadek, ale przy 1:1 to to samo co fill
+          img.style.objectFit = "cover";
 
-          // 4. Init Panzoom
-          console.log(`🎯 Panzoom FitScale: ${fitScale.toFixed(5)}`);
-          this.setupPanzoom(wrapper, container, img, fitScale);
+          // 4. Init Panzoom z LOADER i FADE-IN
+          console.log(
+            `🎯 FitScale: ${fitScale.toFixed(3)}, InitialZoom: ${initialZoom.toFixed(3)} (1.2x)`
+          );
+          
+          // Ukryj mapę przed setupPanzoom
+          container.style.opacity = "0";
+          container.style.transition = "opacity 0.4s ease-in";
+          
+          this.setupPanzoom(wrapper, container, img, fitScale, initialZoom);
+          
+          // Fade-in mapy po inicjalizacji (KONIEC mrugania!)
+          setTimeout(() => {
+            container.style.opacity = "1";
+            // Ukryj loader dopiero jak mapa widoczna
+            setTimeout(() => this.hideLoading(), 200);
+          }, 100);
         };
 
         requestAnimationFrame(waitForLayout);
@@ -1600,7 +1617,7 @@
       img.src = `${baseSrc}?t=${timestamp}`;
     },
 
-    setupPanzoom(wrapper, container, img, fitScale) {
+    setupPanzoom(wrapper, container, img, fitScale, initialZoom) {
       try {
         // Wykryj iOS dla specjalnych optymalizacji
         const isIOS =
@@ -1610,14 +1627,17 @@
 
         // Bezpieczny zoom: startujemy od widoku całości
         // Pozwalamy przybliżyć aż do 2x native resolution (bardzo blisko)
+        
+        // Użyj initialZoom jeśli podano, inaczej fitScale
+        const startZoom = initialZoom || fitScale;
 
         this.panzoomInstance = Panzoom(container, {
           // MaxScale: Zwiększono do 10x (User request: "zoomować jeszcze bliżej")
           maxScale: 10.0,
           // MinScale: Pozwól oddalić do 80% widoku całości
           minScale: fitScale * 0.8,
-          // Start: Fit scale - NATYCHMIASTOWY start bez animacji
-          startScale: fitScale,
+          // Start: initialZoom dla bliższego widoku początkowego
+          startScale: startZoom,
           startX: 0,
           startY: 0,
 
@@ -1660,7 +1680,8 @@
           container.style.setProperty("--map-scale", s);
         };
         container.addEventListener("panzoomchange", updateScaleVar);
-        setTimeout(updateScaleVar, 100);
+        // ZMIANA: Wywołaj od razu bez delay żeby pinezki były poprawnej wielkości
+        updateScaleVar();
 
         // Obsługa kliknięcia
         let pStartX = 0,
@@ -1710,6 +1731,14 @@
       if (!canvas) {
         canvas = document.createElement("canvas");
         canvas.className = "map-paths-layer";
+        
+        // KLUCZOWE FIX: Canvas musi być NAD obrazem mapy!
+        canvas.style.position = "absolute";
+        canvas.style.top = "0";
+        canvas.style.left = "0";
+        canvas.style.zIndex = "50"; // NAD obrazem (aby rysowanie było widoczne)
+        canvas.style.pointerEvents = "none"; // Przepuszcza kliknięcia
+        
         container.appendChild(canvas);
       }
 
@@ -1731,7 +1760,7 @@
       canvas.style.height = img.naturalHeight + "px";
 
       console.log(
-        `🎨 Canvas: ${canvas.width}x${canvas.height} (DPR: ${dpr}, Quality: high)`
+        `🎨 Canvas: ${canvas.width}x${canvas.height} (DPR: ${dpr}, Quality: high, z-index: 50)`,
       );
     },
 
@@ -1778,6 +1807,13 @@
       // Wyczyść canvas - KLUCZOWE: używamy canvas.width/height (z DPR), NIE natural!
       // Canvas jest większy przez DPR, więc musimy clearować całą powierzchnię
       ctx.clearRect(0, 0, ctx.canvas.width / dpr, ctx.canvas.height / dpr);
+
+      // DEBUG: Loguj informacje o rysowaniu
+      if (this.mode === "edit_network") {
+        console.log(
+          `🎨 draw() - Mode: ${this.mode}, Nodes: ${this.nodes.length}, Connections: ${this.connections.length}, DPR: ${dpr}`
+        );
+      }
 
       // Oblicz współczynnik skali (Inverse Scaling)
       // Żeby linie miały stałą grubość wizualną niezależnie od zoomu
@@ -1899,9 +1935,30 @@
         const newNodeId = Date.now();
         this.nodes.push({ id: newNodeId, x, y });
 
-        // Jeśli coś było zaznaczone, połącz z nowym
+        // SMART AUTO-CONNECT:
         if (this.selectedNodeId) {
+          // Jeśli coś było zaznaczone, połącz z nowym
           this.toggleConnection(this.selectedNodeId, newNodeId);
+        } else if (this.nodes.length > 1) {
+          // AUTO-CONNECT do NAJBLIŻSZEGO node (gdy nic nie zaznaczono)
+          let nearest = null;
+          let minDist = Infinity;
+          
+          this.nodes.forEach((n) => {
+            if (n.id === newNodeId) return;
+            const dx = n.x - x;
+            const dy = n.y - y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < minDist) {
+              minDist = dist;
+              nearest = n;
+            }
+          });
+          
+          if (nearest) {
+            this.toggleConnection(nearest.id, newNodeId);
+            console.log(`🔗 Auto-connected to nearest #${nearest.id}`);
+          }
         }
         this.selectedNodeId = newNodeId;
       }
