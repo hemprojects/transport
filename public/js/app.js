@@ -51,7 +51,7 @@
     notificationInterval: null,
     taskCache: {}, // { "YYYY-MM-DD": tasks[] }
     lastReportData: null, // Store last loaded report data for printing
-    lastReportPeriod: 'today'
+    lastReportPeriod: "today",
   };
 
   // ... Utils ...
@@ -116,7 +116,7 @@
           parseInt(dateParts[2]),
           parseInt(timeParts[0]),
           parseInt(timeParts[1]),
-          parseInt(timeParts[2] || 0)
+          parseInt(timeParts[2] || 0),
         );
       } else {
         date = new Date(dateTimeStr);
@@ -133,7 +133,7 @@
       if (diffHours < 24) return `${diffHours} godz. temu`;
       if (diffDays < 7) return `${diffDays} dni temu`;
       return this.formatDateShort(
-        dateTimeStr.split(" ")[0] || dateTimeStr.split("T")[0]
+        dateTimeStr.split(" ")[0] || dateTimeStr.split("T")[0],
       );
     },
 
@@ -296,20 +296,20 @@
 
     // Oblicz odległość między dwoma punktami na mapie (w % mapy)
     getMapDistance(loc1Name, loc2Name) {
-        // Znajdź lokalizacje po nazwie
-        const allLocations = [...state.locations, ...state.departments];
-        const loc1 = allLocations.find(l => l.name === loc1Name);
-        const loc2 = allLocations.find(l => l.name === loc2Name);
-        
-        // Jeśli brak współrzędnych - zwróć nieskończoność (brak sugestii)
-        if (!loc1?.map_x || !loc1?.map_y || !loc2?.map_x || !loc2?.map_y) {
-            return Infinity;
-        }
-        
-        const dx = loc1.map_x - loc2.map_x;
-        const dy = loc1.map_y - loc2.map_y;
-        
-        return Math.sqrt(dx * dx + dy * dy);
+      // Znajdź lokalizacje po nazwie
+      const allLocations = [...state.locations, ...state.departments];
+      const loc1 = allLocations.find((l) => l.name === loc1Name);
+      const loc2 = allLocations.find((l) => l.name === loc2Name);
+
+      // Jeśli brak współrzędnych - zwróć nieskończoność (brak sugestii)
+      if (!loc1?.map_x || !loc1?.map_y || !loc2?.map_x || !loc2?.map_y) {
+        return Infinity;
+      }
+
+      const dx = loc1.map_x - loc2.map_x;
+      const dy = loc1.map_y - loc2.map_y;
+
+      return Math.sqrt(dx * dx + dy * dy);
     },
 
     // Próg bliskości (w % mapy) - można dostosować
@@ -317,8 +317,8 @@
 
     // Sprawdź czy lokalizacja jest "w pobliżu"
     isNearby(loc1Name, loc2Name) {
-        const distance = this.getMapDistance(loc1Name, loc2Name);
-        return distance <= this.NEARBY_THRESHOLD;
+      const distance = this.getMapDistance(loc1Name, loc2Name);
+      return distance <= this.NEARBY_THRESHOLD;
     },
   };
 
@@ -521,31 +521,31 @@
 
     // MAP PATHS
     async getMapPaths() {
-        return await this.request('/map-paths');
+      return await this.request("/map-paths");
     },
 
     async createMapPath(data) {
-        return await this.request('/map-paths', {
-            method: 'POST',
-            body: data,
-        });
+      return await this.request("/map-paths", {
+        method: "POST",
+        body: data,
+      });
     },
 
     async deleteMapPath(id) {
-        return await this.request(`/map-paths/${id}`, {
-            method: 'DELETE',
-        });
+      return await this.request(`/map-paths/${id}`, {
+        method: "DELETE",
+      });
     },
     // ROAD NETWORK
     async getRoadNetwork() {
-        return await this.request('/road-network');
+      return await this.request("/road-network");
     },
-    
+
     async saveRoadNetwork(data) {
-        return await this.request('/road-network', {
-            method: 'POST',
-            body: data
-        });
+      return await this.request("/road-network", {
+        method: "POST",
+        body: data,
+      });
     },
   };
 
@@ -638,14 +638,14 @@
           return await API.updateTaskStatus(
             action.data.id,
             action.data.status,
-            action.data.userId
+            action.data.userId,
           );
         case "joinTask":
           return await API.joinTask(action.data.taskId, action.data.userId);
         case "createTaskLog":
           return await API.createTaskLog(
             action.data.taskId,
-            action.data.logData
+            action.data.logData,
           );
         case "deleteReadNotifications":
           return await API.deleteReadNotifications(action.data.userId);
@@ -760,7 +760,7 @@
 
       setTimeout(() => {
         const firstInput = modal.querySelector(
-          'input:not([type="hidden"]):not([type="radio"]), select, textarea'
+          'input:not([type="hidden"]):not([type="radio"]), select, textarea',
         );
         if (firstInput) firstInput.focus();
       }, 100);
@@ -794,7 +794,7 @@
       message,
       onConfirm,
       confirmText = "Potwierdź",
-      isDanger = true
+      isDanger = true,
     ) {
       Utils.$("#confirm-title").textContent = title;
       Utils.$("#confirm-message").textContent = message;
@@ -867,7 +867,7 @@
       const newTheme = state.theme === "light" ? "dark" : "light";
       this.set(newTheme);
       Toast.info(
-        newTheme === "dark" ? "Tryb ciemny włączony" : "Tryb jasny włączony"
+        newTheme === "dark" ? "Tryb ciemny włączony" : "Tryb jasny włączony",
       );
     },
 
@@ -881,10 +881,10 @@
 
     initEventListeners() {
       Utils.$("#driver-theme-btn")?.addEventListener("click", () =>
-        this.toggle()
+        this.toggle(),
       );
       Utils.$("#admin-theme-btn")?.addEventListener("click", () =>
-        this.toggle()
+        this.toggle(),
       );
     },
   };
@@ -911,7 +911,9 @@
           AdminPanel.loadTasks(true);
         }
       } else {
-        console.error(`❌ Screen.show: Screen ID "#screen-${screenId}" NOT FOUND!`);
+        console.error(
+          `❌ Screen.show: Screen ID "#screen-${screenId}" NOT FOUND!`,
+        );
       }
     },
   };
@@ -1058,7 +1060,7 @@
       if (!taskId) return;
       // Znajdź nieprzeczytane powiadomienia dotyczące tego zadania
       const related = state.notifications.filter(
-        (n) => n.task_id == taskId && !n.is_read
+        (n) => n.task_id == taskId && !n.is_read,
       );
 
       for (const notif of related) {
@@ -1073,7 +1075,7 @@
       // Aktualizuj licznik lokalnie (bez odświeżania API)
       state.unreadNotifications = Math.max(
         0,
-        state.unreadNotifications - related.length
+        state.unreadNotifications - related.length,
       );
       this.updateBadge();
     },
@@ -1095,7 +1097,7 @@
       // Instant UI update
       state.notifications = state.notifications.filter((n) => !n.is_read);
       state.unreadNotifications = state.notifications.filter(
-        (n) => !n.is_read
+        (n) => !n.is_read,
       ).length; // Recalculate unread just in case
       this.renderList();
       Toast.success(`Usunięto ${readCount} przeczytanych`);
@@ -1139,7 +1141,7 @@
             .setAppBadge(state.unreadNotifications)
             .catch((e) => console.log("Badge error:", e));
         } else {
-          navigator.clearAppBadge().catch(() => { });
+          navigator.clearAppBadge().catch(() => {});
         }
       }
     },
@@ -1196,21 +1198,22 @@
                 <div class="notification-icon">${this.getIcon(notif.type)}</div>
                 <div class="notification-content">
                     <div class="notification-title">${Utils.escapeHtml(
-            notif.title
-          )}</div>
+                      notif.title,
+                    )}</div>
                     <div class="notification-message">${Utils.escapeHtml(
-            notif.message
-          )}</div>
+                      notif.message,
+                    )}</div>
                     <div class="notification-time">${Utils.formatRelativeTime(
-            notif.created_at
-          )}</div>
+                      notif.created_at,
+                    )}</div>
                 </div>
-                ${notif.is_read
-              ? ""
-              : '<div class="notification-unread-dot"></div>'
-            }
+                ${
+                  notif.is_read
+                    ? ""
+                    : '<div class="notification-unread-dot"></div>'
+                }
             </div>
-        `
+        `,
         )
         .join("");
 
@@ -1229,7 +1232,7 @@
             item.querySelector(".notification-unread-dot")?.remove();
             state.unreadNotifications = Math.max(
               0,
-              state.unreadNotifications - 1
+              state.unreadNotifications - 1,
             );
             this.updateBadge();
 
@@ -1238,7 +1241,7 @@
             if (notif) notif.is_read = 1;
 
             // Sync w tle (nie czekamy)
-            API.markNotificationRead(id).catch(() => { });
+            API.markNotificationRead(id).catch(() => {});
           }
 
           if (taskId) {
@@ -1309,10 +1312,10 @@
         OneSignalService.requestPermission();
       });
       Utils.$("#mark-all-read-btn")?.addEventListener("click", () =>
-        this.markAllRead()
+        this.markAllRead(),
       );
       Utils.$("#delete-read-btn")?.addEventListener("click", () =>
-        this.deleteRead()
+        this.deleteRead(),
       );
     },
   };
@@ -1334,7 +1337,7 @@
       const selects = [
         Utils.$("#unloading-department"),
         Utils.$("#loading-department"),
-        ...Utils.$$(".dept-select")
+        ...Utils.$$(".dept-select"),
       ];
 
       selects.forEach((select) => {
@@ -1346,8 +1349,8 @@
             .map(
               (dept) =>
                 `<option value="${Utils.escapeHtml(
-                  dept.name
-                )}">${Utils.escapeHtml(dept.name)}</option>`
+                  dept.name,
+                )}">${Utils.escapeHtml(dept.name)}</option>`,
             )
             .join("");
         select.value = currentValue;
@@ -1357,13 +1360,13 @@
     updateDriverSelect() {
       const selects = [
         Utils.$("#task-assigned"),
-        ...Utils.$$(".driver-select")
+        ...Utils.$$(".driver-select"),
       ];
       if (selects.length === 0) return;
 
       const drivers = state.users.filter((u) => u.role === "driver");
 
-      selects.forEach(select => {
+      selects.forEach((select) => {
         if (!select) return;
         const currentValue = select.value;
         const isGlobal = select.id === "task-assigned";
@@ -1374,8 +1377,8 @@
             .map(
               (driver) =>
                 `<option value="${driver.id}">${Utils.escapeHtml(
-                  driver.name
-                )}</option>`
+                  driver.name,
+                )}</option>`,
             )
             .join("");
 
@@ -1390,647 +1393,708 @@
     },
   };
 
-// =============================================
-// 17. MAP MANAGER - SMART ROUTING (DIJKSTRA)
-// =============================================
-const MapManager = {
+  // =============================================
+  // 17. MAP MANAGER - SMART ROUTING (DIJKSTRA)
+  // =============================================
+  const MapManager = {
     mode: "view", // 'view' | 'pick' | 'edit_network' | 'show_route'
     targetLocationId: null,
     tempCoords: null,
     panzoomInstance: null,
     isInitialized: false,
     lastOpenTime: 0, // iOS fix - throttle map opening
-    
+
     // Dane sieci dróg
-    nodes: [],       // [{id, x, y}, ...]
+    nodes: [], // [{id, x, y}, ...]
     connections: [], // [{from, to}, ...]
-    
+
     // Stan edycji
     selectedNodeId: null,
-    
+
     // Stan trasy
     currentRoute: null, // [x, y, x, y...]
 
     ctx: null,
 
     init() {
-        // Lazy initialization
+      // Lazy initialization
     },
 
     async open(mode = "view", data = null) {
-        // iOS Fix: Throttle - zapobiegaj wielokrotnym kliknięciom
-        const now = Date.now();
-        if (this.lastOpenTime && (now - this.lastOpenTime) < 500) {
-            console.warn('⚠️ Map open throttled - too soon after last open');
-            return;
+      // iOS Fix: Throttle - zapobiegaj wielokrotnym kliknięciom
+      const now = Date.now();
+      if (this.lastOpenTime && now - this.lastOpenTime < 500) {
+        console.warn("⚠️ Map open throttled - too soon after last open");
+        return;
+      }
+      this.lastOpenTime = now;
+
+      if (this.isOpening) return; // Zapobiegaj podwójnym kliknięciom
+      this.isOpening = true;
+
+      console.group("🗺️ MapManager.open");
+      console.log(`🚀 Mode: ${mode}`, data);
+
+      // Reset stanu
+      this.mode = mode;
+      this.isInitialized = false;
+
+      // Reset UI
+      const titleEl = Utils.$("#modal-map h2");
+      const saveBtn = Utils.$("#map-save-btn");
+      const networkToolbar = Utils.$("#network-toolbar");
+      if (networkToolbar) networkToolbar.classList.add("hidden");
+
+      // Konfiguracja UI
+      if (mode === "pick") {
+        this.targetLocationId = data;
+        if (titleEl)
+          titleEl.textContent = "📍 Zaznacz lokalizację: Kliknij na mapie";
+        Utils.show(saveBtn);
+        if (saveBtn) saveBtn.disabled = true;
+      } else if (mode === "edit_network") {
+        if (titleEl) titleEl.textContent = "🔧 Edycja sieci dróg";
+        Utils.hide(saveBtn);
+      } else if (mode === "show_route") {
+        const fromText = data?.from || "?";
+        const toText = data?.to || "?";
+        if (titleEl) titleEl.textContent = `📍 Trasa: ${fromText} ➔ ${toText}`;
+        Utils.hide(saveBtn);
+
+        if (this.calculateRoute && data) {
+          setTimeout(() => this.calculateRoute(data.from, data.to), 500);
         }
-        this.lastOpenTime = now;
-        
-        if (this.isOpening) return; // Zapobiegaj podwójnym kliknięciom
-        this.isOpening = true;
+      } else {
+        if (titleEl) titleEl.textContent = "🗺️ Mapa Zakładu";
+        Utils.hide(saveBtn);
+      }
 
-        console.group("🗺️ MapManager.open");
-        console.log(`🚀 Mode: ${mode}`, data);
+      this.showLoading();
+      console.log("⏳ Opening modal...");
+      Modal.open("modal-map");
 
-        // Reset stanu
-        this.mode = mode;
-        this.isInitialized = false;
-        
-        // Reset UI
-        const titleEl = Utils.$("#modal-map h2");
-        const saveBtn = Utils.$("#map-save-btn");
-        const networkToolbar = Utils.$("#network-toolbar");
-        if(networkToolbar) networkToolbar.classList.add("hidden");
+      try {
+        console.log("📡 Fetching road network...");
+        const network = await API.getRoadNetwork();
+        this.nodes = network.nodes || [];
+        this.connections = network.connections || [];
+        console.log(`✅ Road network loaded: ${this.nodes.length} nodes`);
+      } catch (e) {
+        console.error("❌ Road network error:", e);
+      }
 
-        // Konfiguracja UI
-        if (mode === "pick") {
-            this.targetLocationId = data; 
-            if (titleEl) titleEl.textContent = "📍 Zaznacz lokalizację: Kliknij na mapie";
-            Utils.show(saveBtn);
-            if(saveBtn) saveBtn.disabled = true;
-        } else if (mode === "edit_network") {
-            if (titleEl) titleEl.textContent = "🔧 Edycja sieci dróg";
-            Utils.hide(saveBtn);
-        } else if (mode === "show_route") {
-            const fromText = data?.from || "?";
-            const toText = data?.to || "?";
-            if (titleEl) titleEl.textContent = `📍 Trasa: ${fromText} ➔ ${toText}`;
-            Utils.hide(saveBtn);
-            
-            if (this.calculateRoute && data) {
-                setTimeout(() => this.calculateRoute(data.from, data.to), 500);
-            }
-        } else {
-            if (titleEl) titleEl.textContent = "🗺️ Mapa Zakładu";
-            Utils.hide(saveBtn);
-        }
+      console.log("⏳ Waiting for modal render (150ms)...");
+      await new Promise((resolve) => setTimeout(resolve, 150));
 
-        this.showLoading();
-        console.log("⏳ Opening modal...");
-        Modal.open("modal-map");
-
-        try {
-            console.log("📡 Fetching road network...");
-            const network = await API.getRoadNetwork();
-            this.nodes = network.nodes || [];
-            this.connections = network.connections || [];
-            console.log(`✅ Road network loaded: ${this.nodes.length} nodes`);
-        } catch (e) {
-            console.error("❌ Road network error:", e);
-        }
-
-        console.log("⏳ Waiting for modal render (150ms)...");
-        await new Promise(resolve => setTimeout(resolve, 150));
-
-        this.initializeMap();
-        this.isOpening = false;
-        console.groupEnd();
+      this.initializeMap();
+      this.isOpening = false;
+      console.groupEnd();
     },
 
     initializeMap() {
-        console.group("🔧 MapManager.initializeMap");
-        const wrapper = document.querySelector(".map-wrapper");
-        const container = document.getElementById("map-container");
-        const img = document.getElementById("facility-map");
+      console.group("🔧 MapManager.initializeMap");
+      const wrapper = document.querySelector(".map-wrapper");
+      const container = document.getElementById("map-container");
+      const img = document.getElementById("facility-map");
 
-        console.log("Elements:", { wrapper, container, img });
+      console.log("Elements:", { wrapper, container, img });
 
-        if (!wrapper || !container || !img) {
-            console.error("❌ CRITICAL: Missing DOM elements!");
-            console.groupEnd();
-            return;
-        }
-
-        this.hideLoading();
-
-        // Toggle edit-mode class for cursor change
-        if (this.mode === "edit_network") {
-            wrapper.classList.add("edit-mode");
-        } else {
-            wrapper.classList.remove("edit-mode");
-        }
-
-        if (this.panzoomInstance) {
-            console.log("♻️ Destroying old Panzoom instance");
-            try { this.panzoomInstance.destroy(); } catch(e) {}
-        }
-
-        // Android Fix: Cache-buster i pełna ścieżka
-        const timestamp = Date.now();
-        const rawSrc = img.getAttribute("data-src") || "img/mapa.webp";
-        // Upewnij się że ścieżka nie ma podwójnego timestampu
-        const baseSrc = rawSrc.split('?')[0]; 
-        
-        console.log("🔄 Preparing map image:", baseSrc);
-
-        const initializeAfterLoad = () => {
-            console.log(`✅ Image loaded: ${img.naturalWidth}x${img.naturalHeight}`);
-            
-            if (!img.naturalWidth) { 
-                console.error("❌ Image loaded but width is 0!"); 
-                return;
-            }
-
-            // A. PC FIX: Wymuś proporcje wrappera (żeby modal był wąski)
-            // Jeśli aspect-ratio jest zdefiniowane, wrapper dopasuje szerokość do wysokości (90vh)
-            const ratio = img.naturalWidth / img.naturalHeight;
-            wrapper.style.aspectRatio = `${ratio}`;
-            wrapper.style.height = '100%'; // Dopasuj do wysokości modala
-            wrapper.style.width = 'auto'; // Szerokość wyniknie z ratio
-            
-            // Wymuś przeliczenie layoutu modala
-            container.style.display = 'none';
-            container.offsetHeight; // reflow
-            container.style.display = 'block';
-
-            const waitForLayout = () => {
-                const wrapperW = wrapper.clientWidth;
-                const wrapperH = wrapper.clientHeight;
-                
-                if (wrapperW === 0 || wrapperH === 0) {
-                    console.log("⏳ Waiting for layout...");
-                    requestAnimationFrame(waitForLayout);
-                    return;
-                }
-                
-                console.log(`📏 Wrapper Layout: ${wrapperW}x${wrapperH} (Ratio: ${wrapperW/wrapperH})`);
-                
-                // 1. Native Size
-                const containerW = img.naturalWidth;
-                const containerH = img.naturalHeight;
-                
-                // 2. Fit Scale
-                const scaleX = wrapperW / containerW;
-                const scaleY = wrapperH / containerH;
-                const fitScale = Math.min(scaleX, scaleY);
-                
-                // 3. Apply Styles
-                container.style.width = containerW + "px";
-                container.style.height = containerH + "px";
-                container.style.transformOrigin = "0 0";
-                
-                img.style.width = "100%";
-                img.style.height = "100%";
-                img.style.objectFit = "cover"; // Cover na wszelki wypadek, ale przy 1:1 to to samo co fill
-                
-                // 4. Init Panzoom
-                console.log(`🎯 Panzoom FitScale: ${fitScale.toFixed(5)}`);
-                this.setupPanzoom(wrapper, container, img, fitScale);
-            };
-            
-            requestAnimationFrame(waitForLayout);
-        };
-        
-        // Zawsze przeładuj dla pewności (Android fix)
-        img.onload = initializeAfterLoad;
-        img.onerror = () => {
-             console.error("❌ Map load error! Trying backup...");
-             img.src = "img/mapa.webp?backup=" + timestamp;
-        };
-        img.src = `${baseSrc}?t=${timestamp}`;
-    },
-    
-    setupPanzoom(wrapper, container, img, fitScale) {
-        try {
-            // Bezpieczny zoom: startujemy od widoku całości
-            // Pozwalamy przybliżyć aż do 2x native resolution (bardzo blisko)
-            
-            this.panzoomInstance = Panzoom(container, {
-                // MaxScale: Zwiększono do 10x (User request: "zoomować jeszcze bliżej")
-                maxScale: 10.0, 
-                // MinScale: Pozwól oddalić do 80% widoku całości
-                minScale: fitScale * 0.8, 
-                // Start: Fit scale
-                startScale: fitScale,
-                
-                contain: 'outside', 
-                
-                cursor: this.mode === 'edit_network' ? 'crosshair' : 'grab',
-                duration: 250, // Trochę płynniej
-                easing: 'ease-out'
-            });
-            
-            // Fix: Wymuś odświeżenie po chwili (dla Androida)
-            setTimeout(() => {
-                this.panzoomInstance.zoom(fitScale);
-                this.panzoomInstance.pan(0, 0);
-            }, 100);
-
-            wrapper.addEventListener('wheel', this.panzoomInstance.zoomWithWheel);
-            
-            // KLUCZOWE: Ustaw kursor dynamicznie
-            this.updateCursor();
-            
-            // Logika skali dla CSS (Pinezek)
-            const updateScaleVar = () => {
-                const s = this.panzoomInstance.getScale();
-                container.style.setProperty("--map-scale", s);
-            };
-            container.addEventListener('panzoomchange', updateScaleVar);
-            setTimeout(updateScaleVar, 100);
-
-            // Obsługa kliknięcia
-            let pStartX = 0, pStartY = 0;
-            
-            container.addEventListener('pointerdown', e => {
-                pStartX = e.clientX; 
-                pStartY = e.clientY;
-            });
-
-            container.addEventListener('pointerup', (e) => {
-               const dist = Math.hypot(e.clientX - pStartX, e.clientY - pStartY);
-               if (dist > 15) return; 
-
-               if (e.target.closest('.map-pin')) {
-                   e.stopPropagation();
-                   return;
-               }
-               this.onMapClick(e);
-            });
-
-            this.initCanvas(container, img);
-            
-            // RENDERUJ KONTROLKI I TOOLBAR!
-            this.renderPins();
-            this.renderControls();
-            this.renderNetworkToolbar();
-            this.draw();
-            
-            console.log("✅ Panzoom ready!");
-        } catch (err) {
-            console.error("❌ Panzoom error:", err);
-        }
-        
-        this.hideLoading();
-        this.isInitialized = true;
+      if (!wrapper || !container || !img) {
+        console.error("❌ CRITICAL: Missing DOM elements!");
         console.groupEnd();
+        return;
+      }
+
+      this.hideLoading();
+
+      // Toggle edit-mode class for cursor change
+      if (this.mode === "edit_network") {
+        wrapper.classList.add("edit-mode");
+      } else {
+        wrapper.classList.remove("edit-mode");
+      }
+
+      if (this.panzoomInstance) {
+        console.log("♻️ Destroying old Panzoom instance");
+        try {
+          this.panzoomInstance.destroy();
+        } catch (e) {}
+      }
+
+      // Android Fix: Cache-buster i pełna ścieżka
+      const timestamp = Date.now();
+      const rawSrc = img.getAttribute("data-src") || "img/mapa.webp";
+      // Upewnij się że ścieżka nie ma podwójnego timestampu
+      const baseSrc = rawSrc.split("?")[0];
+
+      console.log("🔄 Preparing map image:", baseSrc);
+
+      const initializeAfterLoad = () => {
+        console.log(
+          `✅ Image loaded: ${img.naturalWidth}x${img.naturalHeight}`,
+        );
+
+        if (!img.naturalWidth) {
+          console.error("❌ Image loaded but width is 0!");
+          return;
+        }
+
+        // A. PC FIX: Wymuś proporcje wrappera (żeby modal był wąski)
+        // Jeśli aspect-ratio jest zdefiniowane, wrapper dopasuje szerokość do wysokości (90vh)
+        const ratio = img.naturalWidth / img.naturalHeight;
+        wrapper.style.aspectRatio = `${ratio}`;
+        wrapper.style.height = "100%"; // Dopasuj do wysokości modala
+        wrapper.style.width = "auto"; // Szerokość wyniknie z ratio
+
+        // Wymuś przeliczenie layoutu modala
+        container.style.display = "none";
+        container.offsetHeight; // reflow
+        container.style.display = "block";
+
+        const waitForLayout = () => {
+          const wrapperW = wrapper.clientWidth;
+          const wrapperH = wrapper.clientHeight;
+
+          if (wrapperW === 0 || wrapperH === 0) {
+            console.log("⏳ Waiting for layout...");
+            requestAnimationFrame(waitForLayout);
+            return;
+          }
+
+          console.log(
+            `📏 Wrapper Layout: ${wrapperW}x${wrapperH} (Ratio: ${wrapperW / wrapperH})`,
+          );
+
+          // 1. Native Size
+          const containerW = img.naturalWidth;
+          const containerH = img.naturalHeight;
+
+          // 2. Fit Scale
+          const scaleX = wrapperW / containerW;
+          const scaleY = wrapperH / containerH;
+          const fitScale = Math.min(scaleX, scaleY);
+
+          // 3. Apply Styles
+          container.style.width = containerW + "px";
+          container.style.height = containerH + "px";
+          container.style.transformOrigin = "0 0";
+
+          img.style.width = "100%";
+          img.style.height = "100%";
+          img.style.objectFit = "cover"; // Cover na wszelki wypadek, ale przy 1:1 to to samo co fill
+
+          // 4. Init Panzoom
+          console.log(`🎯 Panzoom FitScale: ${fitScale.toFixed(5)}`);
+          this.setupPanzoom(wrapper, container, img, fitScale);
+        };
+
+        requestAnimationFrame(waitForLayout);
+      };
+
+      // Zawsze przeładuj dla pewności (Android fix)
+      img.onload = initializeAfterLoad;
+      img.onerror = () => {
+        console.error("❌ Map load error! Trying backup...");
+        img.src = "img/mapa.webp?backup=" + timestamp;
+      };
+      img.src = `${baseSrc}?t=${timestamp}`;
     },
 
+    setupPanzoom(wrapper, container, img, fitScale) {
+      try {
+        // Wykryj iOS dla specjalnych optymalizacji
+        const isIOS =
+          /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isSafari =
+          /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+
+        // Bezpieczny zoom: startujemy od widoku całości
+        // Pozwalamy przybliżyć aż do 2x native resolution (bardzo blisko)
+
+        this.panzoomInstance = Panzoom(container, {
+          // MaxScale: Zwiększono do 10x (User request: "zoomować jeszcze bliżej")
+          maxScale: 10.0,
+          // MinScale: Pozwól oddalić do 80% widoku całości
+          minScale: fitScale * 0.8,
+          // Start: Fit scale - NATYCHMIASTOWY start bez animacji
+          startScale: fitScale,
+          startX: 0,
+          startY: 0,
+
+          contain: "outside",
+
+          cursor: this.mode === "edit_network" ? "crosshair" : "grab",
+          // ZMIANA: Wyłącz animację przy starcie żeby nie było skoku
+          duration: 0, // Było 250 - to powodowało widoczny skok!
+          easing: "ease-out",
+
+          // KLUCZOWE DLA iOS: force2d prevents 3D transform artifacts
+          // iOS Safari ma problemy z matrix3d - wymuszamy 2D transforms
+          force2d: isIOS || isSafari,
+
+          // Disable transform-origin changes dla lepszej jakości na iOS
+          disablePan: false,
+          disableZoom: false,
+
+          // Exclude certain elements from panning (pins)
+          excludeClass: "map-pin",
+        });
+
+        // USUNIĘTO setTimeout - nie potrzebujemy odświeżania, bo startScale działa od razu
+        // Tylko iOS fix pozostaje ale bez delay
+        if (isIOS) {
+          // Wymuś repaint na iOS (bez delay)
+          requestAnimationFrame(() => {
+            container.style.transform = container.style.transform;
+          });
+        }
+
+        wrapper.addEventListener("wheel", this.panzoomInstance.zoomWithWheel);
+
+        // KLUCZOWE: Ustaw kursor dynamicznie
+        this.updateCursor();
+
+        // Logika skali dla CSS (Pinezek)
+        const updateScaleVar = () => {
+          const s = this.panzoomInstance.getScale();
+          container.style.setProperty("--map-scale", s);
+        };
+        container.addEventListener("panzoomchange", updateScaleVar);
+        setTimeout(updateScaleVar, 100);
+
+        // Obsługa kliknięcia
+        let pStartX = 0,
+          pStartY = 0;
+
+        container.addEventListener("pointerdown", (e) => {
+          pStartX = e.clientX;
+          pStartY = e.clientY;
+        });
+
+        container.addEventListener("pointerup", (e) => {
+          const dist = Math.hypot(e.clientX - pStartX, e.clientY - pStartY);
+          if (dist > 15) return;
+
+          if (e.target.closest(".map-pin")) {
+            e.stopPropagation();
+            return;
+          }
+          this.onMapClick(e);
+        });
+
+        this.initCanvas(container, img);
+
+        // RENDERUJ KONTROLKI I TOOLBAR!
+        this.renderPins();
+        this.renderControls();
+        this.renderNetworkToolbar();
+        this.draw();
+
+        console.log(`✅ Panzoom ready! (iOS: ${isIOS}, force2d: ${isIOS || isSafari})`);
+      } catch (err) {
+        console.error("❌ Panzoom error:", err);
+      }
+
+      this.hideLoading();
+      this.isInitialized = true;
+      console.groupEnd();
+    },
 
     // Alias dla draw (w razie gdyby gdzieś było wywoływane drawCanvas)
-    drawCanvas() { this.draw(); },
+    drawCanvas() {
+      this.draw();
+    },
 
     initCanvas(container, img) {
-        let canvas = container.querySelector("canvas.map-paths-layer");
-        if (!canvas) {
-            canvas = document.createElement("canvas");
-            canvas.className = "map-paths-layer";
-            container.appendChild(canvas);
-        }
-        
-        // HIGH-DPI / Retina support dla ostrej jakości
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = img.naturalWidth * dpr;
-        canvas.height = img.naturalHeight * dpr;
-        
-        // Skaluj context dla retina
-        this.ctx = canvas.getContext("2d");
-        this.ctx.scale(dpr, dpr);
-        
-        // CSS wymiary normalne (nie skalowane)
-        canvas.style.width = img.naturalWidth + 'px';
-        canvas.style.height = img.naturalHeight + 'px';
-        
-        console.log(`🎨 Canvas: ${canvas.width}x${canvas.height} (DPR: ${dpr})`);
+      let canvas = container.querySelector("canvas.map-paths-layer");
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.className = "map-paths-layer";
+        container.appendChild(canvas);
+      }
+
+      // HIGH-DPI / Retina support dla ostrej jakości
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = img.naturalWidth * dpr;
+      canvas.height = img.naturalHeight * dpr;
+
+      // Skaluj context dla retina
+      this.ctx = canvas.getContext("2d");
+      this.ctx.scale(dpr, dpr);
+
+      // KLUCZOWE: Włącz wysoką jakość antyaliasingu dla ostrych linii
+      this.ctx.imageSmoothingEnabled = true;
+      this.ctx.imageSmoothingQuality = "high"; // 'low' | 'medium' | 'high'
+
+      // CSS wymiary normalne (nie skalowane)
+      canvas.style.width = img.naturalWidth + "px";
+      canvas.style.height = img.naturalHeight + "px";
+
+      console.log(
+        `🎨 Canvas: ${canvas.width}x${canvas.height} (DPR: ${dpr}, Quality: high)`
+      );
     },
-    
+
     updateCursor() {
-        const wrapper = document.querySelector(".map-wrapper");
-        const container = document.getElementById("map-container");
-        if (!wrapper || !container) return;
-        
-        if (this.mode === "edit_network") {
-            wrapper.style.cursor = "crosshair";
-            container.style.cursor = "crosshair";
-        } else {
-            wrapper.style.cursor = "grab";
-            container.style.cursor = "grab";
-        }
+      const wrapper = document.querySelector(".map-wrapper");
+      const container = document.getElementById("map-container");
+      if (!wrapper || !container) return;
+
+      if (this.mode === "edit_network") {
+        wrapper.style.cursor = "crosshair";
+        container.style.cursor = "crosshair";
+      } else {
+        wrapper.style.cursor = "grab";
+        container.style.cursor = "grab";
+      }
     },
-    
+
     showLoading() {
-        const wrapper = document.querySelector(".map-wrapper");
-        if(wrapper) {
-            wrapper.classList.add("loading"); 
-            // Można dodać spinner przez CSS ::after
-        }
+      const wrapper = document.querySelector(".map-wrapper");
+      if (wrapper) {
+        wrapper.classList.add("loading");
+        // Można dodać spinner przez CSS ::after
+      }
     },
-    
+
     hideLoading() {
-         const wrapper = document.querySelector(".map-wrapper");
-         if(wrapper) wrapper.classList.remove("loading");
+      const wrapper = document.querySelector(".map-wrapper");
+      if (wrapper) wrapper.classList.remove("loading");
     },
 
     // --- GŁÓWNA PĘTLA RYSOWANIA ---
     draw() {
-        if (!this.ctx) return;
-        const ctx = this.ctx;
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      if (!this.ctx) return;
+      const ctx = this.ctx;
 
-        const w = ctx.canvas.width;
-        const h = ctx.canvas.height;
+      // HIGH-DPI / Retina support - używamy img.naturalWidth już po DPR skalowaniu
+      const img = Utils.$("#facility-map");
+      if (!img) return;
 
-        // Oblicz współczynnik skali (Inverse Scaling)
-        // Żeby linie miały stałą grubość wizualną niezależnie od zoomu
-        let scale = 1;
-        if (this.panzoomInstance) {
-            scale = this.panzoomInstance.getScale();
-        }
-        // Zabezpieczenie przed 0
-        scale = Math.max(scale, 0.001);
-        const sf = 1 / scale; // Scale Factor (np. dla scale=0.05, sf=20)
+      const dpr = window.devicePixelRatio || 1;
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
 
-        // 1. Rysuj całą sieć dróg
-        if (this.mode === "edit_network" || state.currentUser?.id === 1) {
-            // Połączenia - CZARNE grube linie dla widoczności
-            ctx.lineWidth = (this.mode === "edit_network" ? 10 : 6) * sf; // Dużo grubsze!
-            ctx.strokeStyle = this.mode === "edit_network" ? "rgba(0, 0, 0, 0.9)" : "rgba(0, 0, 0, 0.5)";
-            
-            this.connections.forEach(conn => {
-                const n1 = this.nodes.find(n => n.id === conn.from);
-                const n2 = this.nodes.find(n => n.id === conn.to);
-                if (n1 && n2) {
-                    ctx.beginPath();
-                    ctx.moveTo(n1.x * w / 100, n1.y * h / 100);
-                    ctx.lineTo(n2.x * w / 100, n2.y * h / 100);
-                    ctx.stroke();
-                }
-            });
+      // Wyczyść canvas - KLUCZOWE: używamy canvas.width/height (z DPR), NIE natural!
+      // Canvas jest większy przez DPR, więc musimy clearować całą powierzchnię
+      ctx.clearRect(0, 0, ctx.canvas.width / dpr, ctx.canvas.height / dpr);
 
-            // Węzły (tylko w trybie edycji) - DUŻE z wyraźną obwódką
-            if (this.mode === "edit_network") {
-                this.nodes.forEach(node => {
-                    const x = node.x * w / 100;
-                    const y = node.y * h / 100;
-                    ctx.beginPath();
-                    ctx.arc(x, y, 20 * sf, 0, Math.PI * 2); // Zwiększono z 12 do 20!
-                    ctx.fillStyle = node.id === this.selectedNodeId ? "#00FF00" : "#007AFF";
-                    ctx.fill();
-                    ctx.lineWidth = 4 * sf; // Gruba obwódka
-                    ctx.strokeStyle = "#000"; // CZARNA obwódka
-                    ctx.stroke();
-                });
-            }
-        }
+      // Oblicz współczynnik skali (Inverse Scaling)
+      // Żeby linie miały stałą grubość wizualną niezależnie od zoomu
+      let scale = 1;
+      if (this.panzoomInstance) {
+        scale = this.panzoomInstance.getScale();
+      }
+      // Zabezpieczenie przed 0
+      scale = Math.max(scale, 0.001);
+      const sf = 1 / scale; // Scale Factor (np. dla scale=0.05, sf=20)
 
-        // 2. Rysuj wyznaczoną trasę (jeśli jest)
-        if (this.currentRoute && this.currentRoute.length > 0) {
-            // Glow
-            ctx.lineCap = "round";
-            ctx.lineJoin = "round";
+      // 1. Rysuj całą sieć dróg
+      if (this.mode === "edit_network" || state.currentUser?.id === 1) {
+        // Połączenia - CZARNE grube linie dla widoczności
+        // Podstawowa grubość * DPR dla ostrości na Retina
+        ctx.lineWidth = (this.mode === "edit_network" ? 10 : 6) * sf * dpr;
+        ctx.strokeStyle =
+          this.mode === "edit_network"
+            ? "rgba(0, 0, 0, 0.9)"
+            : "rgba(0, 0, 0, 0.5)";
+
+        this.connections.forEach((conn) => {
+          const n1 = this.nodes.find((n) => n.id === conn.from);
+          const n2 = this.nodes.find((n) => n.id === conn.to);
+          if (n1 && n2) {
             ctx.beginPath();
-            ctx.lineWidth = 15 * sf;
-            ctx.strokeStyle = "rgba(0, 122, 255, 0.3)";
-            this.drawPolyline(this.currentRoute, w, h);
+            ctx.moveTo((n1.x * w) / 100, (n1.y * h) / 100);
+            ctx.lineTo((n2.x * w) / 100, (n2.y * h) / 100);
             ctx.stroke();
+          }
+        });
 
-            // Solid line
+        // Węzły (tylko w trybie edycji) - DUŻE z wyraźną obwódką
+        if (this.mode === "edit_network") {
+          this.nodes.forEach((node) => {
+            const x = (node.x * w) / 100;
+            const y = (node.y * h) / 100;
             ctx.beginPath();
-            ctx.lineWidth = 5 * sf;
-            ctx.strokeStyle = "#007AFF";
-            ctx.setLineDash([10 * sf, 10 * sf]); // Dash też skalujemy
-            this.drawPolyline(this.currentRoute, w, h);
+            ctx.arc(x, y, 20 * sf * dpr, 0, Math.PI * 2); // DPR skalowanie
+            ctx.fillStyle =
+              node.id === this.selectedNodeId ? "#00FF00" : "#007AFF";
+            ctx.fill();
+            ctx.lineWidth = 4 * sf * dpr; // Gruba obwódka z DPR
+            ctx.strokeStyle = "#000"; // CZARNA obwódka
             ctx.stroke();
-            ctx.setLineDash([]);
+          });
         }
+      }
+
+      // 2. Rysuj wyznaczoną trasę (jeśli jest)
+      if (this.currentRoute && this.currentRoute.length > 0) {
+        // Glow - dodajemy DPR dla ostrości
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.lineWidth = 15 * sf * dpr;
+        ctx.strokeStyle = "rgba(0, 122, 255, 0.3)";
+        this.drawPolyline(this.currentRoute, w, h);
+        ctx.stroke();
+
+        // Solid line
+        ctx.beginPath();
+        ctx.lineWidth = 5 * sf * dpr;
+        ctx.strokeStyle = "#007AFF";
+        ctx.setLineDash([10 * sf * dpr, 10 * sf * dpr]); // Dash też z DPR
+        this.drawPolyline(this.currentRoute, w, h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     },
 
     drawPolyline(points, w, h) {
-        if (points.length < 2) return;
-        this.ctx.moveTo(points[0].x * w / 100, points[0].y * h / 100);
-        for (let i = 1; i < points.length; i++) {
-            this.ctx.lineTo(points[i].x * w / 100, points[i].y * h / 100);
-        }
+      if (points.length < 2) return;
+      this.ctx.moveTo((points[0].x * w) / 100, (points[0].y * h) / 100);
+      for (let i = 1; i < points.length; i++) {
+        this.ctx.lineTo((points[i].x * w) / 100, (points[i].y * h) / 100);
+      }
     },
 
     // --- OBSŁUGA EDYCJI SIECI ---
     onMapClick(e) {
-        if (this.mode === "pick") {
-            // ... (stara logika pick - bez zmian) ...
-            this.handlePickClick(e);
-            return;
-        }
+      if (this.mode === "pick") {
+        // ... (stara logika pick - bez zmian) ...
+        this.handlePickClick(e);
+        return;
+      }
 
-        if (this.mode !== "edit_network") return;
+      if (this.mode !== "edit_network") return;
 
-        const img = Utils.$("#facility-map");
-        const rect = img.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.height) * 100;
+      const img = Utils.$("#facility-map");
+      const rect = img.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
 
-        // Sprawdź czy kliknięto w istniejący węzeł (z tolerancją)
-        // Tolerancja np. 2% szerokości mapy
-        const tolerance = 2; 
-        const clickedNode = this.nodes.find(n => 
-            Math.abs(n.x - x) < tolerance && Math.abs(n.y - y) < tolerance * (rect.width/rect.height)
-        );
+      // Sprawdź czy kliknięto w istniejący węzeł (z tolerancją)
+      // Tolerancja np. 2% szerokości mapy
+      const tolerance = 2;
+      const clickedNode = this.nodes.find(
+        (n) =>
+          Math.abs(n.x - x) < tolerance &&
+          Math.abs(n.y - y) < tolerance * (rect.width / rect.height),
+      );
 
-        if (clickedNode) {
-            // Kliknięto w węzeł
-            if (this.selectedNodeId === null) {
-                // Zaznacz pierwszy
-                this.selectedNodeId = clickedNode.id;
-            } else if (this.selectedNodeId === clickedNode.id) {
-                // Odznacz
-                this.selectedNodeId = null;
-            } else {
-                // Połącz dwa węzły
-                this.toggleConnection(this.selectedNodeId, clickedNode.id);
-                this.selectedNodeId = clickedNode.id; // Przeskocz na nowy (łańcuchowe rysowanie)
-            }
+      if (clickedNode) {
+        // Kliknięto w węzeł
+        if (this.selectedNodeId === null) {
+          // Zaznacz pierwszy
+          this.selectedNodeId = clickedNode.id;
+        } else if (this.selectedNodeId === clickedNode.id) {
+          // Odznacz
+          this.selectedNodeId = null;
         } else {
-            // Kliknięto w puste miejsce -> Dodaj nowy węzeł
-            const newNodeId = Date.now();
-            this.nodes.push({ id: newNodeId, x, y });
-            
-            // Jeśli coś było zaznaczone, połącz z nowym
-            if (this.selectedNodeId) {
-                this.toggleConnection(this.selectedNodeId, newNodeId);
-            }
-            this.selectedNodeId = newNodeId;
+          // Połącz dwa węzły
+          this.toggleConnection(this.selectedNodeId, clickedNode.id);
+          this.selectedNodeId = clickedNode.id; // Przeskocz na nowy (łańcuchowe rysowanie)
         }
-        
-        this.draw();
+      } else {
+        // Kliknięto w puste miejsce -> Dodaj nowy węzeł
+        const newNodeId = Date.now();
+        this.nodes.push({ id: newNodeId, x, y });
+
+        // Jeśli coś było zaznaczone, połącz z nowym
+        if (this.selectedNodeId) {
+          this.toggleConnection(this.selectedNodeId, newNodeId);
+        }
+        this.selectedNodeId = newNodeId;
+      }
+
+      this.draw();
     },
 
     toggleConnection(id1, id2) {
-        const existsIdx = this.connections.findIndex(c => 
-            (c.from === id1 && c.to === id2) || (c.from === id2 && c.to === id1)
-        );
+      const existsIdx = this.connections.findIndex(
+        (c) =>
+          (c.from === id1 && c.to === id2) || (c.from === id2 && c.to === id1),
+      );
 
-        if (existsIdx >= 0) {
-            // Rozłącz jeśli już połączone (opcjonalne, może lepiej nie usuwać przy przypadkowym kliku)
-            // this.connections.splice(existsIdx, 1);
-        } else {
-            this.connections.push({ from: id1, to: id2 });
-        }
+      if (existsIdx >= 0) {
+        // Rozłącz jeśli już połączone (opcjonalne, może lepiej nie usuwać przy przypadkowym kliku)
+        // this.connections.splice(existsIdx, 1);
+      } else {
+        this.connections.push({ from: id1, to: id2 });
+      }
     },
 
     async saveNetwork() {
-        try {
-            await API.saveRoadNetwork({ nodes: this.nodes, connections: this.connections });
-            Toast.success("Sieć dróg zapisana!");
-            this.mode = "view";
-            this.renderNetworkToolbar();
-            this.draw();
-        } catch (e) {
-            Toast.error("Błąd zapisu");
-        }
+      try {
+        await API.saveRoadNetwork({
+          nodes: this.nodes,
+          connections: this.connections,
+        });
+        Toast.success("Sieć dróg zapisana!");
+        this.mode = "view";
+        this.renderNetworkToolbar();
+        this.draw();
+      } catch (e) {
+        Toast.error("Błąd zapisu");
+      }
     },
 
     clearNetwork() {
-        if(confirm("Czy na pewno usunąć całą sieć dróg?")) {
-            this.nodes = [];
-            this.connections = [];
-            this.draw();
-        }
+      if (confirm("Czy na pewno usunąć całą sieć dróg?")) {
+        this.nodes = [];
+        this.connections = [];
+        this.draw();
+      }
     },
 
     // --- ALGORYTM DIJKSTRA ---
     calculateRoute(startName, endName) {
-        const allLocs = [...state.locations, ...state.departments];
-        const startLoc = allLocs.find(l => l.name === startName);
-        const endLoc = allLocs.find(l => l.name === endName);
+      const allLocs = [...state.locations, ...state.departments];
+      const startLoc = allLocs.find((l) => l.name === startName);
+      const endLoc = allLocs.find((l) => l.name === endName);
 
-        if (!startLoc?.map_x || !endLoc?.map_x) {
-            Toast.warning("Brak współrzędnych dla lokalizacji");
-            return;
-        }
+      if (!startLoc?.map_x || !endLoc?.map_x) {
+        Toast.warning("Brak współrzędnych dla lokalizacji");
+        return;
+      }
 
-        // 1. Znajdź najbliższe węzły sieci dla startu i końca
-        const startNode = this.findNearestNode(startLoc.map_x, startLoc.map_y);
-        const endNode = this.findNearestNode(endLoc.map_x, endLoc.map_y);
+      // 1. Znajdź najbliższe węzły sieci dla startu i końca
+      const startNode = this.findNearestNode(startLoc.map_x, startLoc.map_y);
+      const endNode = this.findNearestNode(endLoc.map_x, endLoc.map_y);
 
-        if (!startNode || !endNode) {
-            // Brak sieci? Rysuj linię prostą
-            this.currentRoute = [
-                { x: startLoc.map_x, y: startLoc.map_y },
-                { x: endLoc.map_x, y: endLoc.map_y }
-            ];
-            return;
-        }
+      if (!startNode || !endNode) {
+        // Brak sieci? Rysuj linię prostą
+        this.currentRoute = [
+          { x: startLoc.map_x, y: startLoc.map_y },
+          { x: endLoc.map_x, y: endLoc.map_y },
+        ];
+        return;
+      }
 
-        // 2. Dijkstra
-        const path = this.findPath(startNode.id, endNode.id);
-        
-        if (path) {
-            // Zbuduj trasę: Start -> NearestNode -> ... Path ... -> NearestNode -> End
-            this.currentRoute = [
-                { x: startLoc.map_x, y: startLoc.map_y },
-                ...path.map(id => this.nodes.find(n => n.id === id)),
-                { x: endLoc.map_x, y: endLoc.map_y }
-            ];
-        } else {
-            // Nie znaleziono drogi - linia prosta
-            this.currentRoute = [
-                { x: startLoc.map_x, y: startLoc.map_y },
-                { x: endLoc.map_x, y: endLoc.map_y }
-            ];
-        }
+      // 2. Dijkstra
+      const path = this.findPath(startNode.id, endNode.id);
+
+      if (path) {
+        // Zbuduj trasę: Start -> NearestNode -> ... Path ... -> NearestNode -> End
+        this.currentRoute = [
+          { x: startLoc.map_x, y: startLoc.map_y },
+          ...path.map((id) => this.nodes.find((n) => n.id === id)),
+          { x: endLoc.map_x, y: endLoc.map_y },
+        ];
+      } else {
+        // Nie znaleziono drogi - linia prosta
+        this.currentRoute = [
+          { x: startLoc.map_x, y: startLoc.map_y },
+          { x: endLoc.map_x, y: endLoc.map_y },
+        ];
+      }
     },
 
     findNearestNode(x, y) {
-        let nearest = null;
-        let minDist = Infinity;
-        
-        this.nodes.forEach(node => {
-            const dist = Math.sqrt(Math.pow(node.x - x, 2) + Math.pow(node.y - y, 2));
-            if (dist < minDist) {
-                minDist = dist;
-                nearest = node;
-            }
-        });
-        
-        // Jeśli najbliższy węzeł jest za daleko (np. > 20% mapy), uznajemy że nie ma połączenia
-        return minDist < 20 ? nearest : null;
+      let nearest = null;
+      let minDist = Infinity;
+
+      this.nodes.forEach((node) => {
+        const dist = Math.sqrt(
+          Math.pow(node.x - x, 2) + Math.pow(node.y - y, 2),
+        );
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = node;
+        }
+      });
+
+      // Jeśli najbliższy węzeł jest za daleko (np. > 20% mapy), uznajemy że nie ma połączenia
+      return minDist < 20 ? nearest : null;
     },
 
     findPath(startId, endId) {
-        const distances = {};
-        const previous = {};
-        const queue = new Set(this.nodes.map(n => n.id));
-        
-        this.nodes.forEach(n => distances[n.id] = Infinity);
-        distances[startId] = 0;
+      const distances = {};
+      const previous = {};
+      const queue = new Set(this.nodes.map((n) => n.id));
 
-        while (queue.size > 0) {
-            // Znajdź węzeł z najmniejszym dystansem
-            let u = null;
-            let min = Infinity;
-            for (const id of queue) {
-                if (distances[id] < min) {
-                    min = distances[id];
-                    u = id;
-                }
-            }
+      this.nodes.forEach((n) => (distances[n.id] = Infinity));
+      distances[startId] = 0;
 
-            if (u === null || u === endId) break;
-            queue.delete(u);
-
-            // Sąsiedzi
-            const neighbors = this.connections
-                .filter(c => c.from === u || c.to === u)
-                .map(c => c.from === u ? c.to : c.from);
-
-            for (const v of neighbors) {
-                if (!queue.has(v)) continue;
-                
-                const uNode = this.nodes.find(n => n.id === u);
-                const vNode = this.nodes.find(n => n.id === v);
-                const dist = Math.sqrt(Math.pow(uNode.x - vNode.x, 2) + Math.pow(uNode.y - vNode.y, 2));
-                
-                const alt = distances[u] + dist;
-                if (alt < distances[v]) {
-                    distances[v] = alt;
-                    previous[v] = u;
-                }
-            }
+      while (queue.size > 0) {
+        // Znajdź węzeł z najmniejszym dystansem
+        let u = null;
+        let min = Infinity;
+        for (const id of queue) {
+          if (distances[id] < min) {
+            min = distances[id];
+            u = id;
+          }
         }
 
-        if (distances[endId] === Infinity) return null;
+        if (u === null || u === endId) break;
+        queue.delete(u);
 
-        const path = [];
-        let curr = endId;
-        while (curr !== undefined) {
-            path.unshift(curr);
-            curr = previous[curr];
+        // Sąsiedzi
+        const neighbors = this.connections
+          .filter((c) => c.from === u || c.to === u)
+          .map((c) => (c.from === u ? c.to : c.from));
+
+        for (const v of neighbors) {
+          if (!queue.has(v)) continue;
+
+          const uNode = this.nodes.find((n) => n.id === u);
+          const vNode = this.nodes.find((n) => n.id === v);
+          const dist = Math.sqrt(
+            Math.pow(uNode.x - vNode.x, 2) + Math.pow(uNode.y - vNode.y, 2),
+          );
+
+          const alt = distances[u] + dist;
+          if (alt < distances[v]) {
+            distances[v] = alt;
+            previous[v] = u;
+          }
         }
-        return path;
+      }
+
+      if (distances[endId] === Infinity) return null;
+
+      const path = [];
+      let curr = endId;
+      while (curr !== undefined) {
+        path.unshift(curr);
+        curr = previous[curr];
+      }
+      return path;
     },
 
     // --- UI TOOLS ---
     renderNetworkToolbar() {
-        const wrapper = Utils.$(".map-wrapper");
-        let toolbar = wrapper.querySelector("#network-toolbar");
-        if (!toolbar) {
-            toolbar = document.createElement("div");
-            toolbar.id = "network-toolbar";
-            toolbar.className = "map-draw-toolbar"; // Użyj tej samej klasy co wcześniej
-            wrapper.appendChild(toolbar);
-        }
+      const wrapper = Utils.$(".map-wrapper");
+      let toolbar = wrapper.querySelector("#network-toolbar");
+      if (!toolbar) {
+        toolbar = document.createElement("div");
+        toolbar.id = "network-toolbar";
+        toolbar.className = "map-draw-toolbar"; // Użyj tej samej klasy co wcześniej
+        wrapper.appendChild(toolbar);
+      }
 
-        // Pokaż tylko jeśli admin ID 1
-        if (state.currentUser?.id !== 1) {
-            toolbar.classList.add("hidden");
-            return;
-        }
+      // Pokaż tylko jeśli admin ID 1
+      if (state.currentUser?.id !== 1) {
+        toolbar.classList.add("hidden");
+        return;
+      }
 
-        // Pokaż tylko w trybie view/edit
-        if (this.mode === "pick" || this.mode === "show_route") {
-            toolbar.classList.add("hidden");
-            return;
-        }
+      // Pokaż tylko w trybie view/edit
+      if (this.mode === "pick" || this.mode === "show_route") {
+        toolbar.classList.add("hidden");
+        return;
+      }
 
-        toolbar.classList.remove("hidden");
-        
-        if (this.mode === "view") {
-            toolbar.innerHTML = `
+      toolbar.classList.remove("hidden");
+
+      if (this.mode === "view") {
+        toolbar.innerHTML = `
                 <button class="btn btn-primary btn-small" onclick="TransportTracker.MapManager.setEditMode(true)">
                     🔧 Edytuj sieć dróg
                 </button>
             `;
-        } else {
-            toolbar.innerHTML = `
+      } else {
+        toolbar.innerHTML = `
                 <button class="btn btn-success btn-small" onclick="TransportTracker.MapManager.saveNetwork()">
                     💾 Zapisz
                 </button>
@@ -2041,95 +2105,104 @@ const MapManager = {
                     ❌ Anuluj
                 </button>
             `;
-        }
+      }
     },
 
     setEditMode(enable) {
-        this.mode = enable ? "edit_network" : "view";
-        this.selectedNodeId = null;
-        
-        // Toggle edit-mode class for cursor
-        const wrapper = document.querySelector(".map-wrapper");
-        if (enable) {
-            wrapper?.classList.add("edit-mode");
-        } else {
-            wrapper?.classList.remove("edit-mode");
-        }
-        
-        // KLUCZOWE: Zastosuj kursor
-        this.updateCursor();
-        
-        this.renderNetworkToolbar();
-        this.draw();
-        if(enable) Toast.info("Klikaj na mapie aby dodawać punkty i łączyć je ścieżkami.");
+      this.mode = enable ? "edit_network" : "view";
+      this.selectedNodeId = null;
+
+      // Toggle edit-mode class for cursor
+      const wrapper = document.querySelector(".map-wrapper");
+      if (enable) {
+        wrapper?.classList.add("edit-mode");
+      } else {
+        wrapper?.classList.remove("edit-mode");
+      }
+
+      // KLUCZOWE: Zastosuj kursor
+      this.updateCursor();
+
+      this.renderNetworkToolbar();
+      this.draw();
+      if (enable)
+        Toast.info("Klikaj na mapie aby dodawać punkty i łączyć je ścieżkami.");
     },
 
     // Legacy pick handler
     handlePickClick(e) {
-        const img = Utils.$("#facility-map");
-        const rect = img.getBoundingClientRect();
-        const x = ((e.clientX - rect.left) / rect.width) * 100;
-        const y = ((e.clientY - rect.top) / rect.height) * 100;
-        
-        this.tempCoords = { x, y };
-        const oldTemp = Utils.$("#temp-pin");
-        if (oldTemp) oldTemp.remove();
-        
-        const container = Utils.$("#map-container");
-        const pin = document.createElement("div");
-        pin.className = "map-pin pin-temp";
-        pin.id = "temp-pin";
-        pin.style.left = `${x}%`;
-        pin.style.top = `${y}%`;
-        pin.innerHTML = `<div class="pin-icon-wrapper" style="background:var(--success)"><span>📍</span></div>`;
-        container.appendChild(pin);
-        
-        Utils.$("#map-save-btn").disabled = false;
+      const img = Utils.$("#facility-map");
+      const rect = img.getBoundingClientRect();
+      const x = ((e.clientX - rect.left) / rect.width) * 100;
+      const y = ((e.clientY - rect.top) / rect.height) * 100;
+
+      this.tempCoords = { x, y };
+      const oldTemp = Utils.$("#temp-pin");
+      if (oldTemp) oldTemp.remove();
+
+      const container = Utils.$("#map-container");
+      const pin = document.createElement("div");
+      pin.className = "map-pin pin-temp";
+      pin.id = "temp-pin";
+      pin.style.left = `${x}%`;
+      pin.style.top = `${y}%`;
+      pin.innerHTML = `<div class="pin-icon-wrapper" style="background:var(--success)"><span>📍</span></div>`;
+      container.appendChild(pin);
+
+      Utils.$("#map-save-btn").disabled = false;
     },
-    
+
     // Potrzebne dla przycisków HTML onclick
     savePickedLocation() {
-        if (AdminPanel.onMapPick && this.tempCoords) {
-            AdminPanel.onMapPick(this.tempCoords);
-            Modal.close("modal-map");
-        }
+      if (AdminPanel.onMapPick && this.tempCoords) {
+        AdminPanel.onMapPick(this.tempCoords);
+        Modal.close("modal-map");
+      }
     },
-    
+
     // Helpers
-    showLoading() { Utils.show(".map-loading-overlay"); },
-    hideLoading() { Utils.hide(".map-loading-overlay"); },
-    renderPins() { /* (Kod renderowania pinezek - taki sam jak był) */ this.renderPinsLogic(); },
-    renderControls() { /* (Kod kontrolek - taki sam jak był) */ this.renderControlsLogic(); },
-    
+    showLoading() {
+      Utils.show(".map-loading-overlay");
+    },
+    hideLoading() {
+      Utils.hide(".map-loading-overlay");
+    },
+    renderPins() {
+      /* (Kod renderowania pinezek - taki sam jak był) */ this.renderPinsLogic();
+    },
+    renderControls() {
+      /* (Kod kontrolek - taki sam jak był) */ this.renderControlsLogic();
+    },
+
     // Extracted logic to keep code clean
     renderPinsLogic() {
-        Utils.$$(".map-pin:not(#temp-pin)").forEach(el => el.remove());
-        const container = Utils.$("#map-container");
-        [...state.locations, ...state.departments].forEach(loc => {
-            if (loc.map_x != null) {
-                const pin = document.createElement("div");
-                pin.className = `map-pin ${loc.type === "department" ? "pin-dept" : "pin-loc"}`;
-                pin.style.left = `${loc.map_x}%`;
-                pin.style.top = `${loc.map_y}%`;
-                pin.innerHTML = `<div class="pin-icon-wrapper"><span>${loc.type==="department"?"🏢":"📍"}</span></div><div class="pin-label">${loc.name}</div>`;
-                container.appendChild(pin);
-            }
-        });
+      Utils.$$(".map-pin:not(#temp-pin)").forEach((el) => el.remove());
+      const container = Utils.$("#map-container");
+      [...state.locations, ...state.departments].forEach((loc) => {
+        if (loc.map_x != null) {
+          const pin = document.createElement("div");
+          pin.className = `map-pin ${loc.type === "department" ? "pin-dept" : "pin-loc"}`;
+          pin.style.left = `${loc.map_x}%`;
+          pin.style.top = `${loc.map_y}%`;
+          pin.innerHTML = `<div class="pin-icon-wrapper"><span>${loc.type === "department" ? "🏢" : "📍"}</span></div><div class="pin-label">${loc.name}</div>`;
+          container.appendChild(pin);
+        }
+      });
     },
-    
+
     renderControlsLogic() {
-        const wrapper = Utils.$(".map-wrapper");
-        if(wrapper.querySelector(".map-controls")) return;
-        const c = document.createElement("div");
-        c.className = "map-controls";
-        c.innerHTML = `
+      const wrapper = Utils.$(".map-wrapper");
+      if (wrapper.querySelector(".map-controls")) return;
+      const c = document.createElement("div");
+      c.className = "map-controls";
+      c.innerHTML = `
             <button class="btn-icon" onclick="TransportTracker.MapManager.panzoomInstance.zoomIn()">+</button>
             <button class="btn-icon" onclick="TransportTracker.MapManager.panzoomInstance.zoomOut()">-</button>
             <button class="btn-icon" onclick="TransportTracker.MapManager.panzoomInstance.reset()">⟲</button>
         `;
-        wrapper.appendChild(c);
-    }
-};
+      wrapper.appendChild(c);
+    },
+  };
   // =============================================
   // 11. AUTH
   // =============================================
@@ -2140,7 +2213,7 @@ const MapManager = {
         const cachedUsers = localStorage.getItem(CONFIG.STORAGE_KEYS.USERS);
         const cachedLocs = localStorage.getItem(CONFIG.STORAGE_KEYS.LOCATIONS);
         const cachedDepts = localStorage.getItem(
-          CONFIG.STORAGE_KEYS.DEPARTMENTS
+          CONFIG.STORAGE_KEYS.DEPARTMENTS,
         );
         const cachedTasks = localStorage.getItem(CONFIG.STORAGE_KEYS.TASKS);
 
@@ -2245,7 +2318,7 @@ const MapManager = {
         state.currentUser = { ...response.user, token: response.token };
         localStorage.setItem(
           CONFIG.STORAGE_KEYS.USER,
-          JSON.stringify(state.currentUser)
+          JSON.stringify(state.currentUser),
         );
 
         Toast.success(`Witaj, ${response.user.name}!`);
@@ -2282,21 +2355,26 @@ const MapManager = {
 
         // 3. Pobieranie ŚWIEŻEJ listy zadań przed pokazaniem aplikacji
         // Robimy to z timeoutem, żeby nie blokować usera w razie problemów z siecią
-        const loadPromise = role === "admin" 
-          ? AdminPanel.loadTasks(false) 
-          : DriverPanel.loadTasks(false);
-        
-        const timeoutPromise = new Promise(resolve => setTimeout(resolve, 3000));
+        const loadPromise =
+          role === "admin"
+            ? AdminPanel.loadTasks(false)
+            : DriverPanel.loadTasks(false);
+
+        const timeoutPromise = new Promise((resolve) =>
+          setTimeout(resolve, 3000),
+        );
 
         console.log("⏳ Syncing initial data...");
-        await Promise.race([loadPromise, timeoutPromise]).catch(e => console.warn("Initial sync error:", e));
+        await Promise.race([loadPromise, timeoutPromise]).catch((e) =>
+          console.warn("Initial sync error:", e),
+        );
 
         // 4. Dopiero teraz przechodzimy do głównego ekranu
         Screen.show(role);
 
         // 5. Inicjalizacja usług tła
         Notifications.startPolling();
-        
+
         // OneSignal - inicjalizuj SDK (nie blokuje UI)
         OneSignalService.init()
           .then(() => {
@@ -2305,13 +2383,12 @@ const MapManager = {
               if (hasPermission && state.currentUser) {
                 await OneSignalService.login(
                   state.currentUser.id,
-                  state.currentUser.role
+                  state.currentUser.role,
                 );
               }
             }, 2000);
           })
-          .catch((err) => { });
-          
+          .catch((err) => {});
       } catch (error) {
         console.error("FATAL: onLoginSuccess failed", error);
         // Fallback: show the screen anyway to not stay stuck
@@ -2330,9 +2407,18 @@ const MapManager = {
       const tabUsers = document.querySelector('[data-tab="users"]');
       const tabLocations = document.querySelector('[data-tab="locations"]');
 
-      if (tabReports) tabReports.classList.toggle("hidden", user.id !== 1 && !user.perm_reports);
-      if (tabUsers) tabUsers.classList.toggle("hidden", user.id !== 1 && !user.perm_users);
-      if (tabLocations) tabLocations.classList.toggle("hidden", user.id !== 1 && !user.perm_locations);
+      if (tabReports)
+        tabReports.classList.toggle(
+          "hidden",
+          user.id !== 1 && !user.perm_reports,
+        );
+      if (tabUsers)
+        tabUsers.classList.toggle("hidden", user.id !== 1 && !user.perm_users);
+      if (tabLocations)
+        tabLocations.classList.toggle(
+          "hidden",
+          user.id !== 1 && !user.perm_locations,
+        );
 
       AdminPanel.switchTab("tasks");
       AdminPanel.loadUsers();
@@ -2342,16 +2428,22 @@ const MapManager = {
       AdminPanel.initLocationListeners();
 
       // MAP BUTTON
-      Utils.$("#admin-map-btn")?.addEventListener("click", () => MapManager.open("view"));
+      Utils.$("#admin-map-btn")?.addEventListener("click", () =>
+        MapManager.open("view"),
+      );
     },
 
     setupDriverUI() {
       Utils.$("#driver-user-name").textContent = state.currentUser.name;
       state.currentDate = Utils.getToday();
-      Utils.$("#driver-date-text").textContent = Utils.formatDate(state.currentDate);
+      Utils.$("#driver-date-text").textContent = Utils.formatDate(
+        state.currentDate,
+      );
 
       // MAP BUTTON
-      Utils.$("#driver-map-btn")?.addEventListener("click", () => MapManager.open("view"));
+      Utils.$("#driver-map-btn")?.addEventListener("click", () =>
+        MapManager.open("view"),
+      );
 
       console.log("🚀 Driver UI prepared for:", state.currentUser.name);
     },
@@ -2407,7 +2499,7 @@ const MapManager = {
           state.currentUser.force_pin_change = 0;
           localStorage.setItem(
             CONFIG.STORAGE_KEYS.USER,
-            JSON.stringify(state.currentUser)
+            JSON.stringify(state.currentUser),
           );
 
           // Kontynuuj logowanie
@@ -2436,15 +2528,15 @@ const MapManager = {
         // Update Cache
         localStorage.setItem(
           CONFIG.STORAGE_KEYS.LOCATIONS,
-          JSON.stringify(state.locations)
+          JSON.stringify(state.locations),
         );
         localStorage.setItem(
           CONFIG.STORAGE_KEYS.DEPARTMENTS,
-          JSON.stringify(state.departments)
+          JSON.stringify(state.departments),
         );
         localStorage.setItem(
           CONFIG.STORAGE_KEYS.USERS,
-          JSON.stringify(state.users)
+          JSON.stringify(state.users),
         );
 
         DataLists.updateAll();
@@ -2478,14 +2570,14 @@ const MapManager = {
           "Czy na pewno?",
           performLogout,
           "Wyloguj",
-          false
+          false,
         );
       }
     },
 
     initEventListeners() {
       Utils.$("#login-form")?.addEventListener("submit", (e) =>
-        this.handleLogin(e)
+        this.handleLogin(e),
       );
 
       Utils.$("#toggle-pin")?.addEventListener("click", () => {
@@ -2501,10 +2593,10 @@ const MapManager = {
       });
 
       Utils.$("#driver-logout-btn")?.addEventListener("click", () =>
-        this.logout()
+        this.logout(),
       );
       Utils.$("#admin-logout-btn")?.addEventListener("click", () =>
-        this.logout()
+        this.logout(),
       );
     },
   };
@@ -2536,7 +2628,9 @@ const MapManager = {
         });
 
         // 3. Sprawdzamy czy coś się zmieniło
-        const hasChanged = JSON.stringify(freshTasks) !== JSON.stringify(state.taskCache[targetDate]);
+        const hasChanged =
+          JSON.stringify(freshTasks) !==
+          JSON.stringify(state.taskCache[targetDate]);
 
         // Zapisz do cache
         state.taskCache[targetDate] = freshTasks;
@@ -2544,7 +2638,7 @@ const MapManager = {
         // Persist Cache
         localStorage.setItem(
           CONFIG.STORAGE_KEYS.TASKS,
-          JSON.stringify(state.taskCache)
+          JSON.stringify(state.taskCache),
         );
 
         // Jeśli dane się zmieniły ALBO nie było ich wcześniej - odśwież UI
@@ -2595,44 +2689,44 @@ const MapManager = {
         if (b.status === "in_progress" && a.status !== "in_progress") return 1;
 
         // Smart Suggestions Logic - oparte na bliskości geograficznej
-const lastLoc = localStorage.getItem('last_known_location');
-const lastX = parseFloat(localStorage.getItem('last_known_x'));
-const lastY = parseFloat(localStorage.getItem('last_known_y'));
+        const lastLoc = localStorage.getItem("last_known_location");
+        const lastX = parseFloat(localStorage.getItem("last_known_x"));
+        const lastY = parseFloat(localStorage.getItem("last_known_y"));
 
-let isASugg = false;
-let isBSugg = false;
+        let isASugg = false;
+        let isBSugg = false;
 
-if (lastLoc && a.status === 'pending' && a.location_from) {
-    // Sprawdź dokładne dopasowanie LUB bliskość na mapie
-    if (a.location_from === lastLoc) {
-        isASugg = true;
-    } else if (!isNaN(lastX) && !isNaN(lastY)) {
-        isASugg = Utils.isNearby(a.location_from, lastLoc);
-    }
-}
+        if (lastLoc && a.status === "pending" && a.location_from) {
+          // Sprawdź dokładne dopasowanie LUB bliskość na mapie
+          if (a.location_from === lastLoc) {
+            isASugg = true;
+          } else if (!isNaN(lastX) && !isNaN(lastY)) {
+            isASugg = Utils.isNearby(a.location_from, lastLoc);
+          }
+        }
 
-if (lastLoc && b.status === 'pending' && b.location_from) {
-    if (b.location_from === lastLoc) {
-        isBSugg = true;
-    } else if (!isNaN(lastX) && !isNaN(lastY)) {
-        isBSugg = Utils.isNearby(b.location_from, lastLoc);
-    }
-}
+        if (lastLoc && b.status === "pending" && b.location_from) {
+          if (b.location_from === lastLoc) {
+            isBSugg = true;
+          } else if (!isNaN(lastX) && !isNaN(lastY)) {
+            isBSugg = Utils.isNearby(b.location_from, lastLoc);
+          }
+        }
 
         // Priority Scores
         const pScore = { high: 300, normal: 200, low: 100 };
-        
+
         let scoreA = pScore[a.priority] || 200;
         let scoreB = pScore[b.priority] || 200;
 
         // Boost for suggestions (but don't override higher priority tier unless desired)
         // User Rule: "High first... then suggest normal... then suggest low"
         // So: High (300) > Sug-Normal (200+50) > Normal (200) > Sug-Low (100+50) > Low (100)
-        if(isASugg) scoreA += 50;
-        if(isBSugg) scoreB += 50;
+        if (isASugg) scoreA += 50;
+        if (isBSugg) scoreB += 50;
 
         // 3. Compare Scores
-        if(scoreA !== scoreB) return scoreB - scoreA; // Descending
+        if (scoreA !== scoreB) return scoreB - scoreA; // Descending
 
         // 4. Fallback: Sort Order & Time
         const orderDiff = a.sort_order - b.sort_order;
@@ -2640,8 +2734,6 @@ if (lastLoc && b.status === 'pending' && b.location_from) {
         return a.scheduled_time.localeCompare(b.scheduled_time);
       });
     },
-
-
 
     updateStats() {
       // Helper to safely parse booleans (0, 1, "0", "1", true, false)
@@ -2723,12 +2815,12 @@ if (lastLoc && b.status === 'pending' && b.location_from) {
         taskDescription += `
                     <div class="task-route">
                         <span>📍 ${Utils.escapeHtml(
-          task.location_from || "?"
-        )}</span>
+                          task.location_from || "?",
+                        )}</span>
                         <span class="task-route-arrow">→</span>
                         <span>📍 ${Utils.escapeHtml(
-          task.location_to || "?"
-        )}</span>
+                          task.location_to || "?",
+                        )}</span>
                     </div>
                 `;
       }
@@ -2746,41 +2838,49 @@ if (lastLoc && b.status === 'pending' && b.location_from) {
       if (task.containers) {
         try {
           const containers = JSON.parse(task.containers);
-          const depts = [...new Set(containers.map(c => c.department).filter(d => d))];
-          if (depts.length > 0 && (!task.department || !depts.includes(task.department))) {
+          const depts = [
+            ...new Set(containers.map((c) => c.department).filter((d) => d)),
+          ];
+          if (
+            depts.length > 0 &&
+            (!task.department || !depts.includes(task.department))
+          ) {
             taskDescription += `
                     <div class="task-department">
                         <span>🏢</span>
-                        <span style="font-weight: 500;">${depts.map(d => Utils.escapeHtml(d)).join(", ")}</span>
+                        <span style="font-weight: 500;">${depts.map((d) => Utils.escapeHtml(d)).join(", ")}</span>
                     </div>
                   `;
           }
-        } catch (e) { }
+        } catch (e) {}
       }
 
-      const containerSummary = task.containers ? (() => {
-        try {
-          const containers = JSON.parse(task.containers);
-          if (containers.length > 0) {
-            return `
+      const containerSummary = task.containers
+        ? (() => {
+            try {
+              const containers = JSON.parse(task.containers);
+              if (containers.length > 0) {
+                return `
                     <div class="task-material" style="color: var(--primary); font-weight: 600;">
                         <span>📦</span>
                         <span>Kontenery: ${containers.length} szt.</span>
                     </div>
                   `;
-          }
-        } catch (e) { }
-        return "";
-      })() : "";
+              }
+            } catch (e) {}
+            return "";
+          })()
+        : "";
 
-      const materialHtml = task.material && !task.containers
-        ? `
+      const materialHtml =
+        task.material && !task.containers
+          ? `
                 <div class="task-material">
                     <span>📦</span>
                     <span>${Utils.escapeHtml(task.material)}</span>
                 </div>
             `
-        : containerSummary;
+          : containerSummary;
 
       const notesHtml = task.notes
         ? `
@@ -2807,14 +2907,15 @@ if (lastLoc && b.status === 'pending' && b.location_from) {
 
         driversHtml = `
                     <span class="task-meta-item" title="${Utils.escapeHtml(
-          driversList
-        )}">
+                      driversList,
+                    )}">
                         <span>${icon}</span>
                         <span>${Utils.escapeHtml(driversList)}</span>
-                        ${label
-            ? `<span class="task-drivers-badge">${label}</span>`
-            : ""
-          }
+                        ${
+                          label
+                            ? `<span class="task-drivers-badge">${label}</span>`
+                            : ""
+                        }
                     </span>
                 `;
       }
@@ -2863,60 +2964,65 @@ if (lastLoc && b.status === 'pending' && b.location_from) {
       }
 
       // SMART SUGGESTION CHECK - oparte na bliskości geograficznej
-const lastLoc = localStorage.getItem('last_known_location');
-let isSuggested = false;
+      const lastLoc = localStorage.getItem("last_known_location");
+      let isSuggested = false;
 
-if (task.status === 'pending' && task.location_from && lastLoc) {
-    // Dokładne dopasowanie
-    if (task.location_from === lastLoc) {
-        isSuggested = true;
-    } else {
-        // Sprawdź bliskość na mapie
-        isSuggested = Utils.isNearby(task.location_from, lastLoc);
-    }
-}
-      const suggestionClass = isSuggested ? 'suggestion-ring' : '';
+      if (task.status === "pending" && task.location_from && lastLoc) {
+        // Dokładne dopasowanie
+        if (task.location_from === lastLoc) {
+          isSuggested = true;
+        } else {
+          // Sprawdź bliskość na mapie
+          isSuggested = Utils.isNearby(task.location_from, lastLoc);
+        }
+      }
+      const suggestionClass = isSuggested ? "suggestion-ring" : "";
 
       return `
-                <div class="task-card priority-${task.priority} status-${task.status
-        } ${isLocked ? "task-locked" : ""} ${suggestionClass}" 
+                <div class="task-card priority-${task.priority} status-${
+                  task.status
+                } ${isLocked ? "task-locked" : ""} ${suggestionClass}" 
                      data-id="${task.id}">
                     <div class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-          task.status
-        )} ${Utils.getStatusLabel(task.status)}
+                          task.status,
+                        )} ${Utils.getStatusLabel(task.status)}
                     </div>
                     
                     <div class="task-header">
                         <div class="task-badges">
-                            <span class="task-type-badge type-${task.task_type
-        }">
+                            <span class="task-type-badge type-${
+                              task.task_type
+                            }">
                                 ${Utils.getTaskTypeIcon(
-          task.task_type
-        )} ${Utils.getTaskTypeLabel(task.task_type)}
+                                  task.task_type,
+                                )} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
-                            <span class="task-priority-badge priority-${task.priority
-        }">
+                            <span class="task-priority-badge priority-${
+                              task.priority
+                            }">
                                 ${Utils.getPriorityIcon(
-          task.priority
-        )} ${Utils.getPriorityLabel(task.priority)}
+                                  task.priority,
+                                )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
                         <div class="task-creator-info" style="font-size: 0.8em; color: var(--text-secondary); margin-top: 4px;">
-                            ${task.creator_name
-          ? `Zlecił: <strong>${Utils.escapeHtml(
-            task.creator_name
-          )}</strong>`
-          : ""
-        }
+                            ${
+                              task.creator_name
+                                ? `Zlecił: <strong>${Utils.escapeHtml(
+                                    task.creator_name,
+                                  )}</strong>`
+                                : ""
+                            }
                         </div>
                     </div>
                     
-                    <div class="task-body" data-action="details" data-id="${task.id
-        }">
+                    <div class="task-body" data-action="details" data-id="${
+                      task.id
+                    }">
                         <div class="task-title">${Utils.escapeHtml(
-          task.description
-        )}</div>
+                          task.description,
+                        )}</div>
                         <div class="task-description">
                             ${taskDescription}
                             ${materialHtml}
@@ -2926,17 +3032,18 @@ if (task.status === 'pending' && task.location_from && lastLoc) {
                     
                     <div class="task-footer">
                         <div class="task-meta">
-                            ${task.scheduled_time
-          ? `
+                            ${
+                              task.scheduled_time
+                                ? `
                                 <span class="task-meta-item">
                                     <span>🕐</span>
                                     <span>${Utils.formatTime(
-            task.scheduled_time
-          )}</span>
+                                      task.scheduled_time,
+                                    )}</span>
                                 </span>
                             `
-          : ""
-        }
+                                : ""
+                            }
                             ${driversHtml}
                         </div>
                         <div class="task-actions">
@@ -3001,7 +3108,7 @@ if (task.status === 'pending' && task.location_from && lastLoc) {
           this.updateStats();
           this.setFilter("in_progress");
           Toast.success("Zadanie rozpoczęte! 🚀");
-        }
+        },
       ).finally(() => {
         this._startingTask = false;
       });
@@ -3024,32 +3131,37 @@ if (task.status === 'pending' && task.location_from && lastLoc) {
               if (task) {
                 // Optymistycznie zakładamy sukces (zakończenie całości lub części)
                 task.status = "completed";
-                
-                // SAVE LAST LOCATION for Smart Suggestions
-let lastLocationName = null;
-if (task.location_to) {
-    lastLocationName = task.location_to;
-} else if (task.department) {
-    lastLocationName = task.department;
-}
 
-if (lastLocationName) {
-    localStorage.setItem('last_known_location', lastLocationName);
-    
-    // Zapisz też współrzędne dla lepszych sugestii
-    const allLocations = [...state.locations, ...state.departments];
-    const loc = allLocations.find(l => l.name === lastLocationName);
-    if (loc?.map_x && loc?.map_y) {
-        localStorage.setItem('last_known_x', loc.map_x);
-        localStorage.setItem('last_known_y', loc.map_y);
-    }
-}
+                // SAVE LAST LOCATION for Smart Suggestions
+                let lastLocationName = null;
+                if (task.location_to) {
+                  lastLocationName = task.location_to;
+                } else if (task.department) {
+                  lastLocationName = task.department;
+                }
+
+                if (lastLocationName) {
+                  localStorage.setItem("last_known_location", lastLocationName);
+
+                  // Zapisz też współrzędne dla lepszych sugestii
+                  const allLocations = [
+                    ...state.locations,
+                    ...state.departments,
+                  ];
+                  const loc = allLocations.find(
+                    (l) => l.name === lastLocationName,
+                  );
+                  if (loc?.map_x && loc?.map_y) {
+                    localStorage.setItem("last_known_x", loc.map_x);
+                    localStorage.setItem("last_known_y", loc.map_y);
+                  }
+                }
               }
               this.sortTasks();
               this.updateStats();
               this.renderTasks();
               Toast.success("Zadanie oznaczone jako zakończone! 🎉");
-            }
+            },
           )
             .then(() => {
               // Po faktycznym zakończeniu sync, możemy odświeżyć żeby sprawdzić "partial"
@@ -3060,7 +3172,7 @@ if (lastLocationName) {
             });
         },
         "Zakończ",
-        false
+        false,
       );
     },
 
@@ -3081,11 +3193,11 @@ if (lastLocationName) {
               this.updateStats();
               this.renderTasks();
               Toast.info("Zadanie wstrzymane ⏸️");
-            }
+            },
           );
         },
         "Wstrzymaj",
-        false
+        false,
       );
     },
 
@@ -3105,17 +3217,17 @@ if (lastLocationName) {
           this.renderTasks();
           this.setFilter("in_progress");
           Toast.success("Zadanie wznowione! ▶️");
-        }
+        },
       );
     },
 
     openJoinModal(taskId) {
       const task = state.tasks.find((t) => t.id == taskId);
       Utils.$("#join-task-id").value = taskId;
-      Utils.$(
-        "#join-task-message"
-      ).textContent = `Czy chcesz dołączyć do zadania "${task?.description || ""
-      }" i pomagać przy jego realizacji?`;
+      Utils.$("#join-task-message").textContent =
+        `Czy chcesz dołączyć do zadania "${
+          task?.description || ""
+        }" i pomagać przy jego realizacji?`;
       Modal.open("modal-join-task");
     },
 
@@ -3151,7 +3263,7 @@ if (lastLocationName) {
 
       const taskId = Utils.$("#log-task-id").value;
       const logType = document.querySelector(
-        'input[name="log-type"]:checked'
+        'input[name="log-type"]:checked',
       ).value;
 
       const logData = {
@@ -3218,9 +3330,8 @@ if (lastLocationName) {
         task.additional_drivers.some((d) => d.id === state.currentUser.id);
       const isParticipating = isMyTask || isJoined;
 
-
       let locationInfo = "";
-      
+
       // Dla wszystkich typów zadań - pokaż dział jeśli istnieje
       if (task.department) {
         locationInfo += `
@@ -3230,7 +3341,7 @@ if (lastLocationName) {
           </div>
         `;
       }
-      
+
       // Pokaż skąd/dokąd jeśli istnieją (dla transport i other)
       if (task.location_from) {
         locationInfo += `
@@ -3240,7 +3351,7 @@ if (lastLocationName) {
           </div>
         `;
       }
-      
+
       if (task.location_to) {
         locationInfo += `
           <div class="task-detail-row">
@@ -3250,13 +3361,12 @@ if (lastLocationName) {
         `;
       }
 
-
       // MAP BUTTON - Wąski, wyśrodkowany przycisk podglądu trasy
       // Określ punkty startowy i końcowy w zależności od typu zadania
       let routeFrom = null;
       let routeTo = null;
       const PARKING_TIR = "Parking TIR"; // Centralny punkt dla rozładunku/załadunku
-      
+
       if (task.location_from && task.location_to) {
         // Transport lub Inne zadanie z lokalizacjami
         routeFrom = task.location_from;
@@ -3274,7 +3384,7 @@ if (lastLocationName) {
         routeFrom = PARKING_TIR;
         routeTo = task.department;
       }
-      
+
       // Pokaż przycisk jeśli mamy trasę do pokazania
       if (routeFrom && routeTo) {
         locationInfo += `
@@ -3288,41 +3398,41 @@ if (lastLocationName) {
         `;
       }
 
-
-
       let logsHtml = "";
       if (task.logs && task.logs.length > 0) {
         logsHtml = `
                     <div class="task-logs-section">
                         <h4>Historia i uwagi</h4>
                         ${task.logs
-            .map(
-              (log) => `
+                          .map(
+                            (log) => `
                             <div class="task-log-item log-${log.log_type}">
                                 <span class="task-log-icon">${Utils.getLogTypeIcon(
-                log.log_type
-              )}</span>
+                                  log.log_type,
+                                )}</span>
                                 <div class="task-log-content">
                                     <div class="task-log-message">
-                                        ${log.log_type === "delay"
-                  ? `<strong>${Utils.getDelayReasonLabel(
-                    log.delay_reason
-                  )}</strong> (${log.delay_minutes || 0
-                  } min)<br>`
-                  : ""
-                }
+                                        ${
+                                          log.log_type === "delay"
+                                            ? `<strong>${Utils.getDelayReasonLabel(
+                                                log.delay_reason,
+                                              )}</strong> (${
+                                                log.delay_minutes || 0
+                                              } min)<br>`
+                                            : ""
+                                        }
                                         ${Utils.escapeHtml(log.message || "")}
                                     </div>
                                                                         <div class="task-log-meta">
                                         ${Utils.escapeHtml(
-                  log.user_name || "Nieznany"
-                )} • ${Utils.formatTime(log.created_at)}
+                                          log.user_name || "Nieznany",
+                                        )} • ${Utils.formatTime(log.created_at)}
                                     </div>
                                 </div>
                             </div>
-                        `
-            )
-            .join("")}
+                        `,
+                          )
+                          .join("")}
                     </div>
                 `;
       }
@@ -3388,77 +3498,81 @@ if (lastLocationName) {
                 <div class="task-detail-header">
                     <span class="task-type-badge type-${task.task_type}">
                         ${Utils.getTaskTypeIcon(
-        task.task_type
-      )} ${Utils.getTaskTypeLabel(task.task_type)}
+                          task.task_type,
+                        )} ${Utils.getTaskTypeLabel(task.task_type)}
                     </span>
                     <span class="task-priority-badge priority-${task.priority}">
                         ${Utils.getPriorityIcon(
-        task.priority
-      )} ${Utils.getPriorityLabel(task.priority)}
+                          task.priority,
+                        )} ${Utils.getPriorityLabel(task.priority)}
                     </span>
                     <span class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-        task.status
-      )} ${Utils.getStatusLabel(task.status)}
+                          task.status,
+                        )} ${Utils.getStatusLabel(task.status)}
                     </span>
                 </div>
                 
                 <h3 class="task-detail-title">${Utils.escapeHtml(
-        task.description
-      )}</h3>
+                  task.description,
+                )}</h3>
                 
                 <div class="task-detail-section">
                     <h4>Szczegóły</h4>
                     ${locationInfo}
-                    ${task.material
-          ? `
+                    ${
+                      task.material
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Materiał</span>
                             <span class="task-detail-value">📦 ${Utils.escapeHtml(
-            task.material
-          )}</span>
+                              task.material,
+                            )}</span>
                         </div>
                     `
-          : ""
-        }
+                        : ""
+                    }
                     <div class="task-detail-row">
                         <span class="task-detail-label">Data</span>
                         <span class="task-detail-value">📅 ${Utils.formatDate(
-          task.scheduled_date
-        )}</span>
+                          task.scheduled_date,
+                        )}</span>
                     </div>
-                    ${task.scheduled_time
-          ? `
+                    ${
+                      task.scheduled_time
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Godzina</span>
                             <span class="task-detail-value">🕐 ${Utils.formatTime(
-            task.scheduled_time
-          )}</span>
+                              task.scheduled_time,
+                            )}</span>
                         </div>
                     `
-          : ""
-        }
-                    ${task.assigned_name
-          ? `
+                        : ""
+                    }
+                    ${
+                      task.assigned_name
+                        ? `
                         <div class="task-detail-row">
                             <span class="task-detail-label">Przypisany</span>
                             <span class="task-detail-value">👤 ${Utils.escapeHtml(
-            task.assigned_name
-          )}</span>
+                              task.assigned_name,
+                            )}</span>
                         </div>
                     `
-          : ""
-        }
+                        : ""
+                    }
                     <div class="task-detail-row">
                         <span class="task-detail-label">Zlecił</span>
                         <span class="task-detail-value">👔 ${Utils.escapeHtml(
-          task.creator_name || "System"
-        )}</span>
+                          task.creator_name || "System",
+                        )}</span>
                     </div>
                 </div>
                 
-                ${task.notes
-          ? `
+                ${
+                  task.notes
+                    ? `
                     <div class="task-detail-section">
                         <h4>Uwagi dla kierowców</h4>
                         <div class="task-notes-preview">
@@ -3467,19 +3581,20 @@ if (lastLocationName) {
                         </div>
                     </div>
                 `
-          : ""
-        }
+                    : ""
+                }
                 
                 ${logsHtml}
                 
-                ${task.containers && JSON.parse(task.containers).length > 0
-          ? `
+                ${
+                  task.containers && JSON.parse(task.containers).length > 0
+                    ? `
                     <div class="task-detail-section" style="margin-bottom: 25px;">
                         <h4>📦 Kontenery / Części (${JSON.parse(task.containers).length})</h4>
                         <div class="containers-list-detail" style="display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px;">
                             ${JSON.parse(task.containers)
-            .map(
-              (c, i) => `
+                              .map(
+                                (c, i) => `
                                 <div class="container-item-detail" style="padding: 12px; background: var(--bg-tertiary); border-radius: var(--border-radius-lg); border: 1px solid var(--border-color);">
                                     <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
                                         Kontener ${i + 1}
@@ -3492,38 +3607,40 @@ if (lastLocationName) {
                                         <span style="display: flex; align-items: center; gap: 5px;">👤 ${Utils.escapeHtml(c.driverName || "Dowolny kierowca")}</span>
                                     </div>
                                 </div>
-                            `
-            )
-            .join("")}
+                            `,
+                              )
+                              .join("")}
                         </div>
                     </div>
                 `
-          : ""
-        }
+                    : ""
+                }
 
                 <div style="margin-top: 30px;">
                     ${actionsHtml}
                 </div>
             `;
-
     },
 
     openMapForTask(taskId) {
-        Modal.close('modal-task-detail');
-        API.getTask(taskId).then(task => {
-            MapManager.mode = 'view_task';
-            MapManager.currentTask = task;
-            
-            Modal.open('modal-map');
-            MapManager.initPanzoom();
-            
-            setTimeout(() => {
-                if(task.location_from) {
-                     const l = [...state.locations, ...state.departments].find(x => x.name === task.location_from);
-                     if(l && MapManager.focusOnLocation) MapManager.focusOnLocation(l.id);
-                }
-            }, 500);
-        });
+      Modal.close("modal-task-detail");
+      API.getTask(taskId).then((task) => {
+        MapManager.mode = "view_task";
+        MapManager.currentTask = task;
+
+        Modal.open("modal-map");
+        MapManager.initPanzoom();
+
+        setTimeout(() => {
+          if (task.location_from) {
+            const l = [...state.locations, ...state.departments].find(
+              (x) => x.name === task.location_from,
+            );
+            if (l && MapManager.focusOnLocation)
+              MapManager.focusOnLocation(l.id);
+          }
+        }, 500);
+      });
     },
 
     setFilter(filter) {
@@ -3546,7 +3663,7 @@ if (lastLocationName) {
 
       // Log form
       Utils.$("#task-log-form")?.addEventListener("submit", (e) =>
-        this.handleLogSubmit(e)
+        this.handleLogSubmit(e),
       );
 
       // Log type change
@@ -3558,7 +3675,7 @@ if (lastLocationName) {
 
       // Join task
       Utils.$("#join-task-confirm-btn")?.addEventListener("click", () =>
-        this.joinTask()
+        this.joinTask(),
       );
     },
   };
@@ -3618,7 +3735,7 @@ if (lastLocationName) {
       Utils.$("#task-id").value = task.id;
 
       const typeRadio = document.querySelector(
-        `input[name="task-type"][value="${task.task_type}"]`
+        `input[name="task-type"][value="${task.task_type}"]`,
       );
       if (typeRadio) typeRadio.checked = true;
       this.toggleTaskFields(task.task_type);
@@ -3647,7 +3764,7 @@ if (lastLocationName) {
       Utils.$("#task-assigned").value = task.assigned_to || "";
 
       const priorityRadio = document.querySelector(
-        `input[name="task-priority"][value="${task.priority}"]`
+        `input[name="task-priority"][value="${task.priority}"]`,
       );
       if (priorityRadio) priorityRadio.checked = true;
 
@@ -3655,14 +3772,23 @@ if (lastLocationName) {
       if (task.containers) {
         try {
           const containers = JSON.parse(task.containers);
-          if (containers.length > 0 && (task.task_type === "unloading" || task.task_type === "loading")) {
+          if (
+            containers.length > 0 &&
+            (task.task_type === "unloading" || task.task_type === "loading")
+          ) {
             this.setMode("containers", task.task_type);
-            this.populateOrganismContainers(containers, task.task_type, task.material);
+            this.populateOrganismContainers(
+              containers,
+              task.task_type,
+              task.material,
+            );
           } else {
             this.setMode("full", task.task_type);
             this.initContainers(containers);
           }
-        } catch (e) { console.error("Error parsing containers", e); }
+        } catch (e) {
+          console.error("Error parsing containers", e);
+        }
       } else {
         this.setMode("full", task.task_type);
         this.initContainers([]);
@@ -3696,12 +3822,14 @@ if (lastLocationName) {
     },
 
     getMode(type) {
-      const activeBtn = document.querySelector(`.mode-btn.active[data-target="${type}"]`);
+      const activeBtn = document.querySelector(
+        `.mode-btn.active[data-target="${type}"]`,
+      );
       return activeBtn ? activeBtn.dataset.mode : "full";
     },
 
     setMode(mode, type) {
-      Utils.$$(`.mode-btn[data-target="${type}"]`).forEach(btn => {
+      Utils.$$(`.mode-btn[data-target="${type}"]`).forEach((btn) => {
         btn.classList.toggle("active", btn.dataset.mode === mode);
       });
 
@@ -3713,7 +3841,9 @@ if (lastLocationName) {
         Utils.toggle("#loading-containers-fields", mode === "containers");
       }
 
-      const currentType = document.querySelector('input[name="task-type"]:checked')?.value;
+      const currentType = document.querySelector(
+        'input[name="task-type"]:checked',
+      )?.value;
       if (currentType === type) {
         Utils.toggle("#global-driver-section", mode === "full");
       }
@@ -3724,7 +3854,7 @@ if (lastLocationName) {
       if (!list) return; // Safety first
       list.innerHTML = "";
       if (containers && containers.length > 0) {
-        containers.forEach(c => this.addContainerRow(c));
+        containers.forEach((c) => this.addContainerRow(c));
       }
     },
 
@@ -3735,7 +3865,8 @@ if (lastLocationName) {
 
       const div = document.createElement("div");
       div.className = "container-row";
-      div.style.cssText = "background: var(--bg-tertiary); padding: 12px; border-radius: var(--border-radius-lg); border: 1px solid var(--border-color); position: relative;";
+      div.style.cssText =
+        "background: var(--bg-tertiary); padding: 12px; border-radius: var(--border-radius-lg); border: 1px solid var(--border-color); position: relative;";
 
       const contentVal = data ? data.content : "";
       const deptVal = data ? data.department : "";
@@ -3744,7 +3875,7 @@ if (lastLocationName) {
       // Build department options (assuming state.departments is populated)
       let deptOptions = '<option value="">Wybierz dział...</option>';
       if (state.departments) {
-        state.departments.forEach(d => {
+        state.departments.forEach((d) => {
           const sel = d.name === deptVal ? "selected" : "";
           deptOptions += `<option value="${d.name}" ${sel}>${d.name}</option>`;
         });
@@ -3753,10 +3884,12 @@ if (lastLocationName) {
       // Build driver options
       let driverOptions = '<option value="">Dowolny kierowca...</option>';
       if (state.users) {
-        state.users.filter(u => u.role === 'driver').forEach(u => {
-          const sel = String(u.id) === String(driverVal) ? "selected" : "";
-          driverOptions += `<option value="${u.id}" ${sel}>${u.name}</option>`;
-        });
+        state.users
+          .filter((u) => u.role === "driver")
+          .forEach((u) => {
+            const sel = String(u.id) === String(driverVal) ? "selected" : "";
+            driverOptions += `<option value="${u.id}" ${sel}>${u.name}</option>`;
+          });
       }
 
       div.innerHTML = `
@@ -3777,23 +3910,25 @@ if (lastLocationName) {
             </div>
         `;
 
-      div.querySelector(".remove-container-btn").addEventListener("click", () => {
-        div.remove();
-        // Renumber remaining containers
-        list.querySelectorAll(".container-row").forEach((row, idx) => {
-          row.querySelector("span").textContent = `📦 Kontener ${idx + 1}`;
+      div
+        .querySelector(".remove-container-btn")
+        .addEventListener("click", () => {
+          div.remove();
+          // Renumber remaining containers
+          list.querySelectorAll(".container-row").forEach((row, idx) => {
+            row.querySelector("span").textContent = `📦 Kontener ${idx + 1}`;
+          });
         });
-      });
 
       list.appendChild(div);
     },
 
     getFormData() {
       const taskType = document.querySelector(
-        'input[name="task-type"]:checked'
+        'input[name="task-type"]:checked',
       ).value;
       const priority = document.querySelector(
-        'input[name="task-priority"]:checked'
+        'input[name="task-priority"]:checked',
       ).value;
 
       const data = {
@@ -3842,8 +3977,13 @@ if (lastLocationName) {
       }
 
       // Collect Containers (Unified)
-      const currentType = document.querySelector('input[name="task-type"]:checked')?.value;
-      const mode = (currentType === "loading" || currentType === "unloading") ? this.getMode(currentType) : "full";
+      const currentType = document.querySelector(
+        'input[name="task-type"]:checked',
+      )?.value;
+      const mode =
+        currentType === "loading" || currentType === "unloading"
+          ? this.getMode(currentType)
+          : "full";
 
       if (mode === "full" && currentType !== "transport") {
         data.containers = null;
@@ -3859,14 +3999,16 @@ if (lastLocationName) {
         const dept = Utils.$(`#${type}-c${i}-dept`).value;
         const driverId = Utils.$(`#${type}-c${i}-driver`).value;
         const driverSelect = Utils.$(`#${type}-c${i}-driver`);
-        const driverName = driverSelect.options[driverSelect.selectedIndex]?.text || "Dowolny kierowca";
+        const driverName =
+          driverSelect.options[driverSelect.selectedIndex]?.text ||
+          "Dowolny kierowca";
 
         if (desc) {
           containers.push({
             content: desc,
             department: dept,
             driverId: driverId || null,
-            driverName: driverId ? driverName : "Dowolny kierowca"
+            driverName: driverId ? driverName : "Dowolny kierowca",
           });
         }
       }
@@ -3891,7 +4033,11 @@ if (lastLocationName) {
       } else if (data.task_type === "unloading") {
         if (!data.material) {
           const mode = this.getMode("unloading");
-          Toast.warning(mode === "full" ? "Wpisz nazwę/opis rozładunku" : "Wpisz nazwę klienta");
+          Toast.warning(
+            mode === "full"
+              ? "Wpisz nazwę/opis rozładunku"
+              : "Wpisz nazwę klienta",
+          );
           return false;
         }
         if (!data.department && !data.containers) {
@@ -3901,7 +4047,9 @@ if (lastLocationName) {
       } else if (data.task_type === "loading") {
         if (!data.material) {
           const mode = this.getMode("loading");
-          Toast.warning(mode === "full" ? "Wpisz rodzaj materiału" : "Wpisz nazwę klienta");
+          Toast.warning(
+            mode === "full" ? "Wpisz rodzaj materiału" : "Wpisz nazwę klienta",
+          );
           return false;
         }
         if (!data.department && !data.containers) {
@@ -3976,7 +4124,7 @@ if (lastLocationName) {
           result = await API.createTask(data);
           // Update temp ID with Real ID
           const tempIdx = state.tasks.findIndex(
-            (t) => t.id === optimisticTask.id
+            (t) => t.id === optimisticTask.id,
           );
           if (tempIdx !== -1) {
             state.tasks[tempIdx].id = result.id;
@@ -3986,7 +4134,7 @@ if (lastLocationName) {
               state.taskCache[dateKey] = [...state.tasks]; // Update cache ref
               localStorage.setItem(
                 CONFIG.STORAGE_KEYS.TASKS,
-                JSON.stringify(state.taskCache)
+                JSON.stringify(state.taskCache),
               );
             }
           }
@@ -4032,14 +4180,14 @@ if (lastLocationName) {
         this.addContainerRow();
       });
 
-      Utils.$$(".mode-btn").forEach(btn => {
+      Utils.$$(".mode-btn").forEach((btn) => {
         btn.addEventListener("click", () => {
           this.setMode(btn.dataset.mode, btn.dataset.target);
         });
       });
 
       Utils.$("#task-form")?.addEventListener("submit", (e) =>
-        this.handleSubmit(e)
+        this.handleSubmit(e),
       );
     },
   };
@@ -4073,7 +4221,9 @@ if (lastLocationName) {
         });
 
         // 3. Sprawdzamy czy coś się zmieniło
-        const hasChanged = JSON.stringify(freshTasks) !== JSON.stringify(state.taskCache[targetDate]);
+        const hasChanged =
+          JSON.stringify(freshTasks) !==
+          JSON.stringify(state.taskCache[targetDate]);
 
         // Zapisz do cache
         state.taskCache[targetDate] = freshTasks;
@@ -4081,7 +4231,7 @@ if (lastLocationName) {
         // Persist Cache
         localStorage.setItem(
           CONFIG.STORAGE_KEYS.TASKS,
-          JSON.stringify(state.taskCache)
+          JSON.stringify(state.taskCache),
         );
 
         // Jeśli dane się zmieniły ALBO nie było ich wcześniej w cache - odśwież UI
@@ -4145,13 +4295,13 @@ if (lastLocationName) {
 
     updateStats() {
       const pending = state.tasks.filter(
-        (t) => t.status === "pending" || t.status === "paused"
+        (t) => t.status === "pending" || t.status === "paused",
       ).length;
       const inProgress = state.tasks.filter(
-        (t) => t.status === "in_progress"
+        (t) => t.status === "in_progress",
       ).length;
       const completed = state.tasks.filter(
-        (t) => t.status === "completed"
+        (t) => t.status === "completed",
       ).length;
 
       Utils.$("#admin-stat-pending").textContent = pending;
@@ -4201,11 +4351,11 @@ if (lastLocationName) {
         if (state.currentFilter === "pending") {
           // Show both pending and paused in "Pending" tab
           filteredTasks = state.tasks.filter(
-            (t) => t.status === "pending" || t.status === "paused"
+            (t) => t.status === "pending" || t.status === "paused",
           );
         } else {
           filteredTasks = state.tasks.filter(
-            (t) => t.status === state.currentFilter
+            (t) => t.status === state.currentFilter,
           );
         }
       }
@@ -4260,12 +4410,12 @@ if (lastLocationName) {
         taskDescription = `
                     <div class="task-route">
                         <span>📍 ${Utils.escapeHtml(
-          task.location_from || "?"
-        )}</span>
+                          task.location_from || "?",
+                        )}</span>
                         <span class="task-route-arrow">→</span>
                         <span>📍 ${Utils.escapeHtml(
-          task.location_to || "?"
-        )}</span>
+                          task.location_to || "?",
+                        )}</span>
                     </div>
                 `;
       } else {
@@ -4277,43 +4427,51 @@ if (lastLocationName) {
         if (task.containers) {
           try {
             const containers = JSON.parse(task.containers);
-            const depts = [...new Set(containers.map(c => c.department).filter(d => d))];
-            if (depts.length > 0 && (!task.department || !depts.includes(task.department))) {
+            const depts = [
+              ...new Set(containers.map((c) => c.department).filter((d) => d)),
+            ];
+            if (
+              depts.length > 0 &&
+              (!task.department || !depts.includes(task.department))
+            ) {
               deptsHtml += `
                         <div class="task-department">
                             <span>🏢</span>
-                            <span style="font-weight: 500;">${depts.map(d => Utils.escapeHtml(d)).join(", ")}</span>
+                            <span style="font-weight: 500;">${depts.map((d) => Utils.escapeHtml(d)).join(", ")}</span>
                         </div>
                     `;
             }
-          } catch (e) { }
+          } catch (e) {}
         }
         taskDescription = deptsHtml;
       }
 
-      const containerSummary = task.containers ? (() => {
-        try {
-          const containers = JSON.parse(task.containers);
-          if (containers.length > 0) {
-            return `
+      const containerSummary = task.containers
+        ? (() => {
+            try {
+              const containers = JSON.parse(task.containers);
+              if (containers.length > 0) {
+                return `
                     <div class="task-material" style="color: var(--primary);">
                         <span>📦</span>
                         <span>Kontenery: ${containers.length} szt.</span>
                     </div>
                   `;
-          }
-        } catch (e) { }
-        return "";
-      })() : "";
+              }
+            } catch (e) {}
+            return "";
+          })()
+        : "";
 
-      const materialHtml = task.material && !task.containers
-        ? `
+      const materialHtml =
+        task.material && !task.containers
+          ? `
                 <div class="task-material">
                     <span>📦</span>
                     <span>${Utils.escapeHtml(task.material)}</span>
                 </div>
             `
-        : containerSummary;
+          : containerSummary;
 
       // Obsługa wielu kierowców (DODANO DLA ADMINA)
       let driversHtml = "";
@@ -4331,14 +4489,15 @@ if (lastLocationName) {
 
         driversHtml = `
                     <span class="task-meta-item" title="${Utils.escapeHtml(
-          driversList
-        )}">
+                      driversList,
+                    )}">
                         <span>${icon}</span>
                         <span>${Utils.escapeHtml(driversList)}</span>
-                        ${label
-            ? `<span class="task-drivers-badge">${label}</span>`
-            : ""
-          }
+                        ${
+                          label
+                            ? `<span class="task-drivers-badge">${label}</span>`
+                            : ""
+                        }
                     </span>
                 `;
       }
@@ -4348,8 +4507,8 @@ if (lastLocationName) {
                 <span class="task-meta-item" title="Utworzył">
                     <span>✏️</span>
                     <span>${Utils.escapeHtml(
-          task.creator_name
-        )} (${Utils.formatTime(task.created_at)})</span>
+                      task.creator_name,
+                    )} (${Utils.formatTime(task.created_at)})</span>
                 </span>
             `
         : "";
@@ -4376,17 +4535,20 @@ if (lastLocationName) {
       }
 
       return `
-                <div class="task-card priority-${task.priority} status-${task.status
-        }" 
+                <div class="task-card priority-${task.priority} status-${
+                  task.status
+                }" 
                      data-id="${task.id}" 
-                     draggable="${state.isReorderMode &&
-        !isCompleted &&
-        !isInProgress &&
-        canEdit
-        }">
+                     draggable="${
+                       state.isReorderMode &&
+                       !isCompleted &&
+                       !isInProgress &&
+                       canEdit
+                     }">
                     
-                    ${state.isReorderMode && canEdit
-          ? `
+                    ${
+                      state.isReorderMode && canEdit
+                        ? `
                     <div class="task-drag-handle">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
                             <circle cx="9" cy="6" r="2"/>
@@ -4397,45 +4559,50 @@ if (lastLocationName) {
                             <circle cx="15" cy="18" r="2"/>
                         </svg>
                     </div>`
-          : ""
-        }
+                        : ""
+                    }
                     
                     <div class="task-status-indicator status-${task.status}">
                         ${Utils.getStatusIcon(
-          task.status
-        )} ${Utils.getStatusLabel(task.status)}
+                          task.status,
+                        )} ${Utils.getStatusLabel(task.status)}
                     </div>
                     
                     <div class="task-header">
                         <div class="task-badges">
                             <span class="task-order-badge">#${order}</span>
-                            <span class="task-type-badge type-${task.task_type
-        }">
+                            <span class="task-type-badge type-${
+                              task.task_type
+                            }">
                                 ${Utils.getTaskTypeIcon(
-          task.task_type
-        )} ${Utils.getTaskTypeLabel(task.task_type)}
+                                  task.task_type,
+                                )} ${Utils.getTaskTypeLabel(task.task_type)}
                             </span>
-                            <span class="task-priority-badge priority-${task.priority
-        }" 
-                                  data-action="${canEdit ? "change-priority" : ""
-        }" data-id="${task.id}" 
+                            <span class="task-priority-badge priority-${
+                              task.priority
+                            }" 
+                                  data-action="${
+                                    canEdit ? "change-priority" : ""
+                                  }" data-id="${task.id}" 
                                   title="Zmień priorytet" 
-                                  style="${canEdit
-          ? "cursor:pointer"
-          : "cursor:default"
-        }">
+                                  style="${
+                                    canEdit
+                                      ? "cursor:pointer"
+                                      : "cursor:default"
+                                  }">
                                 ${Utils.getPriorityIcon(
-          task.priority
-        )} ${Utils.getPriorityLabel(task.priority)}
+                                  task.priority,
+                                )} ${Utils.getPriorityLabel(task.priority)}
                             </span>
                         </div>
                     </div>
                     
-                    <div class="task-body" data-action="details" data-id="${task.id
-        }">
+                    <div class="task-body" data-action="details" data-id="${
+                      task.id
+                    }">
                         <div class="task-title">${Utils.escapeHtml(
-          task.description
-        )}</div>
+                          task.description,
+                        )}</div>
                         <div class="task-description">
                             ${taskDescription}
                             ${materialHtml}
@@ -4444,17 +4611,18 @@ if (lastLocationName) {
                     
                     <div class="task-footer">
                         <div class="task-meta">
-                            ${task.scheduled_time
-          ? `
+                            ${
+                              task.scheduled_time
+                                ? `
                                 <span class="task-meta-item">
                                     <span>🕐</span>
                                     <span>${Utils.formatTime(
-            task.scheduled_time
-          )}</span>
+                                      task.scheduled_time,
+                                    )}</span>
                                 </span>
                             `
-          : ""
-        }
+                                : ""
+                            }
                             ${driversHtml}
                             ${creatorHtml}
                         </div>
@@ -4519,7 +4687,7 @@ if (lastLocationName) {
             .finally(() => {
               this._deletingTask = false;
             });
-        }
+        },
       );
     },
 
@@ -4605,7 +4773,7 @@ if (lastLocationName) {
       Utils.$$("#admin-filters .filter-btn").forEach((btn) => {
         btn.classList.toggle(
           "active",
-          btn.dataset.filter === state.currentFilter
+          btn.dataset.filter === state.currentFilter,
         );
       });
     },
@@ -4694,10 +4862,10 @@ if (lastLocationName) {
     async submitReorder(reason = null) {
       try {
         const taskCards = Utils.$$(
-          "#admin-tasks-list .task-card:not(.status-completed):not(.status-in_progress)"
+          "#admin-tasks-list .task-card:not(.status-completed):not(.status-in_progress)",
         );
         const newOrder = Array.from(taskCards).map((card) =>
-          parseInt(card.dataset.id)
+          parseInt(card.dataset.id),
         );
 
         await API.reorderTasks(newOrder, reason, state.currentUser.id);
@@ -4726,7 +4894,7 @@ if (lastLocationName) {
     initDragAndDrop() {
       const tasksList = Utils.$("#admin-tasks-list");
       const cards = tasksList.querySelectorAll(
-        ".task-card:not(.status-completed):not(.status-in_progress)"
+        ".task-card:not(.status-completed):not(.status-in_progress)",
       );
 
       let draggedItem = null;
@@ -4766,8 +4934,8 @@ if (lastLocationName) {
           if (draggedItem && card !== draggedItem) {
             const allCards = Array.from(
               tasksList.querySelectorAll(
-                ".task-card:not(.status-completed):not(.status-in_progress)"
-              )
+                ".task-card:not(.status-completed):not(.status-in_progress)",
+              ),
             );
             const draggedIdx = allCards.indexOf(draggedItem);
             const targetIdx = allCards.indexOf(card);
@@ -4834,25 +5002,27 @@ if (lastLocationName) {
                       <div class="user-details">
                           <h3>${Utils.escapeHtml(user.name)}</h3>
                           <p class="user-role text-muted">
-                              ${user.role === "admin"
-                ? "👔 Kierownik"
-                : "🚗 Kierowca"
-              }
-                              ${user.force_pin_change ? ' <span title="Wymuszona zmiana PIN" style="cursor:help">🔑</span>' : ''}
-                              ${user.role === "admin"
-                ? `<br><small style="font-size: 0.8em; opacity: 0.8;">
+                              ${
+                                user.role === "admin"
+                                  ? "👔 Kierownik"
+                                  : "🚗 Kierowca"
+                              }
+                              ${user.force_pin_change ? ' <span title="Wymuszona zmiana PIN" style="cursor:help">🔑</span>' : ""}
+                              ${
+                                user.role === "admin"
+                                  ? `<br><small style="font-size: 0.8em; opacity: 0.8;">
                                   ${user.perm_reports ? "📊" : ""} 
                                   ${user.perm_users ? "👥" : ""} 
                                   ${user.perm_locations ? "📍" : ""}
                               </small>`
-                : ""
-              }
+                                  : ""
+                              }
                           </p>
                       </div>
                   </div>
                   ${renderActions(user.id)}
               </div>
-          `
+          `,
           )
           .join("") ||
         '<p class="text-muted text-center">Brak użytkowników</p>';
@@ -4884,7 +5054,7 @@ if (lastLocationName) {
 
       // Reset radio buttons (domyślnie driver)
       const driverRadio = document.querySelector(
-        'input[name="user-role"][value="driver"]'
+        'input[name="user-role"][value="driver"]',
       );
       if (driverRadio) driverRadio.checked = true;
 
@@ -4905,7 +5075,7 @@ if (lastLocationName) {
 
       // Ustaw rolę
       const radio = document.querySelector(
-        `input[name="user-role"][value="${user.role}"]`
+        `input[name="user-role"][value="${user.role}"]`,
       );
       if (radio) radio.checked = true;
 
@@ -4958,7 +5128,7 @@ if (lastLocationName) {
       const name = Utils.$("#user-name").value.trim();
       const pin = Utils.$("#user-pin").value;
       const role = document.querySelector(
-        'input[name="user-role"]:checked'
+        'input[name="user-role"]:checked',
       ).value;
 
       if (!name) {
@@ -5043,7 +5213,7 @@ if (lastLocationName) {
             this.renderUsers();
             Toast.error("Błąd - przywrócono użytkownika");
           });
-        }
+        },
       );
     },
 
@@ -5068,7 +5238,7 @@ if (lastLocationName) {
 
       // Reset radio
       const locRadio = document.querySelector(
-        'input[name="location-type"][value="location"]'
+        'input[name="location-type"][value="location"]',
       );
       if (locRadio) locRadio.checked = true;
 
@@ -5080,7 +5250,7 @@ if (lastLocationName) {
 
     openEditLocationModal(id) {
       const item = [...state.locations, ...state.departments].find(
-        (l) => l.id == id
+        (l) => l.id == id,
       );
       if (!item) return;
 
@@ -5091,13 +5261,15 @@ if (lastLocationName) {
 
       // Set radio
       const radio = document.querySelector(
-        `input[name="location-type"][value="${item.type}"]`
+        `input[name="location-type"][value="${item.type}"]`,
       );
       if (radio) radio.checked = true;
 
       Utils.$("#modal-location h2").textContent = "Edytuj lokalizację";
       // FIX: Button nie ma ID, szukamy w formularzu
-      const submitBtn = document.querySelector("#location-form button[type='submit']");
+      const submitBtn = document.querySelector(
+        "#location-form button[type='submit']",
+      );
       if (submitBtn) submitBtn.textContent = "Zapisz zmiany";
       Modal.open("modal-location");
     },
@@ -5114,11 +5286,11 @@ if (lastLocationName) {
 
     initLocationListeners() {
       Utils.$("#add-location-btn")?.addEventListener("click", () =>
-        this.openAddLocationModal()
+        this.openAddLocationModal(),
       );
 
       Utils.$("#location-form")?.addEventListener("submit", (e) =>
-        this.handleLocationSubmit(e)
+        this.handleLocationSubmit(e),
       );
 
       Utils.$("#pick-location-btn")?.addEventListener("click", () => {
@@ -5158,7 +5330,7 @@ if (lastLocationName) {
                     </div>
                     ${renderDeleteBtn(loc.id)}
                 </div>
-            `
+            `,
           )
           .join("") || '<p class="text-muted text-center">Brak lokalizacji</p>';
 
@@ -5174,19 +5346,19 @@ if (lastLocationName) {
                     </div>
                     ${renderDeleteBtn(dept.id)}
                 </div>
-            `
+            `,
           )
           .join("") || '<p class="text-muted text-center">Brak działów</p>';
 
       if (canManageLocations) {
         Utils.$$('[data-action="edit-location"]').forEach((btn) => {
           btn.addEventListener("click", () =>
-            this.openEditLocationModal(btn.dataset.id)
+            this.openEditLocationModal(btn.dataset.id),
           );
         });
         Utils.$$('[data-action="delete-location"]').forEach((btn) => {
           btn.addEventListener("click", () =>
-            this.deleteLocation(btn.dataset.id)
+            this.deleteLocation(btn.dataset.id),
           );
         });
       }
@@ -5199,7 +5371,7 @@ if (lastLocationName) {
 
       const name = Utils.$("#location-name").value.trim();
       const type = document.querySelector(
-        'input[name="location-type"]:checked'
+        'input[name="location-type"]:checked',
       ).value;
       const id = Utils.$("#location-id").value; // Get ID (empty if new)
 
@@ -5218,12 +5390,14 @@ if (lastLocationName) {
         if (id) {
           // === UPDATE ===
           // 1. Optimistic Update
-          state.locations = state.locations.map(l => {
-            if (l.id == id) return { ...l, name, type, map_x: mapX, map_y: mapY };
+          state.locations = state.locations.map((l) => {
+            if (l.id == id)
+              return { ...l, name, type, map_x: mapX, map_y: mapY };
             return l;
           });
-          state.departments = state.departments.map(d => {
-            if (d.id == id) return { ...d, name, type, map_x: mapX, map_y: mapY };
+          state.departments = state.departments.map((d) => {
+            if (d.id == id)
+              return { ...d, name, type, map_x: mapX, map_y: mapY };
             return d;
           });
 
@@ -5256,7 +5430,9 @@ if (lastLocationName) {
 
           this.renderLocations();
           DataLists.updateAll();
-          Toast.success(type === "department" ? "Dział dodany" : "Lokalizacja dodana");
+          Toast.success(
+            type === "department" ? "Dział dodany" : "Lokalizacja dodana",
+          );
 
           // 2. API Call
           const result = await API.createLocation({
@@ -5267,8 +5443,9 @@ if (lastLocationName) {
           });
 
           // 3. Update ID from API
-          const list = type === "department" ? state.departments : state.locations;
-          const item = list.find(x => x.id === tempId);
+          const list =
+            type === "department" ? state.departments : state.locations;
+          const item = list.find((x) => x.id === tempId);
           if (item) item.id = result.id;
         }
       } catch (error) {
@@ -5279,7 +5456,6 @@ if (lastLocationName) {
         this._addingLocation = false;
       }
     },
-
 
     async deleteLocation(locationId) {
       const allLocs = [...state.locations, ...state.departments];
@@ -5292,13 +5468,13 @@ if (lastLocationName) {
           // Zapisz do ewentualnego przywrócenia
           const wasLocation = state.locations.find((l) => l.id == locationId);
           const wasDepartment = state.departments.find(
-            (l) => l.id == locationId
+            (l) => l.id == locationId,
           );
 
           // Instant UI update
           state.locations = state.locations.filter((l) => l.id != locationId);
           state.departments = state.departments.filter(
-            (l) => l.id != locationId
+            (l) => l.id != locationId,
           );
           this.renderLocations();
           DataLists.updateAll();
@@ -5313,7 +5489,7 @@ if (lastLocationName) {
             DataLists.updateAll();
             Toast.error("Błąd - przywrócono");
           });
-        }
+        },
       );
     },
 
@@ -5346,7 +5522,7 @@ if (lastLocationName) {
       const totalTasks = data.drivers.reduce((sum, d) => sum + d.tasksCount, 0);
       const avgKpi = Math.round(
         data.drivers.reduce((sum, d) => sum + d.kpi, 0) /
-        (data.drivers.length || 1)
+          (data.drivers.length || 1),
       );
 
       statsContainer.innerHTML = `
@@ -5380,7 +5556,6 @@ if (lastLocationName) {
                             <span>${driver.workEnd || "15:00"}</span>
                         </div>
                     `;
-
           } else {
             chartHtml = this.generateBarChart(driver.timeline);
           }
@@ -5393,20 +5568,22 @@ if (lastLocationName) {
                           </button>
                           <div id="details-${index}" class="details-container">
                               ${driver.details
-                .map(
-                  (d) => `
+                                .map(
+                                  (d) => `
                                   <div class="details-row type-${d.type}">
-                                      <span class="details-time">${d.time
-                    } - ${d.endTime || "?"}</span>
+                                      <span class="details-time">${
+                                        d.time
+                                      } - ${d.endTime || "?"}</span>
                                       <span class="details-desc">${Utils.escapeHtml(
-                      d.desc
-                    )}</span>
-                                      <span class="details-duration">${d.duration
-                    }m</span>
+                                        d.desc,
+                                      )}</span>
+                                      <span class="details-duration">${
+                                        d.duration
+                                      }m</span>
                                   </div>
-                              `
-                )
-                .join("")}
+                              `,
+                                )
+                                .join("")}
                           </div>
                       `;
           }
@@ -5418,40 +5595,45 @@ if (lastLocationName) {
                                 <div class="user-avatar">🚗</div>
                                 <div>
                                     <h3>${Utils.escapeHtml(driver.name)}</h3>
-                                    <span class="text-muted" style="font-size:12px">KPI: ${driver.kpi
-            }%</span>
+                                    <span class="text-muted" style="font-size:12px">KPI: ${
+                                      driver.kpi
+                                    }%</span>
                                 </div>
                             </div>
-                            <div class="report-driver-kpi ${kpiColor}">${driver.kpi
-            }%</div>
+                            <div class="report-driver-kpi ${kpiColor}">${
+                              driver.kpi
+                            }%</div>
                         </div>
 
                         <div class="kpi-grid">
                             <div class="kpi-box">
                                 <div class="kpi-value">${this.formatDuration(
-              driver.workTime
-            )}</div>
+                                  driver.workTime,
+                                )}</div>
                                 <div class="kpi-label">Praca</div>
                             </div>
                             <div class="kpi-box">
                                 <div class="kpi-value" style="color:var(--danger)">${this.formatDuration(
-              driver.delayTime
-            )}</div>
+                                  driver.delayTime,
+                                )}</div>
                                 <div class="kpi-label">Przestoje</div>
                             </div>
                             <div class="kpi-box">
-                                <div class="kpi-value">${driver.tasksCount
-            }</div>
+                                <div class="kpi-value">${
+                                  driver.tasksCount
+                                }</div>
                                 <div class="kpi-label">Zadań</div>
                             </div>
                         </div>
 
-                        <div class="timeline-container ${driver.isSingleDay ? "" : "bar-chart"
-            }" 
-                             style="${driver.isSingleDay
-              ? ""
-              : "height:150px; overflow-x:auto; overflow-y:hidden;"
-            }">
+                        <div class="timeline-container ${
+                          driver.isSingleDay ? "" : "bar-chart"
+                        }" 
+                             style="${
+                               driver.isSingleDay
+                                 ? ""
+                                 : "height:150px; overflow-x:auto; overflow-y:hidden;"
+                             }">
                             ${chartHtml}
                         </div>
                         ${labelsHtml}
@@ -5489,25 +5671,26 @@ if (lastLocationName) {
       return `
                 <div style="display:flex; gap:10px; height:100%; align-items:flex-end; padding:10px;">
                     ${days
-          .map(
-            (d) => `
+                      .map(
+                        (d) => `
                         <div style="flex:1; display:flex; flex-direction:column; align-items:center; min-width:30px;">
                             <div style="font-size:10px; margin-bottom:4px; font-weight:bold;">${this.formatDuration(
-              d.minutes
-            )}</div>
+                              d.minutes,
+                            )}</div>
                             <div style="width:100%; background:var(--bg-tertiary); height:80px; border-radius:4px; position:relative; overflow:hidden;">
-                                <div style="position:absolute; bottom:0; left:0; right:0; height:${d.percent
-              }%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(
-                d.date
-              )}"></div>
+                                <div style="position:absolute; bottom:0; left:0; right:0; height:${
+                                  d.percent
+                                }%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(
+                                  d.date,
+                                )}"></div>
                             </div>
                             <div style="font-size:9px; margin-top:4px; color:var(--text-secondary); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${Utils.formatDateShort(
-                d.date
-              )}</div>
+                              d.date,
+                            )}</div>
                         </div>
-                    `
-          )
-          .join("")}
+                    `,
+                      )
+                      .join("")}
                 </div>
             `;
     },
@@ -5569,10 +5752,11 @@ if (lastLocationName) {
         const left = (((h - startHour) * 60) / totalMinutes) * 100;
         markersHtml += `
           <div class="timeline-marker" style="left: ${left}%">
-            ${h % 2 === 0 || totalMinutes < 720
-            ? `<div class="timeline-time">${h}:00</div>`
-            : ""
-          }
+            ${
+              h % 2 === 0 || totalMinutes < 720
+                ? `<div class="timeline-time">${h}:00</div>`
+                : ""
+            }
           </div>
         `;
       }
@@ -5611,11 +5795,12 @@ if (lastLocationName) {
 
               return `
                         <div class="timeline-bar ${event.type}" 
-                             style="left: ${left}%; width: ${width}%; height: ${height - 2
-                }%; top: ${top}%;"
+                             style="left: ${left}%; width: ${width}%; height: ${
+                               height - 2
+                             }%; top: ${top}%;"
                              data-title="${Utils.escapeHtml(
-                  event.desc
-                )} (${Math.round(duration)} min)">
+                               event.desc,
+                             )} (${Math.round(duration)} min)">
                         </div>
                     `;
             })
@@ -5652,19 +5837,30 @@ if (lastLocationName) {
       }
 
       const printable = Utils.$("#printable-report");
-      const periodLabel = Utils.$("#report-period-type").options[Utils.$("#report-period-type").selectedIndex].text;
-      const subPeriod = (state.lastReportPeriod === 'month') ? Utils.$("#report-month-picker").value :
-        (state.lastReportPeriod === 'day') ? Utils.$("#report-day-picker").value : "";
+      const periodLabel = Utils.$("#report-period-type").options[
+        Utils.$("#report-period-type").selectedIndex
+      ].text;
+      const subPeriod =
+        state.lastReportPeriod === "month"
+          ? Utils.$("#report-month-picker").value
+          : state.lastReportPeriod === "day"
+            ? Utils.$("#report-day-picker").value
+            : "";
 
       const totalTasks = data.drivers.reduce((sum, d) => sum + d.tasksCount, 0);
-      const avgKpi = Math.round(data.drivers.reduce((sum, d) => sum + d.kpi, 0) / (data.drivers.length || 1));
+      const avgKpi = Math.round(
+        data.drivers.reduce((sum, d) => sum + d.kpi, 0) /
+          (data.drivers.length || 1),
+      );
 
       // Calculate Total Averages
-      let tLoad = 0, tTrans = 0, tUnload = 0;
-      data.drivers.forEach(d => {
-          tLoad += (d.avgLoad || 0);
-          tTrans += (d.avgTransport || 0);
-          tUnload += (d.avgUnload || 0);
+      let tLoad = 0,
+        tTrans = 0,
+        tUnload = 0;
+      data.drivers.forEach((d) => {
+        tLoad += d.avgLoad || 0;
+        tTrans += d.avgTransport || 0;
+        tUnload += d.avgUnload || 0;
       });
       const c = data.drivers.length || 1;
       const gAvgLoad = Math.round(tLoad / c);
@@ -5678,7 +5874,7 @@ if (lastLocationName) {
                     <span>Transport Tracker</span>
                 </div>
                 <div class="report-print-info">
-                    <strong>Data wygenerowania:</strong> ${new Date().toLocaleString('pl-PL')}<br>
+                    <strong>Data wygenerowania:</strong> ${new Date().toLocaleString("pl-PL")}<br>
                     <strong>Okres:</strong> ${periodLabel} ${subPeriod}
                 </div>
             </div>
@@ -5716,7 +5912,7 @@ if (lastLocationName) {
             </div>
         `;
 
-      data.drivers.forEach(driver => {
+      data.drivers.forEach((driver) => {
         html += `
                 <div class="print-driver-section">
                     <div class="print-driver-header">
@@ -5736,7 +5932,7 @@ if (lastLocationName) {
             `;
 
         if (driver.details && driver.details.length > 0) {
-          driver.details.forEach(d => {
+          driver.details.forEach((d) => {
             html += `
                         <tr>
                             <td>${d.time} - ${d.endTime || "?"}</td>
@@ -5777,21 +5973,21 @@ if (lastLocationName) {
     initEventListeners() {
       // Add task
       Utils.$("#add-task-btn")?.addEventListener("click", () =>
-        TaskForm.open()
+        TaskForm.open(),
       );
       Utils.$("#add-task-empty-btn")?.addEventListener("click", () =>
-        TaskForm.open()
+        TaskForm.open(),
       );
 
       // Date navigation
       Utils.$("#prev-day-btn")?.addEventListener("click", () =>
-        this.changeDate(-1)
+        this.changeDate(-1),
       );
       Utils.$("#next-day-btn")?.addEventListener("click", () =>
-        this.changeDate(1)
+        this.changeDate(1),
       );
       Utils.$("#admin-date-picker")?.addEventListener("change", (e) =>
-        this.setDate(e.target.value)
+        this.setDate(e.target.value),
       );
 
       // Quick date buttons
@@ -5809,11 +6005,11 @@ if (lastLocationName) {
 
       // Reorder
       Utils.$("#toggle-reorder-btn")?.addEventListener("click", () =>
-        this.toggleReorderMode()
+        this.toggleReorderMode(),
       );
 
       Utils.$("#admin-view-toggle-btn")?.addEventListener("click", () =>
-        this.toggleViewMode()
+        this.toggleViewMode(),
       );
       Utils.$("#map-save-btn")?.addEventListener("click", () => {
         MapManager.savePickedLocation();
@@ -5830,10 +6026,10 @@ if (lastLocationName) {
       });
 
       Utils.$("#save-reorder-btn")?.addEventListener("click", () =>
-        this.saveReorder()
+        this.saveReorder(),
       );
       Utils.$("#cancel-reorder-btn")?.addEventListener("click", () =>
-        this.cancelReorder()
+        this.cancelReorder(),
       );
 
       // Priority modal
@@ -5851,18 +6047,18 @@ if (lastLocationName) {
 
       // Users
       Utils.$("#add-user-btn")?.addEventListener("click", () =>
-        this.openAddUserModal()
+        this.openAddUserModal(),
       );
       Utils.$("#user-form")?.addEventListener("submit", (e) =>
-        this.handleSaveUser(e)
+        this.handleSaveUser(e),
       );
 
       // Locations
       Utils.$("#add-location-btn")?.addEventListener("click", () =>
-        this.openAddLocationModal()
+        this.openAddLocationModal(),
       );
       Utils.$("#location-form")?.addEventListener("submit", (e) =>
-        this.handleLocationSubmit(e)
+        this.handleLocationSubmit(e),
       );
 
       // Reports - NOWA LOGIKA
@@ -5903,10 +6099,11 @@ if (lastLocationName) {
       dayPicker?.addEventListener("change", updateReport);
 
       // Print Report
-      Utils.$("#print-report-btn")?.addEventListener("click", () => this.printReport());
+      Utils.$("#print-report-btn")?.addEventListener("click", () =>
+        this.printReport(),
+      );
     },
   };
-
 
   // =============================================
   // Lokalizacja Systemowa: Parking TIR
@@ -5914,32 +6111,32 @@ if (lastLocationName) {
   async function ensureParkingTIR() {
     try {
       // Pobierz wszystkie lokalizacje
-      const locations = await API.request('/locations');
-      
+      const locations = await API.request("/locations");
+
       // Sprawdź czy Parking TIR już istnieje
-      const parkingTIR = locations.find(loc => loc.name === 'Parking TIR');
-      
+      const parkingTIR = locations.find((loc) => loc.name === "Parking TIR");
+
       if (!parkingTIR) {
-        console.log('🚛 Tworzenie lokalizacji systemowej: Parking TIR');
-        
+        console.log("🚛 Tworzenie lokalizacji systemowej: Parking TIR");
+
         // Utwórz Parking TIR w centrum mapy (50%, 50%)
-        await API.request('/locations', {
-          method: 'POST',
+        await API.request("/locations", {
+          method: "POST",
           body: {
-            name: 'Parking TIR',
-            type: 'location',
+            name: "Parking TIR",
+            type: "location",
             map_x: 50,
             map_y: 50,
-            is_system: 1 // Oznacz jako lokalizacja systemowa (nieusuwalna)
-          }
+            is_system: 1, // Oznacz jako lokalizacja systemowa (nieusuwalna)
+          },
         });
-        
-        console.log('✅ Parking TIR utworzony');
+
+        console.log("✅ Parking TIR utworzony");
       } else {
-        console.log('✅ Parking TIR już istnieje');
+        console.log("✅ Parking TIR już istnieje");
       }
     } catch (error) {
-      console.error('⚠️ Błąd tworzenia Parking TIR:', error);
+      console.error("⚠️ Błąd tworzenia Parking TIR:", error);
     }
   }
 
@@ -5995,8 +6192,8 @@ if (lastLocationName) {
         if (event.data.type === "PUSH_RECEIVED") {
           Toast.info(
             event.data.data?.message ||
-            event.data.data?.title ||
-            "Nowe powiadomienie"
+              event.data.data?.title ||
+              "Nowe powiadomienie",
           );
           Notifications.load();
           if (state.currentUser?.role === "driver") {
@@ -6018,7 +6215,7 @@ if (lastLocationName) {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
     await Auth.init();
-    
+
     // Upewnij się że Parking TIR istnieje (lokalizacja systemowa)
     await ensureParkingTIR();
 
@@ -6046,14 +6243,14 @@ if (lastLocationName) {
         Notifications.load();
 
         // Jeśli apka była w tle długo (np. 5 min), odświeżamy też cache
-        const lastSync = parseInt(localStorage.getItem('tt_last_focus') || '0');
+        const lastSync = parseInt(localStorage.getItem("tt_last_focus") || "0");
         const now = Date.now();
         if (now - lastSync > 300000) {
           console.log("🔄 Long time no see - hard refresh...");
           if (state.currentUser.role === "admin") AdminPanel.loadTasks(false);
           else DriverPanel.loadTasks(false);
         }
-        localStorage.setItem('tt_last_focus', String(now));
+        localStorage.setItem("tt_last_focus", String(now));
       }
     });
 
@@ -6120,10 +6317,10 @@ if (lastLocationName) {
                 // Pokaż tylko Toast
                 Toast.info(
                   event.notification.body ||
-                  event.notification.title ||
-                  "Nowe powiadomienie"
+                    event.notification.title ||
+                    "Nowe powiadomienie",
                 );
-              }
+              },
             );
 
             // Event: Notification click
@@ -6192,8 +6389,8 @@ if (lastLocationName) {
       return new Promise((resolve) => {
         window.OneSignalDeferred.push(async function (OneSignal) {
           try {
-            const currentPermission = await OneSignal.Notifications
-              .permissionNative;
+            const currentPermission =
+              await OneSignal.Notifications.permissionNative;
 
             if (currentPermission === "granted") {
               resolve(true);
@@ -6202,7 +6399,7 @@ if (lastLocationName) {
 
             if (currentPermission === "denied") {
               Toast.warning(
-                "Powiadomienia zostały zablokowane w ustawieniach przeglądarki"
+                "Powiadomienia zostały zablokowane w ustawieniach przeglądarki",
               );
               resolve(false);
               return;
@@ -6218,7 +6415,7 @@ if (lastLocationName) {
               if (state.currentUser) {
                 await OneSignalService.login(
                   state.currentUser.id,
-                  state.currentUser.role
+                  state.currentUser.role,
                 );
               }
             }
@@ -6250,7 +6447,7 @@ if (lastLocationName) {
   // 17. EXPORT
   // =============================================
   console.log("🛠️ Exporting modules...", { MapManager: typeof MapManager });
-  
+
   // Eksport globalny (fallback)
   window.MapManager = MapManager;
 
@@ -6269,7 +6466,7 @@ if (lastLocationName) {
     TaskForm,
     AdminPanel,
     OneSignalService,
-    MapManager, 
+    MapManager,
   };
 
   // =============================================

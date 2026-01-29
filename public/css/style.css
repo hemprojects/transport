@@ -452,111 +452,10 @@ ol {
 }
 
 /* =============================================
-   MAPA STYLES (REBUILT FOR STABILITY)
-   ============================================= */
-/* Modal mapy musi być duży i elastyczny */
-.modal-map .modal-container {
-  width: 95vw;
-  height: 90vh;
-  max-width: 1200px;
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  overflow: hidden; /* Ważne dla Panzoom */
-  background: var(--bg-secondary);
-}
-
-.modal-map .modal-header {
-  padding: var(--spacing-md);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-  z-index: 10;
-  background: var(--bg-secondary);
-}
-
-.modal-map .modal-body {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  overflow: hidden; /* Zapobiega paskom przewijania */
-  position: relative;
-  background: #1c1c1e; /* Ciemne tło dla kontrastu mapy */
-}
-
-.map-wrapper {
-  flex: 1;
-  width: 100%;
-  height: 100%;
-  position: relative;
-  overflow: hidden;
-  display: flex; /* Centrowanie */
-  justify-content: center;
-  align-items: center;
-  cursor: grab; /* Kursor łapki */
-}
-
-.map-wrapper:active {
-  cursor: grabbing;
-}
-
-/* Kontener Panzoom musi być blokiem */
-.map-container {
-  /* Ważne: Panzoom operuje na transform, więc nie ograniczamy width/height tutaj sztywno, 
-     ale dajemy max-width/height na start, żeby obrazek nie był gigantyczny przed zoomem */
-  max-width: 100%;
-  max-height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  transform-origin: center center; /* Zoom od środka */
-}
-
-.map-image {
-  /* Obrazek ma się skalować naturalnie */
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-  pointer-events: none; /* Kliknięcia przechodzą do kontenera (dla wybierania punktów) */
-  user-select: none;
-  -webkit-user-select: none;
-  
-  /* Lepsze renderowanie na mobile - ostrze obrazy */
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
-}
-
-/* Canvas layer dla sieci dróg */
-.map-paths-layer {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 50; /* Poniżej pinezek (100) */
-}
-
-.modal-map .modal-footer {
-  padding: var(--spacing-md);
-  border-top: 1px solid var(--border-color);
-  flex-shrink: 0;
-  z-index: 10;
-  background: var(--bg-secondary);
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-sm);
-}
-
-/* =============================================
-   MAPA STYLES (REBUILT FOR STABILITY)
-   ============================================= */
-/* =============================================
-   MAPA STYLES (UNIFIED & CLEANED)
+   MAPA STYLES (OPTIMIZED FOR HIGH-QUALITY MOBILE + PC)
    ============================================= */
 
-/* Modal mapy */
+/* Modal mapy - Mobile First */
 .modal-map .modal-container {
   width: 98vw;
   height: 95vh;
@@ -573,13 +472,15 @@ ol {
   background: #1c1c1e;
 }
 
-/* PC - Aspect Lock & Narrow Modal */
+/* PC - Modal dopasowany do rozmiaru mapy (wąski dla pionowej mapy 1920x3380) */
 @media (min-width: 1024px) {
   .modal-map .modal-container {
-    width: auto;         /* Szerokość wynika z aspect-ratio wrappera */
-    max-width: 90vw;
-    height: auto;
-    max-height: 92vh;    /* Limit wysokości */
+    /* Dla mapy 1920x3380 (aspect ratio ~0.568), modal będzie WĄSKI i WYSOKI */
+    width: auto;
+    min-width: 400px;
+    max-width: 45vw; /* ZMNIEJSZONO z 70vw - teraz wąski modal! */
+    height: 92vh; /* ZWIĘKSZONO z 88vh - maksymalna wysokość */
+    max-height: 92vh;
   }
 }
 
@@ -597,7 +498,7 @@ ol {
   position: relative;
   background: #f5f5f7;
   padding: 0;
-  display: flex;       /* Ważne dla centrowania */
+  display: flex;
   justify-content: center;
   align-items: center;
 }
@@ -616,7 +517,10 @@ ol {
   justify-content: center;
   align-items: center;
   cursor: grab;
-  /* Aspect-ratio jest nadawane dynamicznie w JS (app.js) */
+  /* GPU Acceleration */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  will-change: transform;
 }
 
 .map-wrapper:active {
@@ -631,36 +535,153 @@ ol {
   cursor: crosshair !important;
 }
 
-/* Pin na mapie - Smart Scaling */
+/* Kontener Panzoom - GPU Accelerated */
+.map-container {
+  max-width: 100%;
+  max-height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transform-origin: center center;
+  /* GPU Acceleration */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  will-change: transform;
+}
+
+/* Obrazek mapy - OPTIMIZED FOR CRISP RENDERING */
+.map-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  
+  /* STRATEGIA DLA iOS/Safari - ZMIANA!
+     Safari ma problem z crisp-edges i pixelated - powoduje artefakty.
+     Zamiast tego używamy auto + sharpen filter */
+  image-rendering: auto;
+  image-rendering: -webkit-optimize-contrast; /* Safari - najważniejsze! */
+  
+  /* KLUCZOWA ZMIANA: Sharpen filter dla iOS/Safari
+     Dodaje ostrość bez artefaktów crisp-edges */
+  -webkit-filter: contrast(1.05) saturate(1.1);
+  filter: contrast(1.05) saturate(1.1);
+  
+  /* GPU Acceleration - KLUCZOWE dla iOS */
+  transform: translate3d(0, 0, 0); /* Lepsze niż translateZ dla iOS */
+  -webkit-transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  perspective: 1000px; /* Wymusza GPU rendering na iOS */
+  -webkit-perspective: 1000px;
+  will-change: transform;
+  
+  /* iOS Safari specyficzne - antyaliasing */
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Desktop/Android - możemy użyć crisp-edges (nie ma artefaktów) */
+@supports not (-webkit-touch-callout: none) {
+  /* Jeśli NIE jest iOS */
+  .map-image {
+    image-rendering: crisp-edges;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: pixelated;
+  }
+}
+
+/* Alternatywnie dla super wysokiej jakości (może być wolniejsze) */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .map-image {
+    /* Na ekranach Retina/High-DPI - więcej ostrości */
+    -webkit-filter: contrast(1.08) saturate(1.15) brightness(1.02);
+    filter: contrast(1.08) saturate(1.15) brightness(1.02);
+  }
+}
+
+/* Specjalna optymalizacja dla iOS 15+ */
+@supports (-webkit-backdrop-filter: blur(1px)) {
+  .map-image {
+    /* iOS 15+ - użyj najnowszych API WebKit */
+    image-rendering: -webkit-optimize-contrast;
+    -webkit-filter: contrast(1.1) saturate(1.2) brightness(1.03);
+    filter: contrast(1.1) saturate(1.2) brightness(1.03);
+  }
+}
+
+/* Canvas layer dla sieci dróg - High-DPI Ready */
+.map-paths-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 50;
+  /* GPU Acceleration */
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
+/* Pin na mapie - Smart Scaling + GPU Accelerated */
 .map-pin {
   position: absolute;
-  width: 12px;
-  height: 12px;
-  /* Smart Scaling: kompensuje zoom */
-  transform: translate(-50%, -100%) scale(calc( (1 / var(--map-scale, 1)) * (1 + 0.3 * var(--map-scale, 1)) ));
+  /* ZMNIEJSZONO: było 12px, teraz 8px */
+  width: 8px;
+  height: 8px;
+  /* Smart Scaling: kompensuje zoom, POPRAWIONE - mniejszy współczynnik 0.15 zamiast 0.3 */
+  transform: translate(-50%, -100%) scale(calc((1 / var(--map-scale, 1)) * (1 + 0.15 * var(--map-scale, 1))));
   transform-origin: bottom center;
   z-index: 100;
   pointer-events: auto;
   cursor: pointer;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-  transition: transform 0.1s linear; 
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+  transition: transform 0.1s linear;
+  /* GPU Acceleration dla płynniejszych animacji */
+  will-change: transform;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
 }
 
+/* Etykiety pinezek - Crisp Text Rendering */
+.map-pin-label {
+  /* Jeśli są etykiety tekstowe */
+  font-smooth: always;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
 
-
-
+/* Loading overlay */
 .map-wrapper.loading::after {
   content: "Ładowanie mapy...";
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: rgba(0,0,0,0.7);
+  background: rgba(0, 0, 0, 0.7);
   color: white;
   padding: 10px 20px;
   border-radius: 8px;
   z-index: 200;
   font-weight: bold;
+}
+
+.modal-map .modal-footer {
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
+  z-index: 10;
+  background: var(--bg-secondary);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
 }
 
 @keyframes spin-left {
@@ -3875,6 +3896,14 @@ input[type="date"] {
   transform-origin: 0 0;
   will-change: transform;
   cursor: grab;
+  
+  /* GPU Acceleration for smooth mobile transforms */
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  -webkit-perspective: 1000;
+  perspective: 1000;
 }
 
 .map-container:active {
@@ -3888,6 +3917,22 @@ input[type="date"] {
   user-select: none;
   -webkit-user-drag: none;
   pointer-events: auto;
+  
+  /* CRITICAL: High quality rendering on mobile zoom */
+  image-rendering: -webkit-optimize-contrast; /* iOS */
+  image-rendering: crisp-edges;               /* Standard */
+  image-rendering: high-quality;              /* Modern browsers */
+  
+  /* Prevent blur during transforms on iOS/Android */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  
+  /* Force GPU layer for better quality */
+  will-change: transform;
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
 }
 
 /* Canvas dla rysowania dróg */
@@ -3968,6 +4013,13 @@ input[type="date"] {
     z-index 0s,
     opacity 0.2s;
   pointer-events: auto;
+  
+  /* GPU acceleration for crisp rendering during zoom */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  will-change: transform;
+  -webkit-transform-style: preserve-3d;
+  transform-style: preserve-3d;
 }
 
 .map-pin:hover,
