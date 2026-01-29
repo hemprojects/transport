@@ -1399,6 +1399,7 @@ const MapManager = {
     tempCoords: null,
     panzoomInstance: null,
     isInitialized: false,
+    lastOpenTime: 0, // iOS fix - throttle map opening
     
     // Dane sieci dróg
     nodes: [],       // [{id, x, y}, ...]
@@ -1417,6 +1418,14 @@ const MapManager = {
     },
 
     async open(mode = "view", data = null) {
+        // iOS Fix: Throttle - zapobiegaj wielokrotnym kliknięciom
+        const now = Date.now();
+        if (this.lastOpenTime && (now - this.lastOpenTime) < 500) {
+            console.warn('⚠️ Map open throttled - too soon after last open');
+            return;
+        }
+        this.lastOpenTime = now;
+        
         if (this.isOpening) return; // Zapobiegaj podwójnym kliknięciom
         this.isOpening = true;
 
@@ -1494,58 +1503,123 @@ const MapManager = {
 
         this.hideLoading();
 
+        // Toggle edit-mode class for cursor change
+        if (this.mode === "edit_network") {
+            wrapper.classList.add("edit-mode");
+        } else {
+            wrapper.classList.remove("edit-mode");
+        }
+
         if (this.panzoomInstance) {
             console.log("♻️ Destroying old Panzoom instance");
             try { this.panzoomInstance.destroy(); } catch(e) {}
         }
 
-        const baseSrc = img.getAttribute("data-src") || "img/mapa.webp";
-        if (!img.src || img.src === window.location.href) {
-             console.log("🔄 Setting image src:", baseSrc);
-             img.src = baseSrc;
-        }
-
-        // Reset
-        container.style.transformOrigin = '0 0'; // KLUCZOWE DLA PINEZEK
-        container.style.transform = '';
-        container.style.width = img.naturalWidth + 'px'; 
-        container.style.height = img.naturalHeight + 'px';
-
-        // Oblicz skalę początkową
-        const wrapperW = wrapper.clientWidth;
-        const wrapperH = wrapper.clientHeight;
-        const scaleX = wrapperW / img.naturalWidth;
-        const scaleY = wrapperH / img.naturalHeight;
+        // Android Fix: Cache-buster i pełna ścieżka
+        const timestamp = Date.now();
+        const rawSrc = img.getAttribute("data-src") || "img/mapa.webp";
+        // Upewnij się że ścieżka nie ma podwójnego timestampu
+        const baseSrc = rawSrc.split('?')[0]; 
         
-        // Logika skali:
-        // Na PC (duży ekran/poziomo) -> Fit Whole (zobacz całość)
-        // Na Mobile (mały ekran/pionowo) -> Fit Width (dopasuj szerokość, przewijaj w dół)
-        const isMobile = window.innerWidth < 900 || window.innerHeight > window.innerWidth;
-        
-        let initialScale = Math.min(scaleX, scaleY, 1) * 0.95; 
-        
-        if (isMobile) {
-             // Na mobile dopasuj do szerokości (żeby nie było pasków po bokach)
-             // Ale z małym marginesem
-             initialScale = scaleX; 
-        }
+        console.log("🔄 Preparing map image:", baseSrc);
 
-        console.log(`🎯 Init Scale: ${initialScale} (Mobile: ${isMobile})`);
+        const initializeAfterLoad = () => {
+            console.log(`✅ Image loaded: ${img.naturalWidth}x${img.naturalHeight}`);
+            
+            if (!img.naturalWidth) { 
+                console.error("❌ Image loaded but width is 0!"); 
+                return;
+            }
 
+            // A. PC FIX: Wymuś proporcje wrappera (żeby modal był wąski)
+            // Jeśli aspect-ratio jest zdefiniowane, wrapper dopasuje szerokość do wysokości (90vh)
+            const ratio = img.naturalWidth / img.naturalHeight;
+            wrapper.style.aspectRatio = `${ratio}`;
+            wrapper.style.height = '100%'; // Dopasuj do wysokości modala
+            wrapper.style.width = 'auto'; // Szerokość wyniknie z ratio
+            
+            // Wymuś przeliczenie layoutu modala
+            container.style.display = 'none';
+            container.offsetHeight; // reflow
+            container.style.display = 'block';
+
+            const waitForLayout = () => {
+                const wrapperW = wrapper.clientWidth;
+                const wrapperH = wrapper.clientHeight;
+                
+                if (wrapperW === 0 || wrapperH === 0) {
+                    console.log("⏳ Waiting for layout...");
+                    requestAnimationFrame(waitForLayout);
+                    return;
+                }
+                
+                console.log(`📏 Wrapper Layout: ${wrapperW}x${wrapperH} (Ratio: ${wrapperW/wrapperH})`);
+                
+                // 1. Native Size
+                const containerW = img.naturalWidth;
+                const containerH = img.naturalHeight;
+                
+                // 2. Fit Scale
+                const scaleX = wrapperW / containerW;
+                const scaleY = wrapperH / containerH;
+                const fitScale = Math.min(scaleX, scaleY);
+                
+                // 3. Apply Styles
+                container.style.width = containerW + "px";
+                container.style.height = containerH + "px";
+                container.style.transformOrigin = "0 0";
+                
+                img.style.width = "100%";
+                img.style.height = "100%";
+                img.style.objectFit = "cover"; // Cover na wszelki wypadek, ale przy 1:1 to to samo co fill
+                
+                // 4. Init Panzoom
+                console.log(`🎯 Panzoom FitScale: ${fitScale.toFixed(5)}`);
+                this.setupPanzoom(wrapper, container, img, fitScale);
+            };
+            
+            requestAnimationFrame(waitForLayout);
+        };
+        
+        // Zawsze przeładuj dla pewności (Android fix)
+        img.onload = initializeAfterLoad;
+        img.onerror = () => {
+             console.error("❌ Map load error! Trying backup...");
+             img.src = "img/mapa.webp?backup=" + timestamp;
+        };
+        img.src = `${baseSrc}?t=${timestamp}`;
+    },
+    
+    setupPanzoom(wrapper, container, img, fitScale) {
         try {
-            console.log("🚀 Initializing Panzoom...");
+            // Bezpieczny zoom: startujemy od widoku całości
+            // Pozwalamy przybliżyć aż do 2x native resolution (bardzo blisko)
+            
             this.panzoomInstance = Panzoom(container, {
-                maxScale: 5,
-                minScale: Math.min(scaleX, scaleY) * 0.5, // Pozwól oddalić bardziej
-                startScale: initialScale,
-                contain: 'outside',
-                cursor: 'grab',
-                // Wyśrodkuj
-                startX: (wrapperW - img.naturalWidth * initialScale) / 2,
-                startY: (wrapperH - img.naturalHeight * initialScale) / 2
+                // MaxScale: Zwiększono do 10x (User request: "zoomować jeszcze bliżej")
+                maxScale: 10.0, 
+                // MinScale: Pozwól oddalić do 80% widoku całości
+                minScale: fitScale * 0.8, 
+                // Start: Fit scale
+                startScale: fitScale,
+                
+                contain: 'outside', 
+                
+                cursor: this.mode === 'edit_network' ? 'crosshair' : 'grab',
+                duration: 250, // Trochę płynniej
+                easing: 'ease-out'
             });
+            
+            // Fix: Wymuś odświeżenie po chwili (dla Androida)
+            setTimeout(() => {
+                this.panzoomInstance.zoom(fitScale);
+                this.panzoomInstance.pan(0, 0);
+            }, 100);
 
             wrapper.addEventListener('wheel', this.panzoomInstance.zoomWithWheel);
+            
+            // KLUCZOWE: Ustaw kursor dynamicznie
+            this.updateCursor();
             
             // Logika skali dla CSS (Pinezek)
             const updateScaleVar = () => {
@@ -1553,71 +1627,46 @@ const MapManager = {
                 container.style.setProperty("--map-scale", s);
             };
             container.addEventListener('panzoomchange', updateScaleVar);
-            setTimeout(updateScaleVar, 100); // Init po renderze
+            setTimeout(updateScaleVar, 100);
 
-            // Obsługa kliknięcia z tolerancją (Drag Detection)
+            // Obsługa kliknięcia
             let pStartX = 0, pStartY = 0;
-            let pStartTime = 0;
             
             container.addEventListener('pointerdown', e => {
                 pStartX = e.clientX; 
                 pStartY = e.clientY;
-                pStartTime = Date.now();
             });
 
             container.addEventListener('pointerup', (e) => {
                const dist = Math.hypot(e.clientX - pStartX, e.clientY - pStartY);
-               const timeDiff = Date.now() - pStartTime;
-               
-               if (dist > 15 || timeDiff > 400) return; 
+               if (dist > 15) return; 
 
-               // Kliknięcie w pinezkę -> Auto Center
-               const pin = e.target.closest('.map-pin');
-               if (pin) {
-                   const styleL = parseFloat(pin.style.left);
-                   const styleT = parseFloat(pin.style.top);
-                   
-                   if (!isNaN(styleL) && !isNaN(styleT)) {
-                       const imgX = (styleL / 100) * img.naturalWidth;
-                       const imgY = (styleT / 100) * img.naturalHeight;
-                       const s = this.panzoomInstance.getScale();
-                       
-                       // Wycentruj pinezkę
-                       const tx = (wrapper.clientWidth / 2) - (imgX * s);
-                       const ty = (wrapper.clientHeight / 2) - (imgY * s);
-                       
-                       // Animuj przesunięcie
-                       container.style.transition = "transform 0.3s ease-out";
-                       this.panzoomInstance.pan(tx, ty);
-                       setTimeout(() => container.style.transition = "", 300);
-                   }
+               if (e.target.closest('.map-pin')) {
+                   e.stopPropagation();
                    return;
                }
-
                this.onMapClick(e);
             });
 
             this.initCanvas(container, img);
-
+            
+            // RENDERUJ KONTROLKI I TOOLBAR!
             this.renderPins();
             this.renderControls();
             this.renderNetworkToolbar();
-
-            setTimeout(() => {
-                // Nie robimy reset() tutaj, bo nadpisze nasze startX/Scale!
-                // Zamiast tego, po prostu rysujemy.
-                this.isInitialized = true;
-                this.draw(); 
-                console.log("✅ Map initialization complete!");
-            }, 100);
-
-        } catch (error) {
-            console.error("❌ Panzoom Error:", error);
-            Toast.error("Błąd inicjalizacji mapy");
+            this.draw();
+            
+            console.log("✅ Panzoom ready!");
+        } catch (err) {
+            console.error("❌ Panzoom error:", err);
         }
+        
+        this.hideLoading();
+        this.isInitialized = true;
         console.groupEnd();
     },
-    
+
+
     // Alias dla draw (w razie gdyby gdzieś było wywoływane drawCanvas)
     drawCanvas() { this.draw(); },
 
@@ -1628,9 +1677,35 @@ const MapManager = {
             canvas.className = "map-paths-layer";
             container.appendChild(canvas);
         }
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
+        
+        // HIGH-DPI / Retina support dla ostrej jakości
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = img.naturalWidth * dpr;
+        canvas.height = img.naturalHeight * dpr;
+        
+        // Skaluj context dla retina
         this.ctx = canvas.getContext("2d");
+        this.ctx.scale(dpr, dpr);
+        
+        // CSS wymiary normalne (nie skalowane)
+        canvas.style.width = img.naturalWidth + 'px';
+        canvas.style.height = img.naturalHeight + 'px';
+        
+        console.log(`🎨 Canvas: ${canvas.width}x${canvas.height} (DPR: ${dpr})`);
+    },
+    
+    updateCursor() {
+        const wrapper = document.querySelector(".map-wrapper");
+        const container = document.getElementById("map-container");
+        if (!wrapper || !container) return;
+        
+        if (this.mode === "edit_network") {
+            wrapper.style.cursor = "crosshair";
+            container.style.cursor = "crosshair";
+        } else {
+            wrapper.style.cursor = "grab";
+            container.style.cursor = "grab";
+        }
     },
     
     showLoading() {
@@ -1667,9 +1742,9 @@ const MapManager = {
 
         // 1. Rysuj całą sieć dróg
         if (this.mode === "edit_network" || state.currentUser?.id === 1) {
-            // Połączenia
-            ctx.lineWidth = (this.mode === "edit_network" ? 4 : 2) * sf;
-            ctx.strokeStyle = this.mode === "edit_network" ? "rgba(255, 255, 255, 0.8)" : "rgba(255, 255, 255, 0.3)";
+            // Połączenia - CZARNE grube linie dla widoczności
+            ctx.lineWidth = (this.mode === "edit_network" ? 10 : 6) * sf; // Dużo grubsze!
+            ctx.strokeStyle = this.mode === "edit_network" ? "rgba(0, 0, 0, 0.9)" : "rgba(0, 0, 0, 0.5)";
             
             this.connections.forEach(conn => {
                 const n1 = this.nodes.find(n => n.id === conn.from);
@@ -1682,17 +1757,17 @@ const MapManager = {
                 }
             });
 
-            // Węzły (tylko w trybie edycji)
+            // Węzły (tylko w trybie edycji) - DUŻE z wyraźną obwódką
             if (this.mode === "edit_network") {
                 this.nodes.forEach(node => {
                     const x = node.x * w / 100;
                     const y = node.y * h / 100;
                     ctx.beginPath();
-                    ctx.arc(x, y, 8 * sf, 0, Math.PI * 2); // Radius * sf
+                    ctx.arc(x, y, 20 * sf, 0, Math.PI * 2); // Zwiększono z 12 do 20!
                     ctx.fillStyle = node.id === this.selectedNodeId ? "#00FF00" : "#007AFF";
                     ctx.fill();
-                    ctx.lineWidth = 2 * sf;
-                    ctx.strokeStyle = "#FFF";
+                    ctx.lineWidth = 4 * sf; // Gruba obwódka
+                    ctx.strokeStyle = "#000"; // CZARNA obwódka
                     ctx.stroke();
                 });
             }
@@ -1972,6 +2047,18 @@ const MapManager = {
     setEditMode(enable) {
         this.mode = enable ? "edit_network" : "view";
         this.selectedNodeId = null;
+        
+        // Toggle edit-mode class for cursor
+        const wrapper = document.querySelector(".map-wrapper");
+        if (enable) {
+            wrapper?.classList.add("edit-mode");
+        } else {
+            wrapper?.classList.remove("edit-mode");
+        }
+        
+        // KLUCZOWE: Zastosuj kursor
+        this.updateCursor();
+        
         this.renderNetworkToolbar();
         this.draw();
         if(enable) Toast.info("Klikaj na mapie aby dodawać punkty i łączyć je ścieżkami.");
