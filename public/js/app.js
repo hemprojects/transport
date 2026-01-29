@@ -1417,6 +1417,9 @@ const MapManager = {
     },
 
     async open(mode = "view", data = null) {
+        if (this.isOpening) return; // Zapobiegaj podwójnym kliknięciom
+        this.isOpening = true;
+
         console.group("🗺️ MapManager.open");
         console.log(`🚀 Mode: ${mode}`, data);
 
@@ -1471,6 +1474,7 @@ const MapManager = {
         await new Promise(resolve => setTimeout(resolve, 150));
 
         this.initializeMap();
+        this.isOpening = false;
         console.groupEnd();
     },
 
@@ -1488,10 +1492,6 @@ const MapManager = {
             return;
         }
 
-        console.log("Wrapper dimensions:", wrapper.clientWidth, "x", wrapper.clientHeight);
-        console.log("Image src:", img.src);
-        console.log("Image natural size:", img.naturalWidth, "x", img.naturalHeight);
-
         this.hideLoading();
 
         if (this.panzoomInstance) {
@@ -1506,24 +1506,94 @@ const MapManager = {
         }
 
         // Reset
+        container.style.transformOrigin = '0 0'; // KLUCZOWE DLA PINEZEK
         container.style.transform = '';
-        container.style.width = '';
-        container.style.height = '';
+        container.style.width = img.naturalWidth + 'px'; 
+        container.style.height = img.naturalHeight + 'px';
+
+        // Oblicz skalę początkową
+        const wrapperW = wrapper.clientWidth;
+        const wrapperH = wrapper.clientHeight;
+        const scaleX = wrapperW / img.naturalWidth;
+        const scaleY = wrapperH / img.naturalHeight;
+        
+        // Logika skali:
+        // Na PC (duży ekran/poziomo) -> Fit Whole (zobacz całość)
+        // Na Mobile (mały ekran/pionowo) -> Fit Width (dopasuj szerokość, przewijaj w dół)
+        const isMobile = window.innerWidth < 900 || window.innerHeight > window.innerWidth;
+        
+        let initialScale = Math.min(scaleX, scaleY, 1) * 0.95; 
+        
+        if (isMobile) {
+             // Na mobile dopasuj do szerokości (żeby nie było pasków po bokach)
+             // Ale z małym marginesem
+             initialScale = scaleX; 
+        }
+
+        console.log(`🎯 Init Scale: ${initialScale} (Mobile: ${isMobile})`);
 
         try {
             console.log("🚀 Initializing Panzoom...");
             this.panzoomInstance = Panzoom(container, {
                 maxScale: 5,
-                minScale: 0.1, 
-                startScale: 1,
+                minScale: Math.min(scaleX, scaleY) * 0.5, // Pozwól oddalić bardziej
+                startScale: initialScale,
                 contain: 'outside',
-                cursor: 'grab'
+                cursor: 'grab',
+                // Wyśrodkuj
+                startX: (wrapperW - img.naturalWidth * initialScale) / 2,
+                startY: (wrapperH - img.naturalHeight * initialScale) / 2
             });
 
             wrapper.addEventListener('wheel', this.panzoomInstance.zoomWithWheel);
             
+            // Logika skali dla CSS (Pinezek)
+            const updateScaleVar = () => {
+                const s = this.panzoomInstance.getScale();
+                container.style.setProperty("--map-scale", s);
+            };
+            container.addEventListener('panzoomchange', updateScaleVar);
+            setTimeout(updateScaleVar, 100); // Init po renderze
+
+            // Obsługa kliknięcia z tolerancją (Drag Detection)
+            let pStartX = 0, pStartY = 0;
+            let pStartTime = 0;
+            
+            container.addEventListener('pointerdown', e => {
+                pStartX = e.clientX; 
+                pStartY = e.clientY;
+                pStartTime = Date.now();
+            });
+
             container.addEventListener('pointerup', (e) => {
-               if (e.target.closest('.map-pin')) return; 
+               const dist = Math.hypot(e.clientX - pStartX, e.clientY - pStartY);
+               const timeDiff = Date.now() - pStartTime;
+               
+               if (dist > 15 || timeDiff > 400) return; 
+
+               // Kliknięcie w pinezkę -> Auto Center
+               const pin = e.target.closest('.map-pin');
+               if (pin) {
+                   const styleL = parseFloat(pin.style.left);
+                   const styleT = parseFloat(pin.style.top);
+                   
+                   if (!isNaN(styleL) && !isNaN(styleT)) {
+                       const imgX = (styleL / 100) * img.naturalWidth;
+                       const imgY = (styleT / 100) * img.naturalHeight;
+                       const s = this.panzoomInstance.getScale();
+                       
+                       // Wycentruj pinezkę
+                       const tx = (wrapper.clientWidth / 2) - (imgX * s);
+                       const ty = (wrapper.clientHeight / 2) - (imgY * s);
+                       
+                       // Animuj przesunięcie
+                       container.style.transition = "transform 0.3s ease-out";
+                       this.panzoomInstance.pan(tx, ty);
+                       setTimeout(() => container.style.transition = "", 300);
+                   }
+                   return;
+               }
+
                this.onMapClick(e);
             });
 
@@ -1534,8 +1604,8 @@ const MapManager = {
             this.renderNetworkToolbar();
 
             setTimeout(() => {
-                console.log("🔄 Resetting Panzoom zoom...");
-                this.panzoomInstance.reset();
+                // Nie robimy reset() tutaj, bo nadpisze nasze startX/Scale!
+                // Zamiast tego, po prostu rysujemy.
                 this.isInitialized = true;
                 this.draw(); 
                 console.log("✅ Map initialization complete!");
@@ -1585,12 +1655,21 @@ const MapManager = {
         const w = ctx.canvas.width;
         const h = ctx.canvas.height;
 
-        // 1. Rysuj całą sieć dróg (tylko w trybie edycji lub dla admina)
-        // Lub zawsze, ale bardzo delikatnie
+        // Oblicz współczynnik skali (Inverse Scaling)
+        // Żeby linie miały stałą grubość wizualną niezależnie od zoomu
+        let scale = 1;
+        if (this.panzoomInstance) {
+            scale = this.panzoomInstance.getScale();
+        }
+        // Zabezpieczenie przed 0
+        scale = Math.max(scale, 0.001);
+        const sf = 1 / scale; // Scale Factor (np. dla scale=0.05, sf=20)
+
+        // 1. Rysuj całą sieć dróg
         if (this.mode === "edit_network" || state.currentUser?.id === 1) {
-            // Rysuj połączenia
-            ctx.lineWidth = this.mode === "edit_network" ? 4 : 2;
-            ctx.strokeStyle = this.mode === "edit_network" ? "rgba(255, 255, 255, 0.6)" : "rgba(255, 255, 255, 0.1)";
+            // Połączenia
+            ctx.lineWidth = (this.mode === "edit_network" ? 4 : 2) * sf;
+            ctx.strokeStyle = this.mode === "edit_network" ? "rgba(255, 255, 255, 0.8)" : "rgba(255, 255, 255, 0.3)";
             
             this.connections.forEach(conn => {
                 const n1 = this.nodes.find(n => n.id === conn.from);
@@ -1603,16 +1682,16 @@ const MapManager = {
                 }
             });
 
-            // Rysuj węzły (tylko w trybie edycji)
+            // Węzły (tylko w trybie edycji)
             if (this.mode === "edit_network") {
                 this.nodes.forEach(node => {
                     const x = node.x * w / 100;
                     const y = node.y * h / 100;
                     ctx.beginPath();
-                    ctx.arc(x, y, 8, 0, Math.PI * 2);
+                    ctx.arc(x, y, 8 * sf, 0, Math.PI * 2); // Radius * sf
                     ctx.fillStyle = node.id === this.selectedNodeId ? "#00FF00" : "#007AFF";
                     ctx.fill();
-                    ctx.lineWidth = 2;
+                    ctx.lineWidth = 2 * sf;
                     ctx.strokeStyle = "#FFF";
                     ctx.stroke();
                 });
@@ -1625,16 +1704,16 @@ const MapManager = {
             ctx.lineCap = "round";
             ctx.lineJoin = "round";
             ctx.beginPath();
-            ctx.lineWidth = 15;
+            ctx.lineWidth = 15 * sf;
             ctx.strokeStyle = "rgba(0, 122, 255, 0.3)";
             this.drawPolyline(this.currentRoute, w, h);
             ctx.stroke();
 
             // Solid line
             ctx.beginPath();
-            ctx.lineWidth = 5;
+            ctx.lineWidth = 5 * sf;
             ctx.strokeStyle = "#007AFF";
-            ctx.setLineDash([10, 10]); // Przerywana linia dla efektu
+            ctx.setLineDash([10 * sf, 10 * sf]); // Dash też skalujemy
             this.drawPolyline(this.currentRoute, w, h);
             ctx.stroke();
             ctx.setLineDash([]);
