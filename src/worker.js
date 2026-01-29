@@ -321,21 +321,60 @@ async function handleAPI(request, env, path, corsHeaders) {
     return await deleteLocation(path.split("/").pop(), env, corsHeaders);
   }
   
-  // MAP PATHS
-  if (path === "/api/map/paths" && method === "GET")
-    return await getMapPaths(env, corsHeaders);
-  if (path === "/api/map/paths" && method === "POST") {
+  // ROAD NETWORK (Nowy system dróg)
+  if (path === "/api/road-network" && method === "GET")
+    return await getRoadNetwork(env, corsHeaders);
+  if (path === "/api/road-network" && method === "POST") {
     if (user.id !== 1) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
-    return await createMapPath(request, env, corsHeaders);
-  }
-  if (path.match(/^\/api\/map\/paths\/\d+$/) && method === "DELETE") {
-    if (user.id !== 1) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
-    return await deleteMapPath(path.split("/").pop(), env, corsHeaders);
+    return await saveRoadNetwork(request, env, corsHeaders);
   }
 
-  // PRZED TASKS - BRAKOWAŁO DOMKNIĘCIA handleAPI TUTAJ?
-  // Nie, handleAPI kończy się na końcu dużego bloku. 
-  // Błąd był w dodaniu '}' po DELETE, co przerwało funkcję za wcześnie.
+  // --- ROAD NETWORK (GRAF DRÓG) ---
+
+async function getRoadNetwork(env, corsHeaders) {
+  // Lazy create table if not exists
+  try {
+    await env.DB.prepare(`CREATE TABLE IF NOT EXISTS road_network (
+      id INTEGER PRIMARY KEY,
+      nodes TEXT,       -- JSON: [{id, x, y}, ...]
+      connections TEXT  -- JSON: [{from, to}, ...]
+    )`).run();
+    
+    // Ensure initial row exists
+    const count = await env.DB.prepare("SELECT count(*) as c FROM road_network").first();
+    if (count.c === 0) {
+      await env.DB.prepare("INSERT INTO road_network (id, nodes, connections) VALUES (1, '[]', '[]')").run();
+    }
+  } catch (e) {
+    console.error("Road network table init error:", e);
+  }
+
+  const data = await env.DB.prepare("SELECT nodes, connections FROM road_network WHERE id = 1").first();
+  
+  let result = { nodes: [], connections: [] };
+  if (data) {
+    try {
+      result.nodes = JSON.parse(data.nodes || '[]');
+      result.connections = JSON.parse(data.connections || '[]');
+    } catch (e) {
+      console.error("JSON parse error:", e);
+    }
+  }
+
+  return new Response(JSON.stringify(result), { headers: corsHeaders });
+}
+
+async function saveRoadNetwork(request, env, corsHeaders) {
+  const { nodes, connections } = await request.json();
+  
+  await env.DB.prepare(
+    "UPDATE road_network SET nodes = ?, connections = ? WHERE id = 1"
+  )
+  .bind(JSON.stringify(nodes), JSON.stringify(connections))
+  .run();
+
+  return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+}
 
   // TASKS
   if (path === "/api/tasks" && method === "GET")

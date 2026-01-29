@@ -171,8 +171,8 @@ html {
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
   height: 100%;
+  height: -webkit-fill-available;
   background-color: var(--bg-primary);
-  /* Przywrócono jasnoszare tło dla spójności */
 }
 
 body {
@@ -182,6 +182,9 @@ body {
   color: var(--text-primary);
   background: var(--bg-primary);
   height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  min-height: -webkit-fill-available;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -216,7 +219,9 @@ select {
 
 #app {
   min-height: 100%;
+  min-height: 100vh;
   min-height: 100dvh;
+  min-height: -webkit-fill-available;
   display: flex;
   flex-direction: column;
 }
@@ -310,6 +315,10 @@ ol {
   left: 0;
   right: 0;
   bottom: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  height: -webkit-fill-available;
   background: #000000;
   background: linear-gradient(135deg, #000000 0%, #1c1c1e 100%);
   justify-content: center;
@@ -810,226 +819,6 @@ ol {
   color: var(--text-primary);
 }
 
-
-
-/* Map Loading State */
-.map-loading-overlay {
-  position: absolute;
-  inset: 0;
-  background: var(--bg-secondary);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  gap: 15px;
-}
-
-.map-loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid var(--bg-tertiary);
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-.map-controls {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 110;
-}
-
-.map-controls .btn-icon {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  backdrop-filter: blur(10px);
-  border: 1px solid var(--border-color);
-  font-size: 20px;
-  box-shadow: var(--shadow-md);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.map-controls .btn-icon:hover {
-  background: var(--primary);
-  color: white;
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-}
-
-.map-controls .btn-icon:active {
-  transform: scale(0.95);
-}
-
-/* Map Pins */
-.map-pin {
-  position: absolute;
-  /* Use CSS variable for inverse scaling - high performance */
-  transform: translate(-50%, -100%) scale(calc(1 / var(--map-scale, 1)));
-  transform-origin: bottom center;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  cursor: pointer;
-  z-index: 50;
-  /* Remove transform from transition to make zooming instant/smooth */
-  transition:
-    opacity 0.2s,
-    filter 0.2s;
-  pointer-events: auto;
-  will-change: transform;
-}
-
-/* Hide labels when zoomed out (applied by JS class on container) */
-.map-container.zoomed-out
-  .map-pin:not(.pin-popover-open):not(.pin-active)
-  .pin-label {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.pin-shadow {
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  width: 10px;
-  height: 4px;
-  background: rgba(0, 0, 0, 0.3);
-  border-radius: 50%;
-  transform: translateX(-50%);
-  filter: blur(2px);
-  z-index: -1;
-}
-
-.pin-icon-wrapper {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: white;
-  border-radius: 50% 50% 50% 0;
-  transform: rotate(-45deg);
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-  border: 2px solid white;
-  transition: all 0.2s ease;
-}
-
-.pin-dept .pin-icon-wrapper {
-  background: var(--primary);
-  border-color: var(--primary);
-  border-radius: 10px;
-  transform: none;
-  /* Departments are squareish */
-}
-
-.pin-loc .pin-icon-wrapper {
-  background: var(--danger);
-  border-color: #fff;
-}
-
-.pin-icon-wrapper span {
-  transform: rotate(45deg);
-  /* Counter-rotate for pin shape */
-  font-size: 18px;
-}
-
-.pin-dept span {
-  transform: none;
-}
-
-.pin-label {
-  position: absolute;
-  bottom: 100%;
-  left: 50%;
-  transform: translateX(-50%) translateY(0) scale(0.8);
-  background: rgba(255, 255, 255, 0.95);
-  color: var(--text-primary);
-  padding: 8px 14px;
-  border-radius: var(--border-radius-md);
-  font-size: 13px;
-  font-weight: 700;
-  margin-bottom: 12px;
-  white-space: nowrap;
-  backdrop-filter: blur(10px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
-  pointer-events: none;
-  opacity: 0;
-  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  z-index: 100;
-}
-
-/* Tooltip Arrow */
-.pin-label::after {
-  content: "";
-  position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
-  border: 6px solid transparent;
-  border-top-color: rgba(255, 255, 255, 0.95);
-}
-
-.map-pin:hover .pin-label,
-.pin-active .pin-label,
-.pin-popover-open .pin-label {
-  opacity: 1;
-  transform: translateX(-50%) translateY(-5px) scale(1);
-  pointer-events: auto;
-}
-
-[data-theme="dark"] .pin-label {
-  background: rgba(44, 44, 46, 0.9);
-  color: #ffffff;
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-[data-theme="dark"] .pin-label::after {
-  border-top-color: rgba(44, 44, 46, 0.9);
-}
-
-.map-pin:hover .pin-icon-wrapper {
-  transform: rotate(-45deg) scale(1.1);
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-}
-
-.pin-dept:hover .pin-icon-wrapper {
-  transform: scale(1.1);
-}
-
-.pin-active .pin-icon {
-  animation: bounce 1s infinite;
-}
-
-.pin-dept .pin-icon {
-  font-size: 28px;
-  /* Departments slightly bigger */
-}
-
-.pin-temp {
-  opacity: 0.8;
-}
-
-@keyframes bounce {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
 /* Date Picker Section - Nowy design */
 .date-picker-section {
   background: var(--bg-secondary);
@@ -1345,7 +1134,7 @@ ol {
   border: 2px solid rgba(255, 255, 255, 0.3);
   border-top-color: white;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin-right 0.8s linear infinite;  /* ✅ spin-right istnieje */
 }
 
 /* =============================================
@@ -2923,7 +2712,7 @@ ol {
   border: 2px solid var(--border-color);
   border-top-color: var(--primary);
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin-right 0.8s linear infinite; 
 }
 
 /* =============================================
@@ -3629,17 +3418,6 @@ input[type="date"] {
   background: var(--bg-tertiary);
 }
 
-
-.map-loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-top-color: var(--primary);
-  border-radius: 50%;
-  animation: spin-right 0.8s linear infinite;
-  margin-bottom: 12px;
-}
-
 .task-detail-section h4 {
   display: flex;
   align-items: center;
@@ -3865,145 +3643,255 @@ input[type="date"] {
 }
 
 /* =============================================
-   MAP SECTION (Consolidated)
-   ============================================= */
+   MAP SECTION - NAPRAWIONA
+============================================= */
 .map-wrapper {
-  position: relative;
-  width: 100%;
-  height: 60vh;
-  min-height: 400px;
-  background: var(--bg-tertiary);
-  border-radius: var(--border-radius-md);
-  overflow: hidden;
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
+    position: relative;
+    width: 100%;
+    height: 60vh;
+    min-height: 400px;
+    max-height: 80vh;
+    background: #1a1a1a;
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
 }
 
 .map-container {
-  position: relative;
-  overflow: visible;
-  cursor: grab;
-  display: block !important;
-  visibility: visible !important;
-  opacity: 1 !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+    cursor: grab;
 }
 
 .map-container:active {
-  cursor: grabbing;
+    cursor: grabbing;
 }
 
 .map-image {
-  display: block !important;
-  max-width: none !important;
-  height: auto !important;
-  user-select: none;
-  -webkit-user-drag: none;
-  pointer-events: auto !important;
-  visibility: visible !important;
-  opacity: 1 !important;
+    display: block;
+    max-width: none;
+    height: auto;
+    user-select: none;
+    -webkit-user-drag: none;
+    pointer-events: auto;
 }
 
-/* Map Controls */
-.map-controls {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  z-index: 101; /* Above Loading Overlay */
+/* Canvas dla rysowania dróg */
+.map-paths-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
 }
 
-.map-controls .btn-icon {
-  width: 40px;
-  height: 40px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-md);
-  font-size: 18px;
-  font-weight: bold;
-}
-
-/* Map Pins */
-.map-pin {
-  position: absolute;
-  transform: translate(-50%, -100%) scale(calc(0.7 + 0.3 * var(--map-scale, 1)));
-  cursor: pointer;
-  z-index: 50;
-  transition: opacity var(--transition-fast), transform var(--transition-fast);
-  font-size: 24px;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
-}
-
-.map-pin:hover, .map-pin.pin-popover-open {
-  z-index: 1002 !important;
-  transform: translate(-50%, -100%) scale(1.2) !important;
-}
-
-.map-pin.pin-highlight {
-  filter: drop-shadow(0 0 8px rgba(255, 215, 0, 0.8));
-  animation: pin-pulse 1.5s ease-in-out infinite;
-  z-index: 100;
-}
-
-.map-pin.pin-dimmed {
-  opacity: 0.3;
-}
-
-@keyframes pin-pulse {
-  0%, 100% { transform: translate(-50%, -100%) scale(1); }
-  50% { transform: translate(-50%, -100%) scale(1.15); }
-}
-
-/* Map Loading Overlay */
+/* Loading overlay */
 .map-loading-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.75);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  z-index: 100;
-  color: white;
-  backdrop-filter: blur(5px);
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+    color: white;
 }
 
 .map-loading-spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid rgba(255, 255, 255, 0.2);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin-right 0.8s linear infinite;
-  margin-bottom: 10px;
+    width: 48px;
+    height: 48px;
+    border: 4px solid rgba(255, 255, 255, 0.2);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin-right 0.8s linear infinite;
+    margin-bottom: 16px;
 }
 
-/* Path Drawing Toolbar (Admin Only) */
+/* Kontrolki zoom */
+.map-controls {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 150;
+}
+
+.map-controls .btn-icon {
+    width: 44px;
+    height: 44px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    font-size: 20px;
+    font-weight: bold;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.map-controls .btn-icon:hover {
+    background: var(--primary);
+    color: white;
+    transform: scale(1.05);
+}
+
+/* Pinezki na mapie */
+.map-pin {
+    position: absolute;
+    transform: translate(-50%, -100%) scale(calc(1 / max(var(--map-scale, 1), 0.3)));
+    transform-origin: bottom center;
+    cursor: pointer;
+    z-index: 100;
+    transition: z-index 0s, opacity 0.2s;
+    pointer-events: auto;
+}
+
+.map-pin:hover,
+.map-pin.pin-active,
+.map-pin.pin-popover-open {
+    z-index: 200 !important;
+}
+
+.pin-icon-wrapper {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--danger);
+    border: 3px solid white;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.pin-icon-wrapper span {
+    transform: rotate(45deg);
+    font-size: 16px;
+}
+
+/* Pinezka działu (kwadratowa) */
+.pin-dept .pin-icon-wrapper {
+    background: var(--primary);
+    border-radius: 8px;
+    transform: none;
+}
+
+.pin-dept .pin-icon-wrapper span {
+    transform: none;
+}
+
+/* Hover na pinezce */
+.map-pin:hover .pin-icon-wrapper {
+    transform: rotate(-45deg) scale(1.15);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+
+.pin-dept:hover .pin-icon-wrapper {
+    transform: scale(1.15);
+}
+
+/* Etykieta pinezki */
+.pin-label {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%) scale(0.9);
+    background: white;
+    color: #333;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+}
+
+.pin-label::after {
+    content: "";
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 6px solid transparent;
+    border-top-color: white;
+}
+
+/* Pokazanie etykiety */
+.map-pin:hover .pin-label,
+.map-pin.pin-popover-open .pin-label,
+.map-pin.pin-active .pin-label {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+}
+
+/* Ukryj etykiety gdy mocno oddalone */
+.map-container.zoomed-out .map-pin:not(.pin-popover-open):not(.pin-active) .pin-label {
+    display: none;
+}
+
+/* Tymczasowa pinezka (nowa pozycja) */
+.pin-temp .pin-icon-wrapper {
+    background: var(--success);
+    animation: pin-pulse 1s ease-in-out infinite;
+}
+
+@keyframes pin-pulse {
+    0%, 100% { transform: rotate(-45deg) scale(1); }
+    50% { transform: rotate(-45deg) scale(1.1); }
+}
+
+/* Dark mode dla etykiet */
+[data-theme="dark"] .pin-label {
+    background: #2c2c2e;
+    color: white;
+}
+
+[data-theme="dark"] .pin-label::after {
+    border-top-color: #2c2c2e;
+}
+
+/* Toolbar rysowania dróg (Admin ID 1) */
 .map-draw-toolbar {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 8px;
-  background: var(--bg-secondary);
-  padding: 8px;
-  border-radius: var(--border-radius-lg);
-  box-shadow: var(--shadow-xl);
-  z-index: 101;
+    position: absolute;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    background: var(--bg-secondary);
+    padding: 10px 16px;
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    z-index: 150;
+    border: 1px solid var(--border-color);
 }
 
-/* Canvas for paths */
-canvas.map-paths-layer {
-  pointer-events: none;
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+.map-draw-toolbar .btn {
+    white-space: nowrap;
+}
+
+.map-draw-toolbar .btn.hidden {
+    display: none;
+}
+/* =============================================
+   iOS SAFE AREA FIX
+============================================= */
+@supports (-webkit-touch-callout: none) {
+  html, body, #app, #screen-loading, .screen {
+    min-height: -webkit-fill-available;
+  }
 }
