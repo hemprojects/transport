@@ -1416,119 +1416,140 @@ const MapManager = {
         // Lazy initialization
     },
 
-    open(mode = "view", data = null) {
+    async open(mode = "view", data = null) {
+        console.group("🗺️ MapManager.open");
+        console.log(`🚀 Mode: ${mode}`, data);
+
+        // Reset stanu
         this.mode = mode;
         this.isInitialized = false;
-        this.currentRoute = null;
-        this.selectedNodeId = null;
-
+        
         // Reset UI
         const titleEl = Utils.$("#modal-map h2");
         const saveBtn = Utils.$("#map-save-btn");
-        const networkToolbar = Utils.$("#network-toolbar"); // Nowy toolbar
+        const networkToolbar = Utils.$("#network-toolbar");
         if(networkToolbar) networkToolbar.classList.add("hidden");
 
+        // Konfiguracja UI
         if (mode === "pick") {
-            this.targetLocationId = data; // data = locationId
-            if (titleEl) titleEl.textContent = "📍 Zaznacz lokalizację";
+            this.targetLocationId = data; 
+            if (titleEl) titleEl.textContent = "📍 Zaznacz lokalizację: Kliknij na mapie";
             Utils.show(saveBtn);
-            saveBtn.disabled = true;
+            if(saveBtn) saveBtn.disabled = true;
         } else if (mode === "edit_network") {
             if (titleEl) titleEl.textContent = "🔧 Edycja sieci dróg";
             Utils.hide(saveBtn);
         } else if (mode === "show_route") {
-            // data = { from: "Hala A", to: "Magazyn B" }
-            if (titleEl) titleEl.textContent = `Trasa: ${data.from} ➔ ${data.to}`;
+            const fromText = data?.from || "?";
+            const toText = data?.to || "?";
+            if (titleEl) titleEl.textContent = `📍 Trasa: ${fromText} ➔ ${toText}`;
             Utils.hide(saveBtn);
-            this.calculateRoute(data.from, data.to);
+            
+            if (this.calculateRoute && data) {
+                setTimeout(() => this.calculateRoute(data.from, data.to), 500);
+            }
         } else {
             if (titleEl) titleEl.textContent = "🗺️ Mapa Zakładu";
             Utils.hide(saveBtn);
         }
 
         this.showLoading();
+        console.log("⏳ Opening modal...");
         Modal.open("modal-map");
 
-        // Załaduj mapę
-        const img = Utils.$("#facility-map");
-        const baseSrc = img.getAttribute("data-src") || "img/mapa.webp";
-        
-        const onImageReady = () => {
-            // Najpierw pobierz sieć dróg
-            API.getRoadNetwork().then(network => {
-                this.nodes = network.nodes || [];
-                this.connections = network.connections || [];
-                this.initializeMap();
-            }).catch(err => {
-                console.error("Failed to load road network", err);
-                this.nodes = [];
-                this.connections = [];
-                this.initializeMap();
-            });
-        };
-
-        if (img.complete && img.naturalWidth > 0 && img.src.includes(baseSrc.split('?')[0])) {
-            setTimeout(onImageReady, 100);
-        } else {
-            img.onload = onImageReady;
-            img.onerror = () => {
-                this.hideLoading();
-                Toast.error("Błąd ładowania mapy");
-            };
-            img.src = baseSrc + "?v=" + Date.now();
+        try {
+            console.log("📡 Fetching road network...");
+            const network = await API.getRoadNetwork();
+            this.nodes = network.nodes || [];
+            this.connections = network.connections || [];
+            console.log(`✅ Road network loaded: ${this.nodes.length} nodes`);
+        } catch (e) {
+            console.error("❌ Road network error:", e);
         }
+
+        console.log("⏳ Waiting for modal render (150ms)...");
+        await new Promise(resolve => setTimeout(resolve, 150));
+
+        this.initializeMap();
+        console.groupEnd();
     },
 
     initializeMap() {
-        const wrapper = Utils.$(".map-wrapper");
-        const container = Utils.$("#map-container");
-        const img = Utils.$("#facility-map");
+        console.group("🔧 MapManager.initializeMap");
+        const wrapper = document.querySelector(".map-wrapper");
+        const container = document.getElementById("map-container");
+        const img = document.getElementById("facility-map");
 
-        if (!wrapper || !container || !img) return;
+        console.log("Elements:", { wrapper, container, img });
 
-        // Init Panzoom (standard code)
-        if (this.panzoomInstance) this.panzoomInstance.destroy();
-        
-        container.style.width = img.naturalWidth + "px";
-        container.style.height = img.naturalHeight + "px";
-        container.style.transformOrigin = "0 0";
+        if (!wrapper || !container || !img) {
+            console.error("❌ CRITICAL: Missing DOM elements!");
+            console.groupEnd();
+            return;
+        }
 
-        const scale = Math.min(
-            (wrapper.clientWidth - 40) / img.naturalWidth, 
-            (wrapper.clientHeight - 40) / img.naturalHeight, 
-            1
-        );
-        const startX = (wrapper.clientWidth - img.naturalWidth * scale) / 2;
-        const startY = (wrapper.clientHeight - img.naturalHeight * scale) / 2;
+        console.log("Wrapper dimensions:", wrapper.clientWidth, "x", wrapper.clientHeight);
+        console.log("Image src:", img.src);
+        console.log("Image natural size:", img.naturalWidth, "x", img.naturalHeight);
 
-        container.style.transform = `translate(${startX}px, ${startY}px) scale(${scale})`;
-        container.style.setProperty("--map-scale", scale);
-
-        this.panzoomInstance = Panzoom(container, {
-            maxScale: 5, minScale: scale * 0.5, startScale: scale, startX, startY,
-            animate: true, excludeClass: "map-pin"
-        });
-
-        container.addEventListener("panzoomchange", () => {
-            container.style.setProperty("--map-scale", this.panzoomInstance.getScale());
-        });
-        
-        wrapper.addEventListener("wheel", this.panzoomInstance.zoomWithWheel);
-        
-        // Kliknięcie na mapie (obsługa edycji sieci)
-        img.onclick = (e) => this.onMapClick(e);
-        img.style.pointerEvents = "auto";
-
-        // Init Canvas
-        this.initCanvas(container, img);
-
-        // Render UI
         this.hideLoading();
-        this.renderPins();
-        this.renderControls();
-        this.renderNetworkToolbar();
-        this.draw(); // Rysuj sieć/trasę
+
+        if (this.panzoomInstance) {
+            console.log("♻️ Destroying old Panzoom instance");
+            try { this.panzoomInstance.destroy(); } catch(e) {}
+        }
+
+        const baseSrc = img.getAttribute("data-src") || "img/mapa.webp";
+        if (!img.src || img.src === window.location.href) {
+             console.log("🔄 Setting image src:", baseSrc);
+             img.src = baseSrc;
+        }
+
+        // Reset
+        container.style.transform = '';
+        container.style.width = '';
+        container.style.height = '';
+
+        try {
+            console.log("🚀 Initializing Panzoom...");
+            this.panzoomInstance = Panzoom(container, {
+                maxScale: 5,
+                minScale: 0.1, 
+                startScale: 1,
+                contain: 'outside',
+                cursor: 'grab'
+            });
+
+            wrapper.addEventListener('wheel', this.panzoomInstance.zoomWithWheel);
+            
+            container.addEventListener('pointerup', (e) => {
+               if (e.target.closest('.map-pin')) return; 
+               this.onMapClick(e);
+            });
+
+            this.initCanvas(container, img);
+
+            this.renderPins();
+            this.renderControls();
+            this.renderNetworkToolbar();
+
+            setTimeout(() => {
+                console.log("🔄 Resetting Panzoom zoom...");
+                this.panzoomInstance.reset();
+                this.isInitialized = true;
+                this.draw(); 
+                console.log("✅ Map initialization complete!");
+            }, 100);
+
+        } catch (error) {
+            console.error("❌ Panzoom Error:", error);
+            Toast.error("Błąd inicjalizacji mapy");
+        }
+        console.groupEnd();
     },
+    
+    // Alias dla draw (w razie gdyby gdzieś było wywoływane drawCanvas)
+    drawCanvas() { this.draw(); },
 
     initCanvas(container, img) {
         let canvas = container.querySelector("canvas.map-paths-layer");
@@ -1540,6 +1561,19 @@ const MapManager = {
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
         this.ctx = canvas.getContext("2d");
+    },
+    
+    showLoading() {
+        const wrapper = document.querySelector(".map-wrapper");
+        if(wrapper) {
+            wrapper.classList.add("loading"); 
+            // Można dodać spinner przez CSS ::after
+        }
+    },
+    
+    hideLoading() {
+         const wrapper = document.querySelector(".map-wrapper");
+         if(wrapper) wrapper.classList.remove("loading");
     },
 
     // --- GŁÓWNA PĘTLA RYSOWANIA ---
@@ -3018,42 +3052,76 @@ if (lastLocationName) {
         task.additional_drivers.some((d) => d.id === state.currentUser.id);
       const isParticipating = isMyTask || isJoined;
 
-      let locationInfo = "";
-      if (task.task_type === "transport") {
-        locationInfo = `
-                    <div class="task-detail-row">
-                        <span class="task-detail-label">Skąd</span>
-                        <span class="task-detail-value">📍 ${Utils.escapeHtml(
-          task.location_from || "-"
-        )}</span>
-                    </div>
-                    <div class="task-detail-row">
-                        <span class="task-detail-label">Dokąd</span>
-                        <span class="task-detail-value">📍 ${Utils.escapeHtml(
-          task.location_to || "-"
-        )}</span>
-                    </div>
-                `;
-      } else {
-        locationInfo = `
-                    <div class="task-detail-row">
-                        <span class="task-detail-label">Dział</span>
-                        <span class="task-detail-value">🏢 ${Utils.escapeHtml(
-          task.department || "-"
-        )}</span>
-                    </div>
-                `;
-      }
 
-      // MAP BUTTON
-      if (task.location_from || task.location_to || task.department) {
+      let locationInfo = "";
+      
+      // Dla wszystkich typów zadań - pokaż dział jeśli istnieje
+      if (task.department) {
         locationInfo += `
-           <button class="btn btn-secondary btn-sm" 
-    onclick="TransportTracker.MapManager.open('show_route', { from: '${Utils.escapeHtml(task.location_from)}', to: '${Utils.escapeHtml(task.location_to)}' })">
-    🗺️ Pokaż trasę
-</button>
+          <div class="task-detail-row">
+            <span class="task-detail-label">Dział</span>
+            <span class="task-detail-value">🏢 ${Utils.escapeHtml(task.department)}</span>
+          </div>
         `;
       }
+      
+      // Pokaż skąd/dokąd jeśli istnieją (dla transport i other)
+      if (task.location_from) {
+        locationInfo += `
+          <div class="task-detail-row">
+            <span class="task-detail-label">Skąd</span>
+            <span class="task-detail-value">📍 ${Utils.escapeHtml(task.location_from)}</span>
+          </div>
+        `;
+      }
+      
+      if (task.location_to) {
+        locationInfo += `
+          <div class="task-detail-row">
+            <span class="task-detail-label">Dokąd</span>
+            <span class="task-detail-value">📍 ${Utils.escapeHtml(task.location_to)}</span>
+          </div>
+        `;
+      }
+
+
+      // MAP BUTTON - Wąski, wyśrodkowany przycisk podglądu trasy
+      // Określ punkty startowy i końcowy w zależności od typu zadania
+      let routeFrom = null;
+      let routeTo = null;
+      const PARKING_TIR = "Parking TIR"; // Centralny punkt dla rozładunku/załadunku
+      
+      if (task.location_from && task.location_to) {
+        // Transport lub Inne zadanie z lokalizacjami
+        routeFrom = task.location_from;
+        routeTo = task.location_to;
+      } else if (task.task_type === "unloading" && task.department) {
+        // Rozładunek: Parking TIR → Dział
+        routeFrom = PARKING_TIR;
+        routeTo = task.department;
+      } else if (task.task_type === "loading" && task.department) {
+        // Załadunek: Dział → Parking TIR
+        routeFrom = task.department;
+        routeTo = PARKING_TIR;
+      } else if (task.department && !task.location_from && !task.location_to) {
+        // Inne zadanie tylko z działem: Parking TIR → Dział
+        routeFrom = PARKING_TIR;
+        routeTo = task.department;
+      }
+      
+      // Pokaż przycisk jeśli mamy trasę do pokazania
+      if (routeFrom && routeTo) {
+        locationInfo += `
+          <div style="text-align: center; margin: 15px 0;">
+            <button class="btn btn-secondary" 
+                    style="padding: 8px 20px; font-size: 14px; max-width: 200px; width: auto; display: inline-block;"
+                    onclick="TransportTracker.MapManager.open('show_route', { from: '${Utils.escapeHtml(routeFrom)}', to: '${Utils.escapeHtml(routeTo)}' })">
+              🗺️ Pokaż trasę
+            </button>
+          </div>
+        `;
+      }
+
 
 
       let logsHtml = "";
@@ -5673,6 +5741,42 @@ if (lastLocationName) {
     },
   };
 
+
+  // =============================================
+  // Lokalizacja Systemowa: Parking TIR
+  // =============================================
+  async function ensureParkingTIR() {
+    try {
+      // Pobierz wszystkie lokalizacje
+      const locations = await API.request('/locations');
+      
+      // Sprawdź czy Parking TIR już istnieje
+      const parkingTIR = locations.find(loc => loc.name === 'Parking TIR');
+      
+      if (!parkingTIR) {
+        console.log('🚛 Tworzenie lokalizacji systemowej: Parking TIR');
+        
+        // Utwórz Parking TIR w centrum mapy (50%, 50%)
+        await API.request('/locations', {
+          method: 'POST',
+          body: {
+            name: 'Parking TIR',
+            type: 'location',
+            map_x: 50,
+            map_y: 50,
+            is_system: 1 // Oznacz jako lokalizacja systemowa (nieusuwalna)
+          }
+        });
+        
+        console.log('✅ Parking TIR utworzony');
+      } else {
+        console.log('✅ Parking TIR już istnieje');
+      }
+    } catch (error) {
+      console.error('⚠️ Błąd tworzenia Parking TIR:', error);
+    }
+  }
+
   // =============================================
   // 15. INIT
   // =============================================
@@ -5748,6 +5852,9 @@ if (lastLocationName) {
 
     await new Promise((resolve) => setTimeout(resolve, 500));
     await Auth.init();
+    
+    // Upewnij się że Parking TIR istnieje (lokalizacja systemowa)
+    await ensureParkingTIR();
 
     // Jeśli mieliśmy Deep Link, otwórz zadanie po zalogowaniu
     if (DeepLinkTaskId && state.currentUser) {
@@ -5976,6 +6083,11 @@ if (lastLocationName) {
   // =============================================
   // 17. EXPORT
   // =============================================
+  console.log("🛠️ Exporting modules...", { MapManager: typeof MapManager });
+  
+  // Eksport globalny (fallback)
+  window.MapManager = MapManager;
+
   window.TransportTracker = {
     state,
     Utils,
@@ -5991,6 +6103,7 @@ if (lastLocationName) {
     TaskForm,
     AdminPanel,
     OneSignalService,
+    MapManager, 
   };
 
   // =============================================

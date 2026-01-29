@@ -24,7 +24,7 @@
       defer
     ></script>
     <script src="https://unpkg.com/@panzoom/panzoom@4.5.1/dist/panzoom.min.js"></script>
-    <link rel="stylesheet" href="css/style.css?v=2.50" />
+    <link rel="stylesheet" href="css/style.css?v=2.53" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>"
@@ -1109,9 +1109,19 @@
                   placeholder="np. Pomoc przy rozładunku, Sprzątanie hali"
                 />
               </div>
+              
+              <!-- Dział (opcjonalnie) -->
+              <div class="form-group">
+                <label for="other-department">Dział (opcjonalnie)</label>
+                <select id="other-department">
+                  <option value="">-- Wybierz dział --</option>
+                  <!-- Dynamicznie wypełniane przez JS -->
+                </select>
+              </div>
+              
               <div class="form-row">
                 <div class="form-group">
-                  <label for="other-from">Skąd</label>
+                  <label for="other-from">Skąd (opcjonalnie)</label>
                   <input
                     type="text"
                     id="other-from"
@@ -1120,7 +1130,7 @@
                   />
                 </div>
                 <div class="form-group">
-                  <label for="other-to">Dokąd</label>
+                  <label for="other-to">Dokąd (opcjonalnie)</label>
                   <input
                     type="text"
                     id="other-to"
@@ -1674,6 +1684,85 @@
       </div>
     </div>
 
+    <!-- ========== MODAL: Edycja Sieci Dróg (Admin ID 1) ========== -->
+    <div id="modal-road-network" class="modal modal-map hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-large">
+        <div class="modal-header">
+          <h2>🔧 Edycja Sieci Dróg</h2>
+          <button class="modal-close" data-close="modal-road-network">×</button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc">
+            Kliknij na mapie aby dodać punkt. Kliknij na istniejący punkt aby
+            rozpocząć trasę od niego.
+          </p>
+          <div class="map-wrapper">
+            <div id="road-network-container" class="map-container">
+              <img
+                src="img/mapa.webp"
+                alt="Mapa Zakładu"
+                id="road-network-map"
+                class="map-image"
+              />
+              <canvas
+                id="road-network-canvas"
+                class="road-network-canvas"
+              ></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-close="modal-road-network">
+            Anuluj
+          </button>
+          <button class="btn btn-danger" id="clear-road-network-btn">
+            Wyczyść sieć
+          </button>
+          <button class="btn btn-primary" id="save-road-network-btn">
+            💾 Zapisz
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== MODAL: Podgląd Trasy (Kierowca) ========== -->
+    <div id="modal-route-preview" class="modal modal-map hidden">
+      <div class="modal-overlay"></div>
+      <div class="modal-container modal-large">
+        <div class="modal-header">
+          <h2 id="route-preview-title">🗺️ Podgląd Trasy</h2>
+          <button class="modal-close" data-close="modal-route-preview">
+            ×
+          </button>
+        </div>
+        <div class="modal-body">
+          <p class="section-desc" id="route-preview-desc">
+            <!-- Dynamicznie wypełniane przez JS -->
+          </p>
+          <div class="map-wrapper">
+            <div id="route-preview-container" class="map-container">
+              <img
+                src="img/mapa.webp"
+                alt="Mapa Zakładu"
+                id="route-preview-map"
+                class="map-image"
+              />
+              <canvas
+                id="route-preview-canvas"
+                class="route-preview-canvas"
+              ></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-close="modal-route-preview">
+            Zamknij
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- ========== MODAL: Potwierdzenie ========== -->
     <div id="modal-confirm" class="modal hidden">
       <div class="modal-overlay"></div>
@@ -1834,6 +1923,6 @@
 
     <div id="printable-report" class="hidden-print"></div>
 
-    <script src="js/app.js?v=2.50"></script>
+    <script src="js/app.js?v=2.53"></script>
   </body>
 </html>

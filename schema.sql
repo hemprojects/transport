@@ -30,6 +30,14 @@ CREATE TABLE locations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     type TEXT DEFAULT 'location' CHECK(type IN ('location', 'department')),
+    
+    -- Pozycja na mapie (w procentach 0-100)
+    map_x REAL,
+    map_y REAL,
+    
+    -- Flaga systemowa (1 = nieusuwalna, np. Parking TIR)
+    is_system INTEGER DEFAULT 0,
+    
     active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

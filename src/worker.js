@@ -678,7 +678,7 @@ async function getLocations(env, corsHeaders) {
 }
 
 async function createLocation(request, env, corsHeaders) {
-  const { name, type, map_x, map_y } = await request.json();
+  const { name, type, map_x, map_y, is_system } = await request.json();
   const ex = await env.DB.prepare(
     "SELECT id, active FROM locations WHERE name = ?"
   )
@@ -687,9 +687,9 @@ async function createLocation(request, env, corsHeaders) {
   if (ex) {
     if (ex.active === 0) {
       await env.DB.prepare(
-        "UPDATE locations SET active = 1, type = ?, map_x = ?, map_y = ? WHERE id = ?"
+        "UPDATE locations SET active = 1, type = ?, map_x = ?, map_y = ?, is_system = ? WHERE id = ?"
       )
-        .bind(type, map_x || null, map_y || null, ex.id)
+        .bind(type, map_x || null, map_y || null, is_system || 0, ex.id)
         .run();
       return new Response(JSON.stringify({ id: ex.id, name, type }), {
         headers: corsHeaders,
@@ -701,9 +701,9 @@ async function createLocation(request, env, corsHeaders) {
     });
   }
   const r = await env.DB.prepare(
-    "INSERT INTO locations (name, type, map_x, map_y) VALUES (?, ?, ?, ?)"
+    "INSERT INTO locations (name, type, map_x, map_y, is_system) VALUES (?, ?, ?, ?, ?)"
   )
-    .bind(name, type, map_x || null, map_y || null)
+    .bind(name, type, map_x || null, map_y || null, is_system || 0)
     .run();
   return new Response(JSON.stringify({ id: r.meta.last_row_id, name, type }), {
     headers: corsHeaders,
@@ -734,9 +734,32 @@ async function updateLocation(id, request, env, corsHeaders) {
 }
 
 async function deleteLocation(id, env, corsHeaders) {
+  // Sprawdź czy lokalizacja jest systemowa (nieusuwalna)
+  const location = await env.DB.prepare("SELECT is_system, name FROM locations WHERE id = ?")
+    .bind(id)
+    .first();
+  
+  if (!location) {
+    return new Response(JSON.stringify({ error: "Lokalizacja nie istnieje" }), {
+      status: 404,
+      headers: corsHeaders,
+    });
+  }
+  
+  if (location.is_system === 1) {
+    return new Response(JSON.stringify({ 
+      error: `Nie można usunąć lokalizacji systemowej: ${location.name}` 
+    }), {
+      status: 403,
+      headers: corsHeaders,
+    });
+  }
+  
+  // Usuń lokalizację (soft delete)
   await env.DB.prepare("UPDATE locations SET active = 0 WHERE id = ?")
     .bind(id)
     .run();
+    
   return new Response(JSON.stringify({ success: true }), {
     headers: corsHeaders,
   });
@@ -779,10 +802,15 @@ async function setup_schema(env) {
   try {
     const tableInfo = await env.DB.prepare("PRAGMA table_info(locations)").all();
     const hasMapX = tableInfo.results.some(c => c.name === 'map_x');
+    const hasIsSystem = tableInfo.results.some(c => c.name === 'is_system');
 
     if (!hasMapX) {
       await env.DB.prepare("ALTER TABLE locations ADD COLUMN map_x REAL").run();
       await env.DB.prepare("ALTER TABLE locations ADD COLUMN map_y REAL").run();
+    }
+    
+    if (!hasIsSystem) {
+      await env.DB.prepare("ALTER TABLE locations ADD COLUMN is_system INTEGER DEFAULT 0").run();
     }
 
     // Check for containers column
