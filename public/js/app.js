@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 1.0.0 - beta
+// Wersja 1.1.0 - beta
 // =============================================
 
 (function () {
@@ -740,7 +740,7 @@
   };
 
   // =============================================
-  // 6. MODAL
+  // 7. MODAL
   // =============================================
   const Modal = {
     openModals: [],
@@ -843,7 +843,7 @@
   };
 
   // =============================================
-  // 7. THEME
+  // 8. THEME
   // =============================================
   const Theme = {
     init() {
@@ -890,7 +890,7 @@
   };
 
   // =============================================
-  // 8. SCREEN
+  // 9. SCREEN
   // =============================================
   const Screen = {
     show(screenId) {
@@ -919,7 +919,7 @@
   };
 
   // =============================================
-  // 9. NOTIFICATIONS
+  // 10. NOTIFICATIONS
   // =============================================
   const Notifications = {
     async requestPermission() {
@@ -1321,7 +1321,7 @@
   };
 
   // =============================================
-  // 10. DATALISTS
+  // 11. DATALISTS
   // =============================================
   const DataLists = {
     updateLocations() {
@@ -1337,6 +1337,7 @@
       const selects = [
         Utils.$("#unloading-department"),
         Utils.$("#loading-department"),
+        Utils.$("#other-department"), // FIX: Dodano pole "Dział (opcjonalnie)" dla typu INNE
         ...Utils.$$(".dept-select"),
       ];
 
@@ -1394,7 +1395,7 @@
   };
 
   // =============================================
-  // 17. MAP MANAGER - SMART ROUTING (DIJKSTRA)
+  // 12. MAP MANAGER - SMART ROUTING (DIJKSTRA)
   // =============================================
   const MapManager = {
     mode: "view", // 'view' | 'pick' | 'edit_network' | 'show_route'
@@ -1413,6 +1414,8 @@
 
     // Stan trasy
     currentRoute: null, // [x, y, x, y...]
+    routeFrom: null, // Nazwa lokalizacji start
+    routeTo: null, // Nazwa lokalizacji end
 
     ctx: null,
 
@@ -1458,8 +1461,12 @@
       } else if (mode === "show_route") {
         const fromText = data?.from || "?";
         const toText = data?.to || "?";
-        if (titleEl) titleEl.textContent = `📍 Trasa: ${fromText} ➔ ${toText}`;
+        if (titleEl) titleEl.textContent = `📍 Trasa: ${fromText} ➡️ ${toText}`;
         Utils.hide(saveBtn);
+
+        // Zapisz dane trasy dla renderowania pinezek
+        this.routeFrom = data?.from;
+        this.routeTo = data?.to;
 
         if (this.calculateRoute && data) {
           setTimeout(() => this.calculateRoute(data.from, data.to), 500);
@@ -1586,23 +1593,23 @@
           img.style.height = "100%";
           img.style.objectFit = "cover";
 
-          // 4. Init Panzoom z LOADER i FADE-IN
+          // 4. Init Panzoom z LEPSZYM LOADEREM
           console.log(
             `🎯 FitScale: ${fitScale.toFixed(3)}, InitialZoom: ${initialZoom.toFixed(3)} (1.2x)`
           );
           
-          // Ukryj mapę przed setupPanzoom
+          // FIX #6/#2: Ukryj mapę przed setupPanzoom - loader widoczny dłużej
           container.style.opacity = "0";
-          container.style.transition = "opacity 0.4s ease-in";
+          container.style.transition = "opacity 0.6s ease-in";
           
           this.setupPanzoom(wrapper, container, img, fitScale, initialZoom);
           
-          // Fade-in mapy po inicjalizacji (KONIEC mrugania!)
+          // FIX #6/#2: Czekaj dłużej przed pokazaniem mapy (Android potrzebuje więcej czasu)
           setTimeout(() => {
             container.style.opacity = "1";
-            // Ukryj loader dopiero jak mapa widoczna
-            setTimeout(() => this.hideLoading(), 200);
-          }, 100);
+            // Ukryj loader dopiero po pełnym fade-in
+            setTimeout(() => this.hideLoading(), 600);
+          }, 300);
         };
 
         requestAnimationFrame(waitForLayout);
@@ -1624,19 +1631,17 @@
           /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
         const isSafari =
           /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+        const isAndroid = /Android/i.test(navigator.userAgent);
 
-        // Bezpieczny zoom: startujemy od widoku całości
-        // Pozwalamy przybliżyć aż do 2x native resolution (bardzo blisko)
-        
-        // Użyj initialZoom jeśli podano, inaczej fitScale
-        const startZoom = initialZoom || fitScale;
+        // FIX #2: Startujemy od pełnego widoku (fitScale) bez animacji
+        const startZoom = fitScale;
 
         this.panzoomInstance = Panzoom(container, {
-          // MaxScale: Zwiększono do 10x (User request: "zoomować jeszcze bliżej")
+          // MaxScale: 10x dla bardzo bliskiego zoomu
           maxScale: 10.0,
-          // MinScale: Pozwól oddalić do 80% widoku całości
-          minScale: fitScale * 0.8,
-          // Start: initialZoom dla bliższego widoku początkowego
+          // FIX #4: MinScale = fitScale (nie 0.8x) - zapobiega przeskakiwaniu przy oddalaniu
+          minScale: fitScale,
+          // FIX #2: Start bez zoomu (pełny widok) - zapobiega skokowi
           startScale: startZoom,
           startX: 0,
           startY: 0,
@@ -1644,44 +1649,62 @@
           contain: "outside",
 
           cursor: this.mode === "edit_network" ? "crosshair" : "grab",
-          // ZMIANA: Wyłącz animację przy starcie żeby nie było skoku
-          duration: 0, // Było 250 - to powodowało widoczny skok!
+          // FIX #2: Wyłącz animację przy starcie - eliminuje skakanie
+          duration: 0,
           easing: "ease-out",
 
-          // KLUCZOWE DLA iOS: force2d prevents 3D transform artifacts
-          // iOS Safari ma problemy z matrix3d - wymuszamy 2D transforms
+          // FIX #1 & #5: force2d dla iOS/Safari + canvas dla lepszej wydajności mobilnej
           force2d: isIOS || isSafari,
+          canvas: true,
 
-          // Disable transform-origin changes dla lepszej jakości na iOS
+          // FIX #5: Optymalizacja gestów mobilnych
           disablePan: false,
           disableZoom: false,
-
-          // Exclude certain elements from panning (pins)
+          
+          // FIX #5: Lepsza responsywność na mobile - większe skoki zoomu
+          step: 0.2, // Płynniejsze kroki zoomu (20% zamiast 5%)
+          animate: true, // Krótka animacja dla płynności
+          
+          // Wyklucz pinezki z obsługi panowania
           excludeClass: "map-pin",
         });
 
-        // USUNIĘTO setTimeout - nie potrzebujemy odświeżania, bo startScale działa od razu
-        // Tylko iOS fix pozostaje ale bez delay
+        // FIX #1: iOS rendering fix
         if (isIOS) {
-          // Wymuś repaint na iOS (bez delay)
           requestAnimationFrame(() => {
             container.style.transform = container.style.transform;
+            // FIX #1: Wymuś wysoką jakość renderowania na iOS
+            container.style.webkitBackfaceVisibility = "hidden";
+            container.style.webkitPerspective = "1000";
+            container.style.webkitTransform = "translate3d(0,0,0)";
+            img.style.imageRendering = "-webkit-optimize-contrast";
           });
         }
 
         wrapper.addEventListener("wheel", this.panzoomInstance.zoomWithWheel);
 
-        // KLUCZOWE: Ustaw kursor dynamicznie
+        // Ustaw kursor dynamicznie
         this.updateCursor();
+
+        // FIX #4: Smooth boundary enforcement przy zoom
+        container.addEventListener("panzoomend", () => {
+          const scale = this.panzoomInstance.getScale();
+          // Jeśli zbyt oddalony, płynnie przywróć do minScale
+          if (scale < fitScale) {
+            this.panzoomInstance.zoom(fitScale, { animate: true });
+          }
+        });
 
         // Logika skali dla CSS (Pinezek)
         const updateScaleVar = () => {
           const s = this.panzoomInstance.getScale();
-          container.style.setProperty("--map-scale", s);
+          // KLUCZOWE: Ustaw na :root żeby CSS variable był dostępny dla wszystkich pinezek!
+          document.documentElement.style.setProperty("--map-scale", s);
+          console.log(`🎚️ Scale updated: --map-scale = ${s.toFixed(3)}`);
         };
         container.addEventListener("panzoomchange", updateScaleVar);
-        // ZMIANA: Wywołaj od razu bez delay żeby pinezki były poprawnej wielkości
         updateScaleVar();
+        console.log(`✅ Scale tracking initialized`);
 
         // Obsługa kliknięcia
         let pStartX = 0,
@@ -1711,7 +1734,7 @@
         this.renderNetworkToolbar();
         this.draw();
 
-        console.log(`✅ Panzoom ready! (iOS: ${isIOS}, force2d: ${isIOS || isSafari})`);
+        console.log(`✅ Panzoom ready! (iOS: ${isIOS}, Android: ${isAndroid}, force2d: ${isIOS || isSafari})`);
       } catch (err) {
         console.error("❌ Panzoom error:", err);
       }
@@ -1732,35 +1755,37 @@
         canvas = document.createElement("canvas");
         canvas.className = "map-paths-layer";
         
-        // KLUCZOWE FIX: Canvas musi być NAD obrazem mapy!
+        // FIX #6: Canvas musi być NAD obrazem mapy z wysokim z-index!
         canvas.style.position = "absolute";
         canvas.style.top = "0";
         canvas.style.left = "0";
-        canvas.style.zIndex = "50"; // NAD obrazem (aby rysowanie było widoczne)
+        canvas.style.zIndex = "100"; // PODWYŻSZONY z 50 do 100 (nad pinezkami które są z-index 10)
         canvas.style.pointerEvents = "none"; // Przepuszcza kliknięcia
+        canvas.style.width = "100%";
+        canvas.style.height = "100%";
         
         container.appendChild(canvas);
       }
 
-      // HIGH-DPI / Retina support dla ostrej jakości
+      // FIX #1 & #6: HIGH-DPI / Retina support dla ostrej jakości na wszystkich urządzeniach
       const dpr = window.devicePixelRatio || 1;
       canvas.width = img.naturalWidth * dpr;
       canvas.height = img.naturalHeight * dpr;
 
       // Skaluj context dla retina
-      this.ctx = canvas.getContext("2d");
+      this.ctx = canvas.getContext("2d", { alpha: true });
       this.ctx.scale(dpr, dpr);
 
-      // KLUCZOWE: Włącz wysoką jakość antyaliasingu dla ostrych linii
+      // FIX #1 & #6: Włącz wysoką jakość antyaliasingu dla ostrych linii i punktów
       this.ctx.imageSmoothingEnabled = true;
-      this.ctx.imageSmoothingQuality = "high"; // 'low' | 'medium' | 'high'
+      this.ctx.imageSmoothingQuality = "high";
 
       // CSS wymiary normalne (nie skalowane)
       canvas.style.width = img.naturalWidth + "px";
       canvas.style.height = img.naturalHeight + "px";
 
       console.log(
-        `🎨 Canvas: ${canvas.width}x${canvas.height} (DPR: ${dpr}, Quality: high, z-index: 50)`,
+        `🎨 Canvas initialized: ${canvas.width}x${canvas.height} (DPR: ${dpr}, Quality: high, z-index: 100)`,
       );
     },
 
@@ -1791,94 +1816,118 @@
       if (wrapper) wrapper.classList.remove("loading");
     },
 
-    // --- GŁÓWNA PĘTLA RYSOWANIA ---
+    // FIX #6: GŁÓWNA PĘTLA RYSOWANIA z debug logging
     draw() {
-      if (!this.ctx) return;
+      if (!this.ctx) {
+        console.warn("⚠️ draw() called but ctx is null");
+        return;
+      }
       const ctx = this.ctx;
 
-      // HIGH-DPI / Retina support - używamy img.naturalWidth już po DPR skalowaniu
       const img = Utils.$("#facility-map");
-      if (!img) return;
+      if (!img || !img.naturalWidth) {
+        console.warn("⚠️ draw() called but image not ready");
+        return;
+      }
 
       const dpr = window.devicePixelRatio || 1;
       const w = img.naturalWidth;
       const h = img.naturalHeight;
 
-      // Wyczyść canvas - KLUCZOWE: używamy canvas.width/height (z DPR), NIE natural!
-      // Canvas jest większy przez DPR, więc musimy clearować całą powierzchnię
+      // Wyczyść canvas
       ctx.clearRect(0, 0, ctx.canvas.width / dpr, ctx.canvas.height / dpr);
 
-      // DEBUG: Loguj informacje o rysowaniu
+      // FIX #6: DEBUG - Loguj zawsze w trybie edycji sieci
       if (this.mode === "edit_network") {
         console.log(
-          `🎨 draw() - Mode: ${this.mode}, Nodes: ${this.nodes.length}, Connections: ${this.connections.length}, DPR: ${dpr}`
+          `🎨 draw() - Mode: ${this.mode}, Nodes: ${this.nodes.length}, Connections: ${this.connections.length}, DPR: ${dpr}, Canvas: ${ctx.canvas.width}x${ctx.canvas.height}`
         );
       }
 
       // Oblicz współczynnik skali (Inverse Scaling)
-      // Żeby linie miały stałą grubość wizualną niezależnie od zoomu
       let scale = 1;
       if (this.panzoomInstance) {
         scale = this.panzoomInstance.getScale();
       }
-      // Zabezpieczenie przed 0
       scale = Math.max(scale, 0.001);
-      const sf = 1 / scale; // Scale Factor (np. dla scale=0.05, sf=20)
+      const sf = 1 / scale;
 
-      // 1. Rysuj całą sieć dróg
-      if (this.mode === "edit_network" || state.currentUser?.id === 1) {
-        // Połączenia - CZARNE grube linie dla widoczności
-        // Podstawowa grubość * DPR dla ostrości na Retina
-        ctx.lineWidth = (this.mode === "edit_network" ? 10 : 6) * sf * dpr;
-        ctx.strokeStyle =
-          this.mode === "edit_network"
-            ? "rgba(0, 0, 0, 0.9)"
-            : "rgba(0, 0, 0, 0.5)";
+      // FIX #6: Rysuj sieć dróg - ZAWSZE gdy są dane
+      if (this.nodes.length > 0 && (this.mode === "edit_network" || state.currentUser?.id === 1)) {
+        // FIX #3: Zmniejszone linie - połowa grubości (user request)
+        ctx.lineWidth = (this.mode === "edit_network" ? 6 : 4) * sf;
+        // FIX: POMARAŃCZOWY zamiast czarnego - widoczny na każdym zoomie!
+        ctx.strokeStyle = this.mode === "edit_network" ? "rgba(255, 140, 0, 0.95)" : "rgba(255, 165, 0, 0.8)";
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
 
-        this.connections.forEach((conn) => {
+        // FIX #6: DEBUG - Loguj każde połączenie
+        if (this.mode === "edit_network" && this.connections.length > 0) {
+          console.log(`🔗 Drawing ${this.connections.length} connections...`);
+        }
+
+        this.connections.forEach((conn, idx) => {
           const n1 = this.nodes.find((n) => n.id === conn.from);
           const n2 = this.nodes.find((n) => n.id === conn.to);
           if (n1 && n2) {
+            const x1 = (n1.x * w) / 100;
+            const y1 = (n1.y * h) / 100;
+            const x2 = (n2.x * w) / 100;
+            const y2 = (n2.y * h) / 100;
+            
             ctx.beginPath();
-            ctx.moveTo((n1.x * w) / 100, (n1.y * h) / 100);
-            ctx.lineTo((n2.x * w) / 100, (n2.y * h) / 100);
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
             ctx.stroke();
+            
+            if (this.mode === "edit_network" && idx === 0) {
+              console.log(`  Line #${idx}: (${x1.toFixed(1)}, ${y1.toFixed(1)}) -> (${x2.toFixed(1)}, ${y2.toFixed(1)})`);
+            }
           }
         });
 
-        // Węzły (tylko w trybie edycji) - DUŻE z wyraźną obwódką
+        // Węzły (tylko w trybie edycji) - BARDZO DUŻE z wyraźną obwódką
         if (this.mode === "edit_network") {
-          this.nodes.forEach((node) => {
+          console.log(`⭕ Drawing ${this.nodes.length} nodes...`);
+          
+          this.nodes.forEach((node, idx) => {
             const x = (node.x * w) / 100;
             const y = (node.y * h) / 100;
+            // FIX #3: Kropki 1/10 wielkości (user request: "z 25 → 2.5")
+            const radius = 2.5 * sf;
+            
             ctx.beginPath();
-            ctx.arc(x, y, 20 * sf * dpr, 0, Math.PI * 2); // DPR skalowanie
-            ctx.fillStyle =
-              node.id === this.selectedNodeId ? "#00FF00" : "#007AFF";
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = node.id === this.selectedNodeId ? "#00FF00" : "#007AFF";
             ctx.fill();
-            ctx.lineWidth = 4 * sf * dpr; // Gruba obwódka z DPR
-            ctx.strokeStyle = "#000"; // CZARNA obwódka
+            ctx.lineWidth = 5 * sf;
+            ctx.strokeStyle = "#000";
             ctx.stroke();
+            
+            if (idx === 0) {
+              console.log(`  Node #${idx}: (${x.toFixed(1)}, ${y.toFixed(1)}), radius: ${radius.toFixed(1)}`);
+            }
           });
         }
       }
 
-      // 2. Rysuj wyznaczoną trasę (jeśli jest)
+      // Rysuj wyznaczoną trasę (jeśli jest)
       if (this.currentRoute && this.currentRoute.length > 0) {
-        // Glow - dodajemy DPR dla ostrości
         ctx.lineCap = "round";
         ctx.lineJoin = "round";
+        
+        // Glow
         ctx.beginPath();
-        ctx.lineWidth = 15 * sf * dpr;
+        ctx.lineWidth = 15 * sf;
         ctx.strokeStyle = "rgba(0, 122, 255, 0.3)";
         this.drawPolyline(this.currentRoute, w, h);
         ctx.stroke();
 
         // Solid line
         ctx.beginPath();
-        ctx.lineWidth = 5 * sf * dpr;
+        ctx.lineWidth = 5 * sf;
         ctx.strokeStyle = "#007AFF";
-        ctx.setLineDash([10 * sf * dpr, 10 * sf * dpr]); // Dash też z DPR
+        ctx.setLineDash([10 * sf, 10 * sf]);
         this.drawPolyline(this.currentRoute, w, h);
         ctx.stroke();
         ctx.setLineDash([]);
@@ -1896,7 +1945,6 @@
     // --- OBSŁUGA EDYCJI SIECI ---
     onMapClick(e) {
       if (this.mode === "pick") {
-        // ... (stara logika pick - bez zmian) ...
         this.handlePickClick(e);
         return;
       }
@@ -1904,9 +1952,21 @@
       if (this.mode !== "edit_network") return;
 
       const img = Utils.$("#facility-map");
-      const rect = img.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 100;
-      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      const container = Utils.$("#map-container");
+      
+      // FIX: KLUCZOWE - oblicz pozycję niezależnie od zoom/pan
+      // Używamy transform matrix żeby uzyskać rzeczywiste współrzędne
+      const rect = container.getBoundingClientRect();
+      const scale = this.panzoomInstance ? this.panzoomInstance.getScale() : 1;
+      const pan = this.panzoomInstance ? this.panzoomInstance.getPan() : {x: 0, y: 0};
+      
+      // Pozycja kliknięcia względem container (uwzględnia pan)
+      const clickX = (e.clientX - rect.left - pan.x) / scale;
+      const clickY = (e.clientY - rect.top - pan.y) / scale;
+      
+      // Konwersja na procenty względem naturalnych wymiarów obrazu
+      const x = (clickX / img.naturalWidth) * 100;
+      const y = (clickY / img.naturalHeight) * 100;
 
       // Sprawdź czy kliknięto w istniejący węzeł (z tolerancją)
       // Tolerancja np. 2% szerokości mapy
@@ -2024,6 +2084,8 @@
           { x: startLoc.map_x, y: startLoc.map_y },
           { x: endLoc.map_x, y: endLoc.map_y },
         ];
+        console.log(`⚠️ No road network - drawing straight line from "${startName}" to "${endName}"`);
+        this.draw();
         return;
       }
 
@@ -2037,13 +2099,20 @@
           ...path.map((id) => this.nodes.find((n) => n.id === id)),
           { x: endLoc.map_x, y: endLoc.map_y },
         ];
+        console.log(`✅ Route calculated via Dijkstra: ${this.currentRoute.length} points`);
       } else {
         // Nie znaleziono drogi - linia prosta
         this.currentRoute = [
           { x: startLoc.map_x, y: startLoc.map_y },
           { x: endLoc.map_x, y: endLoc.map_y },
         ];
+        console.log(`⚠️ No path found via network - drawing straight line`);
       }
+      
+      // KRYTYCZNE FIX: Wywołaj draw() żeby narysować trasę!
+      // Bez tego trasa jest obliczona ale niewidoczna
+      this.draw();
+      console.log(`🎨 Route drawn on canvas from "${startName}" to "${endName}"`);
     },
 
     findNearestNode(x, y) {
@@ -2186,23 +2255,52 @@
         Toast.info("Klikaj na mapie aby dodawać punkty i łączyć je ścieżkami.");
     },
 
-    // Legacy pick handler
+    // KLIKANIE - obsługa różnych ekranów i zoomów
     handlePickClick(e) {
       const img = Utils.$("#facility-map");
+      const container = Utils.$("#map-container");
+      
+      // Pobierz aktualny stan zoom/pan
       const rect = img.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * 100;
-      const y = ((e.clientY - rect.top) / rect.height) * 100;
+      const scale = this.panzoomInstance ? this.panzoomInstance.getScale() : 1;
+      const pan = this.panzoomInstance ? this.panzoomInstance.getPan() : {x: 0, y: 0};
+      
+      // KLUCZOWE: Oblicz względem container (nie img!) bo img może być przesunięty przez transform
+      const containerRect = container.getBoundingClientRect();
+      
+      // Pozycja kliknięcia w przestrzeni container
+      const clickInContainerX = e.clientX - containerRect.left;
+      const clickInContainerY = e.clientY - containerRect.top;
+      
+      // KLUCZOWE: Uwzględnij zoom i pan
+      // Pan to przesunięcie, scale to zoom
+      const clickX = (clickInContainerX - pan.x) / scale;
+      const clickY = (clickInContainerY - pan.y) / scale;
+      
+      // Obraz ma width/height ustawione na 100% więc jego rendered size = container size (przed transform)
+      // Oblicz procenty względem oryginalnego rozmiaru kontenera (przed zoomem)
+      const containerWidth = containerRect.width / scale;
+      const containerHeight = containerRect.height / scale;
+      
+      const x = (clickX / containerWidth) * 100;
+      const y = (clickY / containerHeight) * 100;
+      
+      console.log(`🖱️ Click: screen(${e.clientX}, ${e.clientY}) -> container(${clickX.toFixed(0)}, ${clickY.toFixed(0)}) -> percent(${x.toFixed(1)}%, ${y.toFixed(1)}%) [zoom: ${scale.toFixed(2)}]`);
 
       this.tempCoords = { x, y };
       const oldTemp = Utils.$("#temp-pin");
       if (oldTemp) oldTemp.remove();
 
-      const container = Utils.$("#map-container");
+      // Temp pin z procentami
       const pin = document.createElement("div");
       pin.className = "map-pin pin-temp";
       pin.id = "temp-pin";
+      pin.style.position = "absolute";
       pin.style.left = `${x}%`;
       pin.style.top = `${y}%`;
+      pin.style.transform = "translate(-50%, -100%)";
+      pin.style.transformOrigin = "bottom center";
+      
       pin.innerHTML = `<div class="pin-icon-wrapper" style="background:var(--success)"><span>📍</span></div>`;
       container.appendChild(pin);
 
@@ -2231,20 +2329,62 @@
       /* (Kod kontrolek - taki sam jak był) */ this.renderControlsLogic();
     },
 
-    // Extracted logic to keep code clean
+    // FIX #7 CRITICAL - renderowanie pinezek
     renderPinsLogic() {
       Utils.$$(".map-pin:not(#temp-pin)").forEach((el) => el.remove());
       const container = Utils.$("#map-container");
+      const img = Utils.$("#facility-map");
+      
+      if (!img || !img.naturalWidth) {
+        console.warn("⚠️ Cannot render pins - image not loaded");
+        return;
+      }
+      
+      // NOWA FUNKCJA: W trybie show_route wyróżnij tylko punkty A i B
+      const isRouteMode = this.mode === "show_route";
+      const routeFromName = this.routeFrom;
+      const routeToName = this.routeTo;
+      
       [...state.locations, ...state.departments].forEach((loc) => {
-        if (loc.map_x != null) {
+        if (loc.map_x != null && loc.map_y != null) {
+          // Sprawdź czy to punkt A lub B trasy
+          const isRoutePoint = isRouteMode && (loc.name === routeFromName || loc.name === routeToName);
+          const isOtherPin = isRouteMode && !isRoutePoint;
+          
           const pin = document.createElement("div");
           pin.className = `map-pin ${loc.type === "department" ? "pin-dept" : "pin-loc"}`;
+          
+          // Dodaj specjalne klasy dla trasy
+          if (isRoutePoint) {
+            pin.classList.add("pin-route-highlight");
+            if (loc.name === routeFromName) pin.classList.add("pin-route-start");
+            if (loc.name === routeToName) pin.classList.add("pin-route-end");
+          }
+          if (isOtherPin) {
+            pin.classList.add("pin-dimmed");
+          }
+          
+          // FIX #7: POWRÓT DO PROCENTÓW - to działa identycznie na wszystkich urządzeniach!
+          // Procenty są relatywne do rodzica (map-container) który ma stałe wymiary
+          // Nie zależą od DPR ani rozmiaru viewport
+          pin.style.position = "absolute";
           pin.style.left = `${loc.map_x}%`;
           pin.style.top = `${loc.map_y}%`;
-          pin.innerHTML = `<div class="pin-icon-wrapper"><span>${loc.type === "department" ? "🏢" : "📍"}</span></div><div class="pin-label">${loc.name}</div>`;
+          // transform używany tylko do centrowania (względne wartości %, nie px)
+          pin.style.transform = "translate(-50%, -100%)";
+          pin.style.transformOrigin = "bottom center";
+          
+          // Ikona
+          let icon = loc.type === "department" ? "🏢" : "📍";
+          if (loc.name === routeFromName) icon = "🅰️"; // A dla startu
+          if (loc.name === routeToName) icon = "🅱️"; // B dla końca
+          
+          pin.innerHTML = `<div class="pin-icon-wrapper"><span>${icon}</span></div><div class="pin-label">${loc.name}</div>`;
           container.appendChild(pin);
         }
       });
+      
+      console.log(`📍 Rendered ${[...state.locations, ...state.departments].filter(l => l.map_x != null).length} pins (percentage-based positioning)${isRouteMode ? ' - route mode' : ''}`);
     },
 
     renderControlsLogic() {
@@ -2261,7 +2401,7 @@
     },
   };
   // =============================================
-  // 11. AUTH
+  // 13. AUTH
   // =============================================
   const Auth = {
     async init() {
@@ -2659,7 +2799,7 @@
   };
 
   // =============================================
-  // 12. DRIVER PANEL
+  // 14. DRIVER PANEL
   // =============================================
   const DriverPanel = {
     async loadTasks(silent = false) {
@@ -3738,7 +3878,7 @@
   };
 
   // =============================================
-  // 13. TASK FORM
+  // 15. TASK FORM
   // =============================================
   const TaskForm = {
     currentTaskId: null,
@@ -4249,7 +4389,7 @@
     },
   };
   // =============================================
-  // 14. ADMIN PANEL
+  // 16. ADMIN PANEL
   // =============================================
   const AdminPanel = {
     async loadTasks(silent = false) {
@@ -6198,7 +6338,7 @@
   }
 
   // =============================================
-  // 15. INIT
+  // 17. INIT
   // =============================================
   async function init() {
     console.log("🚛 TransportTracker v2.0 initializing...");
@@ -6329,7 +6469,7 @@
   }
 
   // =============================================
-  // 16. ONESIGNAL SERVICE
+  // 18. ONESIGNAL SERVICE
   // =============================================
   const OneSignalService = {
     initialized: false,
@@ -6501,7 +6641,7 @@
   };
 
   // =============================================
-  // 17. EXPORT
+  // 19. EXPORT
   // =============================================
   console.log("🛠️ Exporting modules...", { MapManager: typeof MapManager });
 
@@ -6527,7 +6667,7 @@
   };
 
   // =============================================
-  // 18. URUCHOM APLIKACJĘ
+  // 20. URUCHOM APLIKACJĘ
   // =============================================
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

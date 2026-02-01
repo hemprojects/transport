@@ -560,16 +560,16 @@ ol {
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
-  
+
   /* NOWA STRATEGIA: Priorytet dla crisp-edges WSZĘDZIE - nawet iOS */
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
   image-rendering: -moz-crisp-edges;
-  
+
   /* BARDZO SILNE filtry sharpen dla kompensacji */
   -webkit-filter: contrast(1.25) saturate(1.4) brightness(1.05);
   filter: contrast(1.25) saturate(1.4) brightness(1.05);
-  
+
   /* GPU Acceleration - KLUCZOWE dla iOS */
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
@@ -578,7 +578,7 @@ ol {
   perspective: 1000px;
   -webkit-perspective: 1000px;
   will-change: transform;
-  
+
   /* iOS Safari specyficzne - antyaliasing */
   -webkit-font-smoothing: subpixel-antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -623,7 +623,8 @@ ol {
   width: 5px;
   height: 5px;
   /* Smart Scaling: MINIMALNY wzrost przy zoomie - 0.08 zamiast 0.15 */
-  transform: translate(-50%, -100%) scale(calc((1 / var(--map-scale, 1)) * (1 + 0.08 * var(--map-scale, 1))));
+  transform: translate(-50%, -100%)
+    scale(calc((1 / var(--map-scale, 1)) * (1 + 0.08 * var(--map-scale, 1))));
   transform-origin: bottom center;
   z-index: 100;
   pointer-events: auto;
@@ -660,7 +661,7 @@ ol {
   font-weight: 600;
   font-size: 16px;
   letter-spacing: 0.5px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 
 .modal-map .modal-footer {
@@ -2502,7 +2503,6 @@ ol {
 /* REMOVED conflicting rule: .modal-map .modal-container z max-width: 95vw
    PC używa reguły z linii ~481: max-width: 45vw, height: 92vh */
 
-
 .modal-map .modal-body {
   padding: 10px;
   display: flex;
@@ -3210,7 +3210,7 @@ textarea:focus-visible {
 }
 
 /* =============================================
-   32. IOS FIXES
+   35. IOS FIXES
    ============================================= */
 /* Naprawa rozciągniętych inputów daty na iOS */
 input[type="date"],
@@ -3348,7 +3348,7 @@ input[type="date"] {
 }
 
 /* =============================================
-   25. BROWSER BANNER
+   36. BROWSER BANNER
    ============================================= */
 .browser-banner {
   background: var(--warning-bg);
@@ -3722,7 +3722,7 @@ input[type="date"] {
 }
 
 /* =============================================
-   PRINT STYLES
+   37. PRINT STYLES
    ============================================= */
 @media print {
   body * {
@@ -3863,8 +3863,8 @@ input[type="date"] {
 }
 
 /* =============================================
-   MAP SECTION - NAPRAWIONA
-============================================= */
+   38. MAP SECTION (Kompleksowe naprawy dla wszystkich urządzeń)
+   ============================================= */
 .map-wrapper {
   position: relative;
   width: 100%;
@@ -3883,7 +3883,7 @@ input[type="date"] {
   transform-origin: 0 0;
   will-change: transform;
   cursor: grab;
-  
+
   /* GPU Acceleration for smooth mobile transforms */
   -webkit-transform-style: preserve-3d;
   transform-style: preserve-3d;
@@ -3904,18 +3904,18 @@ input[type="date"] {
   user-select: none;
   -webkit-user-drag: none;
   pointer-events: auto;
-  
+
   /* CRITICAL: High quality rendering on mobile zoom */
   image-rendering: -webkit-optimize-contrast; /* iOS */
-  image-rendering: crisp-edges;               /* Standard */
-  image-rendering: high-quality;              /* Modern browsers */
-  
+  image-rendering: crisp-edges; /* Standard */
+  image-rendering: high-quality; /* Modern browsers */
+
   /* Prevent blur during transforms on iOS/Android */
   -webkit-transform: translateZ(0);
   transform: translateZ(0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
-  
+
   /* Force GPU layer for better quality */
   will-change: transform;
   -webkit-transform-style: preserve-3d;
@@ -3991,16 +3991,22 @@ input[type="date"] {
 /* Pinezki na mapie */
 .map-pin {
   position: absolute;
+  /* FIX: Pinezki małe, zmniejszają się przy zoomie (user request)
+     Przy zoom=1.0: scale = 0.3 (30%)
+     Przy zoom=2.0: scale = 0.15 (15%)
+     Przy zoom=3.0: scale = 0.1 (10%)
+     Formuła: 0.3 / zoom - pinezki zawsze widoczne, ale małe */
   transform: translate(-50%, -100%)
-    scale(calc(1 / max(var(--map-scale, 1), 0.3)));
+    scale(calc(0.3 / max(var(--map-scale, 1), 1)));
   transform-origin: bottom center;
   cursor: pointer;
   z-index: 100;
   transition:
+    transform 0.15s ease-out,
     z-index 0s,
     opacity 0.2s;
   pointer-events: auto;
-  
+
   /* GPU acceleration for crisp rendering during zoom */
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
@@ -4061,13 +4067,14 @@ input[type="date"] {
 .pin-label {
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%) scale(0.9);
+  left: 50%; /* Środek pinezki */
+  transform: translateX(-50%); /* Wyśrodkowanie */
+  transform-origin: bottom center;
   background: white;
   color: #333;
   padding: 6px 12px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 11px; /* Zmniejszony z 12px */
   font-weight: 600;
   white-space: nowrap;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
@@ -4119,6 +4126,70 @@ input[type="date"] {
   }
 }
 
+/* NOWA FUNKCJA: Route preview mode - przyciemnione i wyróżnione pinezki */
+.map-pin.pin-dimmed {
+  opacity: 0.25; /* Przyciemnij inne pinezki */
+  filter: grayscale(0.7); /* Dodatkowo odbarwienie */
+  pointer-events: none; /* Wyłącz interakcję */
+}
+
+.map-pin.pin-route-highlight {
+  z-index: 300 !important; /* Najwyżej na mapie */
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+/* Punkt START (A) - zielony */
+.map-pin.pin-route-start .pin-icon-wrapper {
+  background: var(--success);
+  border-color: white;
+  border-width: 4px;
+  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.6);
+  animation: pulse-start 2s ease-in-out infinite;
+}
+
+/* Punkt END (B) - niebieski */
+.map-pin.pin-route-end .pin-icon-wrapper {
+  background: var(--primary);
+  border-color: white;
+  border-width: 4px;
+  box-shadow: 0 8px 24px rgba(0, 122, 255, 0.6);
+  animation: pulse-end 2s ease-in-out infinite 0.5s; /* Opóźnienie dla efektu */
+}
+
+/* Animacja pulsowania punktu START */
+@keyframes pulse-start {
+  0%, 100% {
+    transform: rotate(-45deg) scale(1);
+    box-shadow: 0 8px 24px rgba(16, 185, 129, 0.6);
+  }
+  50% {
+    transform: rotate(-45deg) scale(1.15);
+    box-shadow: 0 12px 32px rgba(16, 185, 129, 0.9);
+  }
+}
+
+/* Animacja pulsowania punktu END */
+@keyframes pulse-end {
+  0%, 100% {
+    transform: rotate(-45deg) scale(1);
+    box-shadow: 0 8px 24px rgba(0, 122, 255, 0.6);
+  }
+  50% {
+    transform: rotate(-45deg) scale(1.15);
+    box-shadow: 0 12px 32px rgba(0, 122, 255, 0.9);
+  }
+}
+
+/* Etykiety dla punktów trasy zawsze widoczne */
+.map-pin.pin-route-highlight .pin-label {
+  opacity: 1 !important;
+  transform: translateX(-50%) scale(1) !important;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+
 /* Dark mode dla etykiet */
 [data-theme="dark"] .pin-label {
   background: #2c2c2e;
@@ -4153,8 +4224,8 @@ input[type="date"] {
   display: none;
 }
 /* =============================================
-   iOS SAFE AREA FIX
-============================================= */
+   39. iOS SAFE AREA FIX
+   ============================================= */
 @supports (-webkit-touch-callout: none) {
   html,
   body,
