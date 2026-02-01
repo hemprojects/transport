@@ -616,36 +616,6 @@ ol {
   -webkit-transform: translateZ(0);
 }
 
-/* Pin na mapie - Smart Scaling + GPU Accelerated */
-.map-pin {
-  position: absolute;
-  /* DRASTYCZNIE ZMNIEJSZONO: było 8px, teraz 5px - BARDZO MAŁE pinezki */
-  width: 5px;
-  height: 5px;
-  /* Smart Scaling: MINIMALNY wzrost przy zoomie - 0.08 zamiast 0.15 */
-  transform: translate(-50%, -100%)
-    scale(calc((1 / var(--map-scale, 1)) * (1 + 0.08 * var(--map-scale, 1))));
-  transform-origin: bottom center;
-  z-index: 100;
-  pointer-events: auto;
-  cursor: pointer;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
-  transition: transform 0.1s linear;
-  /* GPU Acceleration dla płynniejszych animacji */
-  will-change: transform;
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-/* Etykiety pinezek - Crisp Text Rendering */
-.map-pin-label {
-  /* Jeśli są etykiety tekstowe */
-  font-smooth: always;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
-
 /* Loading overlay - IMPROVED */
 .map-wrapper.loading::after {
   content: "⏳ Ładowanie mapy...";
@@ -3893,6 +3863,45 @@ input[type="date"] {
   perspective: 1000;
 }
 
+/* Map Loader - pokazywany podczas ładowania */
+.map-loader {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 10000;
+  transition: opacity 0.3s ease-out;
+}
+
+.map-loader.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.loader-spinner {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(255, 255, 255, 0.2);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.loader-text {
+  color: white;
+  font-size: 16px;
+  font-weight: 600;
+  text-align: center;
+}
+
+
 .map-container:active {
   cursor: grabbing;
 }
@@ -3991,13 +4000,8 @@ input[type="date"] {
 /* Pinezki na mapie */
 .map-pin {
   position: absolute;
-  /* FIX: Pinezki małe, zmniejszają się przy zoomie (user request)
-     Przy zoom=1.0: scale = 0.3 (30%)
-     Przy zoom=2.0: scale = 0.15 (15%)
-     Przy zoom=3.0: scale = 0.1 (10%)
-     Formuła: 0.3 / zoom - pinezki zawsze widoczne, ale małe */
-  transform: translate(-50%, -100%)
-    scale(calc(0.3 / max(var(--map-scale, 1), 1)));
+  /* FIX: Pinezki zmniejszone o 50% względem poprzedniego (0.2 -> 0.1) */
+  transform: translate(-50%, -100%) scale(clamp(0.05, calc(0.1 / var(--map-scale, 1)), 0.3));
   transform-origin: bottom center;
   cursor: pointer;
   z-index: 100;
@@ -4007,12 +4011,12 @@ input[type="date"] {
     opacity 0.2s;
   pointer-events: auto;
 
-  /* GPU acceleration for crisp rendering during zoom */
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  will-change: transform;
-  -webkit-transform-style: preserve-3d;
-  transform-style: preserve-3d;
+  /* Remove 3d rendering to prevent blurriness on zoom */
+  /* -webkit-backface-visibility: hidden; */
+  /* backface-visibility: hidden; */
+  will-change: transform; 
+  /* -webkit-transform-style: preserve-3d; */
+  /* transform-style: preserve-3d; */
 }
 
 .map-pin:hover,
@@ -4067,8 +4071,8 @@ input[type="date"] {
 .pin-label {
   position: absolute;
   bottom: calc(100% + 8px);
-  left: 50%; /* Środek pinezki */
-  transform: translateX(-50%); /* Wyśrodkowanie */
+  left: 50%; /* Wyśrodkowanie względem środka pinezki */
+  transform: translateX(-50%); /* Pełne wyśrodkowanie chmurki */
   transform-origin: bottom center;
   background: white;
   color: #333;

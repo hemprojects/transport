@@ -1512,7 +1512,8 @@
         return;
       }
 
-      this.hideLoading();
+      // REMOVED EARLY HIDE LOADING
+      // this.hideLoading();
 
       // Toggle edit-mode class for cursor change
       if (this.mode === "edit_network") {
@@ -1554,6 +1555,10 @@
         wrapper.style.width = "auto"; // Szerokość wyniknie z ratio
 
         // Wymuś przeliczenie layoutu modala
+        // FIX: Prevent blinking - hide immediately without transition
+        container.style.transition = "none";
+        container.style.opacity = "0";
+        
         container.style.display = "none";
         container.offsetHeight; // reflow
         container.style.display = "block";
@@ -1598,18 +1603,19 @@
             `🎯 FitScale: ${fitScale.toFixed(3)}, InitialZoom: ${initialZoom.toFixed(3)} (1.2x)`
           );
           
-          // FIX #6/#2: Ukryj mapę przed setupPanzoom - loader widoczny dłużej
-          container.style.opacity = "0";
-          container.style.transition = "opacity 0.6s ease-in";
+          // FIX: Używamy Overlay loadera (this.showLoading) zamiast opacity na container
+          // Container ma opacity 0 tylko dla smooth fade-in
           
-          this.setupPanzoom(wrapper, container, img, fitScale, initialZoom);
+          this.setupPanzoom(wrapper, container, img, fitScale);
           
-          // FIX #6/#2: Czekaj dłużej przed pokazaniem mapy (Android potrzebuje więcej czasu)
-          setTimeout(() => {
+          // FIX: Enable transition and fade in
+          requestAnimationFrame(() => {
+            container.style.transition = "opacity 0.6s ease-in";
             container.style.opacity = "1";
+            
             // Ukryj loader dopiero po pełnym fade-in
             setTimeout(() => this.hideLoading(), 600);
-          }, 300);
+          });
         };
 
         requestAnimationFrame(waitForLayout);
@@ -1624,7 +1630,7 @@
       img.src = `${baseSrc}?t=${timestamp}`;
     },
 
-    setupPanzoom(wrapper, container, img, fitScale, initialZoom) {
+    setupPanzoom(wrapper, container, img, fitScale) {
       try {
         // Wykryj iOS dla specjalnych optymalizacji
         const isIOS =
@@ -1633,7 +1639,10 @@
           /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
         const isAndroid = /Android/i.test(navigator.userAgent);
 
-        // FIX #2: Startujemy od pełnego widoku (fitScale) bez animacji
+        // FIX #3: Simplified Zoom Logic
+        // initialZoom = 1.2x fitScale (calculated earlier in initializeMap but let's re-calc or just use fitScale)
+        // Let's stick to fitScale as base, but zoom slightly if user wants.
+        // Actually best UX is start at fitScale so whole map is visible.
         const startZoom = fitScale;
 
         this.panzoomInstance = Panzoom(container, {
@@ -1642,6 +1651,7 @@
           // FIX #4: MinScale = fitScale (nie 0.8x) - zapobiega przeskakiwaniu przy oddalaniu
           minScale: fitScale,
           // FIX #2: Start bez zoomu (pełny widok) - zapobiega skokowi
+          // startScale: startZoom, // FIX: Use explicit startScale
           startScale: startZoom,
           startX: 0,
           startY: 0,
@@ -1700,10 +1710,11 @@
           const s = this.panzoomInstance.getScale();
           // KLUCZOWE: Ustaw na :root żeby CSS variable był dostępny dla wszystkich pinezek!
           document.documentElement.style.setProperty("--map-scale", s);
-          console.log(`🎚️ Scale updated: --map-scale = ${s.toFixed(3)}`);
+          // console.log(`🎚️ Scale updated: --map-scale = ${s.toFixed(3)}`);
         };
         container.addEventListener("panzoomchange", updateScaleVar);
-        updateScaleVar();
+        // FIX #10: Force update immediately with startZoom to ensure pins are sized correctly from frame 1
+        document.documentElement.style.setProperty("--map-scale", startZoom);
         console.log(`✅ Scale tracking initialized`);
 
         // Obsługa kliknięcia
@@ -1739,7 +1750,7 @@
         console.error("❌ Panzoom error:", err);
       }
 
-      this.hideLoading();
+      // this.hideLoading(); // Moved to initializeMap timeout for smoother transition
       this.isInitialized = true;
       console.groupEnd();
     },
@@ -1767,16 +1778,19 @@
         container.appendChild(canvas);
       }
 
-      // FIX #1 & #6: HIGH-DPI / Retina support dla ostrej jakości na wszystkich urządzeniach
+      // FIX #1 & #6: HIGH-DPI / Retina support dla ostrej jakości (2x multiplier)
+      // Trik: Zwiększ rozdzielczość canvas 2x ponad DPR, aby przy zoomie wyglądało ostro
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = img.naturalWidth * dpr;
-      canvas.height = img.naturalHeight * dpr;
+      const superRes = 2; 
+      canvas.width = img.naturalWidth * dpr * superRes;
+      canvas.height = img.naturalHeight * dpr * superRes;
 
-      // Skaluj context dla retina
+      // Skaluj context dla retina + superRes
       this.ctx = canvas.getContext("2d", { alpha: true });
-      this.ctx.scale(dpr, dpr);
+      this.ctx.scale(dpr * superRes, dpr * superRes);
 
       // FIX #1 & #6: Włącz wysoką jakość antyaliasingu dla ostrych linii i punktów
+      this.ctx.imageSmoothingEnabled = false; // Pixel-perfect rendering for vectors often looks sharper with false if drawing straight lines, but lets keep true for anti-aliasing.
       this.ctx.imageSmoothingEnabled = true;
       this.ctx.imageSmoothingQuality = "high";
 
@@ -1812,6 +1826,10 @@
     },
 
     hideLoading() {
+      // 1. Remove overlay
+      Utils.hide(".map-loading-overlay");
+      
+      // 2. Remove CSS class from wrapper (if used)
       const wrapper = document.querySelector(".map-wrapper");
       if (wrapper) wrapper.classList.remove("loading");
     },
@@ -1830,12 +1848,14 @@
         return;
       }
 
-      const dpr = window.devicePixelRatio || 1;
       const w = img.naturalWidth;
       const h = img.naturalHeight;
 
-      // Wyczyść canvas
-      ctx.clearRect(0, 0, ctx.canvas.width / dpr, ctx.canvas.height / dpr);
+      const dpr = window.devicePixelRatio || 1;
+      const superRes = 2; // Match initCanvas
+      
+      // Wyczyść canvas (uwzględniając scale)
+      ctx.clearRect(0, 0, ctx.canvas.width / (dpr * superRes), ctx.canvas.height / (dpr * superRes));
 
       // FIX #6: DEBUG - Loguj zawsze w trybie edycji sieci
       if (this.mode === "edit_network") {
@@ -1854,8 +1874,8 @@
 
       // FIX #6: Rysuj sieć dróg - ZAWSZE gdy są dane
       if (this.nodes.length > 0 && (this.mode === "edit_network" || state.currentUser?.id === 1)) {
-        // FIX #3: Zmniejszone linie - połowa grubości (user request)
-        ctx.lineWidth = (this.mode === "edit_network" ? 6 : 4) * sf;
+        // FIX #3: Zmniejszone linie - o połowę (3px edit, 2px view)
+        ctx.lineWidth = (this.mode === "edit_network" ? 3 : 2) * sf;
         // FIX: POMARAŃCZOWY zamiast czarnego - widoczny na każdym zoomie!
         ctx.strokeStyle = this.mode === "edit_network" ? "rgba(255, 140, 0, 0.95)" : "rgba(255, 165, 0, 0.8)";
         ctx.lineCap = "round";
@@ -1893,14 +1913,14 @@
           this.nodes.forEach((node, idx) => {
             const x = (node.x * w) / 100;
             const y = (node.y * h) / 100;
-            // FIX #3: Kropki 1/10 wielkości (user request: "z 25 → 2.5")
-            const radius = 2.5 * sf;
+            // FIX #3: Kropki mniejsze o połowę (2.5 -> 1.5)
+            const radius = 1.5 * sf;
             
             ctx.beginPath();
             ctx.arc(x, y, radius, 0, Math.PI * 2);
             ctx.fillStyle = node.id === this.selectedNodeId ? "#00FF00" : "#007AFF";
             ctx.fill();
-            ctx.lineWidth = 5 * sf;
+            ctx.lineWidth = 2 * sf; // was 5
             ctx.strokeStyle = "#000";
             ctx.stroke();
             
@@ -1951,30 +1971,29 @@
 
       if (this.mode !== "edit_network") return;
 
+      // FIX: SIMPLIFIED Coordinate Calculation
+      // Always calculate relative to the IMAGE element, which carries the transform
       const img = Utils.$("#facility-map");
-      const container = Utils.$("#map-container");
+      const rect = img.getBoundingClientRect();
       
-      // FIX: KLUCZOWE - oblicz pozycję niezależnie od zoom/pan
-      // Używamy transform matrix żeby uzyskać rzeczywiste współrzędne
-      const rect = container.getBoundingClientRect();
-      const scale = this.panzoomInstance ? this.panzoomInstance.getScale() : 1;
-      const pan = this.panzoomInstance ? this.panzoomInstance.getPan() : {x: 0, y: 0};
+      // Calculate position relative to the image's top-left corner (in screen pixels)
+      const relX = e.clientX - rect.left;
+      const relY = e.clientY - rect.top;
       
-      // Pozycja kliknięcia względem container (uwzględnia pan)
-      const clickX = (e.clientX - rect.left - pan.x) / scale;
-      const clickY = (e.clientY - rect.top - pan.y) / scale;
-      
-      // Konwersja na procenty względem naturalnych wymiarów obrazu
-      const x = (clickX / img.naturalWidth) * 100;
-      const y = (clickY / img.naturalHeight) * 100;
+      // Convert to percentage of the CURRENT rendered size (rect.width/height)
+      // This works perfectly regardless of zoom/pan because rect matches what the user sees
+      const x = (relX / rect.width) * 100;
+      const y = (relY / rect.height) * 100;
 
       // Sprawdź czy kliknięto w istniejący węzeł (z tolerancją)
       // Tolerancja np. 2% szerokości mapy
       const tolerance = 2;
+      // FIX: Use natural aspect ratio instead of rect
+      const aspectRatio = img.naturalWidth / img.naturalHeight;
       const clickedNode = this.nodes.find(
         (n) =>
           Math.abs(n.x - x) < tolerance &&
-          Math.abs(n.y - y) < tolerance * (rect.width / rect.height),
+          Math.abs(n.y - y) < tolerance * aspectRatio,
       );
 
       if (clickedNode) {
@@ -2016,8 +2035,9 @@
           });
           
           if (nearest) {
-            this.toggleConnection(nearest.id, newNodeId);
-            console.log(`🔗 Auto-connected to nearest #${nearest.id}`);
+            // FIX: Disable auto-connect to nearest for now, as it confuses users (creates lines from far away)
+            // this.toggleConnection(nearest.id, newNodeId);
+            // console.log(`🔗 Auto-connected to nearest #${nearest.id}`);
           }
         }
         this.selectedNodeId = newNodeId;
@@ -2257,35 +2277,18 @@
 
     // KLIKANIE - obsługa różnych ekranów i zoomów
     handlePickClick(e) {
+      // FIX: SIMPLIFIED Coordinate Calculation for Picking
       const img = Utils.$("#facility-map");
       const container = Utils.$("#map-container");
-      
-      // Pobierz aktualny stan zoom/pan
       const rect = img.getBoundingClientRect();
-      const scale = this.panzoomInstance ? this.panzoomInstance.getScale() : 1;
-      const pan = this.panzoomInstance ? this.panzoomInstance.getPan() : {x: 0, y: 0};
       
-      // KLUCZOWE: Oblicz względem container (nie img!) bo img może być przesunięty przez transform
-      const containerRect = container.getBoundingClientRect();
+      const relX = e.clientX - rect.left;
+      const relY = e.clientY - rect.top;
       
-      // Pozycja kliknięcia w przestrzeni container
-      const clickInContainerX = e.clientX - containerRect.left;
-      const clickInContainerY = e.clientY - containerRect.top;
+      const x = (relX / rect.width) * 100;
+      const y = (relY / rect.height) * 100;
       
-      // KLUCZOWE: Uwzględnij zoom i pan
-      // Pan to przesunięcie, scale to zoom
-      const clickX = (clickInContainerX - pan.x) / scale;
-      const clickY = (clickInContainerY - pan.y) / scale;
-      
-      // Obraz ma width/height ustawione na 100% więc jego rendered size = container size (przed transform)
-      // Oblicz procenty względem oryginalnego rozmiaru kontenera (przed zoomem)
-      const containerWidth = containerRect.width / scale;
-      const containerHeight = containerRect.height / scale;
-      
-      const x = (clickX / containerWidth) * 100;
-      const y = (clickY / containerHeight) * 100;
-      
-      console.log(`🖱️ Click: screen(${e.clientX}, ${e.clientY}) -> container(${clickX.toFixed(0)}, ${clickY.toFixed(0)}) -> percent(${x.toFixed(1)}%, ${y.toFixed(1)}%) [zoom: ${scale.toFixed(2)}]`);
+      console.log(`🖱️ Click Fixed: screen(${e.clientX},${e.clientY}) -> local(${relX.toFixed(1)},${relY.toFixed(1)}) -> %(${x.toFixed(1)},${y.toFixed(1)})`);
 
       this.tempCoords = { x, y };
       const oldTemp = Utils.$("#temp-pin");
@@ -2317,10 +2320,27 @@
 
     // Helpers
     showLoading() {
-      Utils.show(".map-loading-overlay");
+      let overlay = document.querySelector(".map-loading-overlay");
+      if (!overlay) {
+        const wrapper = document.querySelector(".map-wrapper");
+        if (wrapper) {
+          overlay = document.createElement("div");
+          overlay.className = "map-loading-overlay";
+          overlay.innerHTML = '<div class="map-loading-spinner"></div><div>Ładowanie mapy...</div>';
+          wrapper.appendChild(overlay);
+        }
+      }
+      if (overlay) {
+          overlay.style.display = "flex";
+          // Utils.show might rely on existing classes, use direct style to be sure
+          // Utils.show(".map-loading-overlay"); 
+      }
     },
     hideLoading() {
-      Utils.hide(".map-loading-overlay");
+      const overlay = document.querySelector(".map-loading-overlay");
+      if (overlay) {
+          overlay.style.display = "none";
+      }
     },
     renderPins() {
       /* (Kod renderowania pinezek - taki sam jak był) */ this.renderPinsLogic();
