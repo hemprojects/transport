@@ -1451,10 +1451,33 @@
       // Konfiguracja UI
       if (mode === "pick") {
         this.targetLocationId = data;
+        
+        // FIX: Cleanup old temp pin FIRST
+        const oldTemp = Utils.$("#temp-pin");
+        if (oldTemp) oldTemp.remove();
+        this.tempCoords = null;
+
         if (titleEl)
           titleEl.textContent = "📍 Zaznacz lokalizację: Kliknij na mapie";
         Utils.show(saveBtn);
-        if (saveBtn) saveBtn.disabled = true;
+        
+        // FIX: Check if we are editing an existing location (passed as ID or object)
+        // If data is an ID, find the location object
+        let existingLoc = null;
+        if (typeof data === 'number' || typeof data === 'string') {
+           existingLoc = [...state.locations, ...state.departments].find(l => l.id == data);
+        } else if (typeof data === 'object') {
+           existingLoc = data;
+        }
+
+        // If existing location has coordinates, pre-populate temp pin!
+        if (existingLoc && existingLoc.map_x != null && existingLoc.map_y != null) {
+          this.tempCoords = { x: existingLoc.map_x, y: existingLoc.map_y };
+          // Enable save button immediately as we have a valid pos
+          if (saveBtn) saveBtn.disabled = false;
+        } else {
+          if (saveBtn) saveBtn.disabled = true;
+        }
       } else if (mode === "edit_network") {
         if (titleEl) titleEl.textContent = "🔧 Edycja sieci dróg";
         Utils.hide(saveBtn);
@@ -1606,6 +1629,7 @@
           // FIX: Używamy Overlay loadera (this.showLoading) zamiast opacity na container
           // Container ma opacity 0 tylko dla smooth fade-in
           
+          this.initCanvas(container, img);
           this.setupPanzoom(wrapper, container, img, fitScale);
           
           // FIX: Enable transition and fade in
@@ -1613,6 +1637,11 @@
             container.style.transition = "opacity 0.6s ease-in";
             container.style.opacity = "1";
             
+            // FIX: If we have pre-populated temp coords, render the temp pin NOW
+            if (this.mode === "pick" && this.tempCoords) {
+               this.renderTempPin(this.tempCoords.x, this.tempCoords.y);
+            }
+
             // Ukryj loader dopiero po pełnym fade-in
             setTimeout(() => this.hideLoading(), 600);
           });
@@ -1766,14 +1795,17 @@
         canvas = document.createElement("canvas");
         canvas.className = "map-paths-layer";
         
-        // FIX #6: Canvas musi być NAD obrazem mapy z wysokim z-index!
+        // FIX #6: Canvas musi być NAD obrazem mapy (z-index 1) ale POD pinezkami (z-index 100)
         canvas.style.position = "absolute";
         canvas.style.top = "0";
         canvas.style.left = "0";
-        canvas.style.zIndex = "100"; // PODWYŻSZONY z 50 do 100 (nad pinezkami które są z-index 10)
-        canvas.style.pointerEvents = "none"; // Przepuszcza kliknięcia
+        canvas.style.zIndex = "50"; // Zmienione z 100 na 50
+        canvas.style.pointerEvents = "none";
         canvas.style.width = "100%";
         canvas.style.height = "100%";
+        // FIX: Ensure visibility
+        canvas.style.display = "block";
+        canvas.style.opacity = "1";
         
         container.appendChild(canvas);
       }
@@ -1787,6 +1819,8 @@
 
       // Skaluj context dla retina + superRes
       this.ctx = canvas.getContext("2d", { alpha: true });
+      // FIX: Reset transform to prevent cumulative scaling on re-init
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
       this.ctx.scale(dpr * superRes, dpr * superRes);
 
       // FIX #1 & #6: Włącz wysoką jakość antyaliasingu dla ostrych linii i punktów
@@ -2289,11 +2323,15 @@
       const y = (relY / rect.height) * 100;
       
       console.log(`🖱️ Click Fixed: screen(${e.clientX},${e.clientY}) -> local(${relX.toFixed(1)},${relY.toFixed(1)}) -> %(${x.toFixed(1)},${y.toFixed(1)})`);
+      this.renderTempPin(x, y);
+    },
 
+    renderTempPin(x, y) {
       this.tempCoords = { x, y };
       const oldTemp = Utils.$("#temp-pin");
       if (oldTemp) oldTemp.remove();
 
+      const container = Utils.$("#map-container");
       // Temp pin z procentami
       const pin = document.createElement("div");
       pin.className = "map-pin pin-temp";
@@ -2368,8 +2406,15 @@
       [...state.locations, ...state.departments].forEach((loc) => {
         if (loc.map_x != null && loc.map_y != null) {
           // Sprawdź czy to punkt A lub B trasy
+          // Sprawdź czy to punkt A lub B trasy
           const isRoutePoint = isRouteMode && (loc.name === routeFromName || loc.name === routeToName);
           const isOtherPin = isRouteMode && !isRoutePoint;
+          
+          // FIX: HIDE original pin if we are currently editing it!
+          // We use loose comparison (==) because IDs might be string vs number
+          if (this.mode === "pick" && this.targetLocationId == loc.id) {
+            return; // Skip rendering this pin, as the GREEN TEMP PIN will take its place
+          }
           
           const pin = document.createElement("div");
           pin.className = `map-pin ${loc.type === "department" ? "pin-dept" : "pin-loc"}`;

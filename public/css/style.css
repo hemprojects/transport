@@ -4000,8 +4000,13 @@ input[type="date"] {
 /* Pinezki na mapie */
 .map-pin {
   position: absolute;
-  /* FIX: Pinezki zmniejszone o 50% względem poprzedniego (0.2 -> 0.1) */
-  transform: translate(-50%, -100%) scale(clamp(0.05, calc(0.1 / var(--map-scale, 1)), 0.3));
+  /* FIX: Base size is now 18px (50% of orig). 
+     Scale: Keep normal 1.0 at high zoom, shrink at low zoom.
+     clamp(0.5, ..., 1.5) ensures it doesn't get microscopic or huge relative to the new small base. */
+  /* FIX: Align tip (diamond bottom) with coordinate. 
+     Translate Y -120% lifts it slightly so the bottom tip of the rotated square hits the point.
+     Scale: Reduced base factor to 0.25 to make them smaller on zoom. */
+  transform: translate(-50%, -120%) scale(clamp(0.4, calc(0.25 / var(--map-scale, 1)), 1.5));
   transform-origin: bottom center;
   cursor: pointer;
   z-index: 100;
@@ -4026,16 +4031,16 @@ input[type="date"] {
 }
 
 .pin-icon-wrapper {
-  width: 36px;
-  height: 36px;
+  width: 18px; /* Was 36px */
+  height: 18px; /* Was 36px */
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--danger);
-  border: 3px solid white;
+  border: 1.5px solid white; /* Was 3px */
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); /* Reduced shadow */
   transition:
     transform 0.2s,
     box-shadow 0.2s;
@@ -4043,7 +4048,7 @@ input[type="date"] {
 
 .pin-icon-wrapper span {
   transform: rotate(45deg);
-  font-size: 16px;
+  font-size: 9px; /* Was 16px */
 }
 
 /* Pinezka działu (kwadratowa) */
@@ -4147,8 +4152,8 @@ input[type="date"] {
 .map-pin.pin-route-start .pin-icon-wrapper {
   background: var(--success);
   border-color: white;
-  border-width: 4px;
-  box-shadow: 0 8px 24px rgba(16, 185, 129, 0.6);
+  border-width: 2px; /* Was 4px */
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.6);
   animation: pulse-start 2s ease-in-out infinite;
 }
 
@@ -4156,8 +4161,8 @@ input[type="date"] {
 .map-pin.pin-route-end .pin-icon-wrapper {
   background: var(--primary);
   border-color: white;
-  border-width: 4px;
-  box-shadow: 0 8px 24px rgba(0, 122, 255, 0.6);
+  border-width: 2px; /* Was 4px */
+  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.6);
   animation: pulse-end 2s ease-in-out infinite 0.5s; /* Opóźnienie dla efektu */
 }
 
