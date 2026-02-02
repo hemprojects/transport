@@ -603,20 +603,21 @@ ol {
 
 /* PC Optimization for Map Modal - Large & Centered */
 @media (min-width: 768px) {
-  #modal-map {
-    display: flex !important;
+  #modal-map:not(.hidden) {
+    display: flex;
     justify-content: center;
     align-items: center;
     backdrop-filter: blur(5px);
   }
+
 
   #modal-map .modal-container {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
     box-shadow: 0 20px 50px rgba(0,0,0,0.5);
     border-radius: 16px;
-    width: 70vw !important;
-    max-width: 900px !important;
+    width: 40vw !important;
+    max-width: 550px !important;
     height: 85vh !important;
     display: flex;
     flex-direction: column;
@@ -672,9 +673,6 @@ ol {
 #map-container.loaded {
   opacity: 1;
 }
-
-
-
 
 /* Canvas layer dla sieci dróg - High-DPI Ready */
 .map-paths-layer {
@@ -4096,21 +4094,24 @@ input[type="date"] {
 }
 
 .pin-icon-wrapper {
-  width: 24px; /* Increased from 18px */
-  height: 24px; /* Increased from 18px */
+  width: 24px; 
+  height: 24px; 
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--danger);
-  border: 2px solid white; /* Thicker border */
+  background-color: var(--danger); /* Fallback */
+  border: 2px solid white; 
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5); /* Bolder shadow */
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6); 
   transition:
     transform 0.2s,
     box-shadow 0.2s;
   z-index: 2;
+  opacity: 1 !important; /* Force solid */
+  filter: contrast(1.2) brightness(1.1); /* Make it pop */
 }
+
 
 .pin-icon-wrapper span {
   transform: rotate(45deg);

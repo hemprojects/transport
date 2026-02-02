@@ -1400,6 +1400,32 @@
   /* =========================================
      MAP MANAGER (LEAFLET.JS IMPLEMENTATION)
      ========================================= */
+
+  // Helper for Dijkstra
+  class PriorityQueue {
+    constructor() {
+      this.items = [];
+    }
+    enqueue(element, priority) {
+      const qElement = { element, priority };
+      let added = false;
+      for (let i = 0; i < this.items.length; i++) {
+        if (this.items[i].priority > qElement.priority) {
+          this.items.splice(i, 0, qElement);
+          added = true;
+          break;
+        }
+      }
+      if (!added) this.items.push(qElement);
+    }
+    dequeue() {
+      return this.items.shift();
+    }
+    isEmpty() {
+      return this.items.length === 0;
+    }
+  }
+
   const MapManager = {
     mode: "view", // 'view' | 'pick' | 'edit_network' | 'show_route'
     targetLocationId: null,
@@ -1652,7 +1678,7 @@
     renderPins() {
       this.markersLayer.clearLayers();
       
-      const createIcon = (color, label, type) => {
+      const createIcon = (color, label, type, extraStyle = '') => {
         // Adjust style based on type
         const isDept = type === 'department';
         const wrapperClass = isDept ? 'pin-dept' : '';
@@ -1661,7 +1687,7 @@
         return L.divIcon({
           className: 'custom-pin-icon',
           html: `
-            <div class="map-pin ${wrapperClass}" style="position: relative; transform: none; left: 0; top: 0;">
+            <div class="map-pin ${wrapperClass}" style="position: relative; transform: none; left: 0; top: 0; ${extraStyle}">
               <div class="pin-icon-wrapper" style="background-color: ${color};">
                 <span>${iconChar}</span>
               </div>
@@ -1676,10 +1702,25 @@
       // Renderuj lokalizacje
       [...state.locations, ...state.departments].forEach(loc => {
          if (loc.map_x != null && loc.map_y != null) {
-            const color = loc.type === 'location' ? 'var(--primary)' : 'var(--accent)';
+            let color = loc.type === 'location' ? 'var(--primary)' : 'var(--accent)';
+            
+            // Check if we are in route mode to dim unrelated pins
+            let dimStyle = '';
+            if ((this.mode === 'show_route' || this.mode === 'view_task') && this.routeFrom && this.routeTo) {
+               if (loc.name !== this.routeFrom && loc.name !== this.routeTo) {
+                   // Dim this pin
+                   dimStyle = 'opacity: 0.3; filter: grayscale(100%); pointer-events: none;';
+               } else {
+                   // Highlight this pin
+                   color = 'var(--success)';
+                   dimStyle = 'z-index: 1000 !important; transform: scale(1.2);';
+               }
+            }
+
             // FIX: Use percentToLeaflet
             const marker = L.marker(this.percentToLeaflet(loc.map_x, loc.map_y), {
-                icon: createIcon(color, loc.name, loc.type)
+                icon: createIcon(color, loc.name, loc.type, dimStyle),
+                zIndexOffset: (loc.name === this.routeFrom || loc.name === this.routeTo) ? 1000 : 0
             });
             
             // Add click handler (e.g., for routing or info)
@@ -1879,18 +1920,40 @@
       }
 
       // 2. Uruchom Dijkstrę
-      const path = this.runDijkstra(startNode, endNode);
-      if (path) {
-         // FIX: Use percentToLeaflet
+      let path = null;
+      try {
+          if (typeof PriorityQueue === 'undefined') {
+              console.error("PriorityQueue missing!");
+          } else {
+             path = this.runDijkstra(startNode, endNode);
+          }
+      } catch(e) {
+          console.error("Dijkstra error:", e);
+      }
+      
+      if (path && path.length > 0) {
+         // Found valid network path
          const latlngs = [
             this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
             ...path.map(n => this.percentToLeaflet(n.x, n.y)),
             this.percentToLeaflet(endLoc.map_x, endLoc.map_y)
          ];
          
-         L.polyline(latlngs, { color: 'blue', weight: 5, opacity: 0.7 }).addTo(this.routeLayer);
+         L.polyline(latlngs, { color: '#007aff', weight: 5, opacity: 0.8 }).addTo(this.routeLayer);
+         
+         // Add distance label?
+         const totalDist = path.length * 5; // Rough estimate
+         // Toast.info(`Znaleziono trasę`);
       } else {
-        Toast.error("Nie znaleziono trasy");
+        // Fallback: Straight line (dashed)
+        console.warn("⚠️ No path found - fallback straight line");
+        
+        L.polyline([
+          this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
+          this.percentToLeaflet(endLoc.map_x, endLoc.map_y)
+        ], { color: '#ff9500', dashArray: '10, 10', weight: 3, opacity: 0.6 }).addTo(this.routeLayer);
+        
+        if (!path) Toast.warning("Brak połączenia w sieci dróg - pokazuję linię prostą");
       }
     },
 
@@ -2012,11 +2075,9 @@
             return;
         }
 
-        if (target.type === 'department') {
-            await API.updateDepartment(target.id, payload);
-        } else {
-            await API.updateLocation(target.id, payload);
-        }
+        // Both locations and departments use the same update endpoint in this app
+        await API.updateLocation(target.id, payload);
+
 
         Toast.success("Lokalizacja zaktualizowana");
         
@@ -3501,21 +3562,19 @@
     openMapForTask(taskId) {
       Modal.close("modal-task-detail");
       API.getTask(taskId).then((task) => {
-        MapManager.mode = "view_task";
-        MapManager.currentTask = task;
-
-        Modal.open("modal-map");
-        MapManager.initPanzoom();
-
-        setTimeout(() => {
-          if (task.location_from) {
-            const l = [...state.locations, ...state.departments].find(
-              (x) => x.name === task.location_from,
-            );
-            if (l && MapManager.focusOnLocation)
-              MapManager.focusOnLocation(l.id);
-          }
-        }, 500);
+        // Determine start/end from task data
+        let from = task.location_from;
+        let to = task.location_to;
+        
+        // Handle specialized types
+        if (task.task_type === 'unloading') {
+            to = task.department;
+        } else if (task.task_type === 'loading') {
+            from = task.department;
+        }
+        
+        // Use the new standard method
+        MapManager.open("show_route", { from, to });
       });
     },
 
