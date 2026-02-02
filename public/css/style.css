@@ -475,12 +475,11 @@ ol {
 /* PC - Modal dopasowany do rozmiaru mapy (WIĘKSZY dla lepszego widoku) */
 @media (min-width: 1024px) {
   .modal-map .modal-container {
-    /* ZWIĘKSZONO: 45vw→60vw dla większej mapy, 92vh→96vh dla max wysokości */
-    width: auto;
-    min-width: 400px;
-    max-width: 60vw; /* Większy modal = większa mapa */
-    height: 96vh; /* Prawie pełna wysokość ekranu */
-    max-height: 96vh;
+    width: 90vw;
+    max-width: 1200px; /* Stała maksymalna szerokość na PC */
+    height: 90vh;
+    max-height: 900px; /* Ogranicz wysokość, żeby nie zajmowało całego pionu */
+    margin: auto; /* Wyśrodkowanie */
   }
 }
 
@@ -601,6 +600,81 @@ ol {
     filter: contrast(1.35) saturate(1.6) brightness(1.08);
   }
 }
+
+/* PC Optimization for Map Modal - Large & Centered */
+@media (min-width: 768px) {
+  #modal-map {
+    display: flex !important;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(5px);
+  }
+
+  #modal-map .modal-container {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    border-radius: 16px;
+    width: 70vw !important;
+    max-width: 900px !important;
+    height: 85vh !important;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  #modal-map .modal-header {
+    flex-shrink: 0;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+  }
+
+  #modal-map .modal-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+    background: #000;
+  }
+  
+  #map-container {
+    flex: 1;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  #modal-map .modal-footer {
+     flex-shrink: 0;
+     border-top: 1px solid var(--border-color);
+     background: var(--bg-secondary);
+  }
+
+  #modal-map .section-desc {
+    display: block;
+    width: 100%;
+    padding: 12px 16px;
+    margin: 0;
+    background: var(--bg-secondary);
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    box-sizing: border-box;
+  }
+
+}
+
+/* Global Smooth Loading Fade */
+#map-container {
+  opacity: 0;
+  transition: opacity 0.6s ease-in-out;
+}
+#map-container.loaded {
+  opacity: 1;
+}
+
+
+
 
 /* Canvas layer dla sieci dróg - High-DPI Ready */
 .map-paths-layer {
@@ -3850,17 +3924,10 @@ input[type="date"] {
   position: absolute;
   top: 0;
   left: 0;
-  transform-origin: 0 0;
-  will-change: transform;
-  cursor: grab;
-
-  /* GPU Acceleration for smooth mobile transforms */
-  -webkit-transform-style: preserve-3d;
-  transform-style: preserve-3d;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  -webkit-perspective: 1000;
-  perspective: 1000;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  z-index: 1;
 }
 
 /* Map Loader - pokazywany podczas ładowania */
@@ -3900,7 +3967,6 @@ input[type="date"] {
   font-weight: 600;
   text-align: center;
 }
-
 
 .map-container:active {
   cursor: grabbing;
@@ -4000,16 +4066,15 @@ input[type="date"] {
 /* Pinezki na mapie */
 .map-pin {
   position: absolute;
-  /* FIX: Base size is now 18px (50% of orig). 
-     Scale: Keep normal 1.0 at high zoom, shrink at low zoom.
-     clamp(0.5, ..., 1.5) ensures it doesn't get microscopic or huge relative to the new small base. */
-  /* FIX: Align tip (diamond bottom) with coordinate. 
-     Translate Y -120% lifts it slightly so the bottom tip of the rotated square hits the point.
-     Scale: Reduced base factor to 0.25 to make them smaller on zoom. */
-  transform: translate(-50%, -120%) scale(clamp(0.4, calc(0.25 / var(--map-scale, 1)), 1.5));
+  /* Leaflet handles positioning via divIcon wrapper */
   transform-origin: bottom center;
   cursor: pointer;
   z-index: 100;
+  
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+
   transition:
     transform 0.15s ease-out,
     z-index 0s,
@@ -4019,7 +4084,7 @@ input[type="date"] {
   /* Remove 3d rendering to prevent blurriness on zoom */
   /* -webkit-backface-visibility: hidden; */
   /* backface-visibility: hidden; */
-  will-change: transform; 
+  will-change: transform;
   /* -webkit-transform-style: preserve-3d; */
   /* transform-style: preserve-3d; */
 }
@@ -4031,24 +4096,25 @@ input[type="date"] {
 }
 
 .pin-icon-wrapper {
-  width: 18px; /* Was 36px */
-  height: 18px; /* Was 36px */
+  width: 24px; /* Increased from 18px */
+  height: 24px; /* Increased from 18px */
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--danger);
-  border: 1.5px solid white; /* Was 3px */
+  border: 2px solid white; /* Thicker border */
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4); /* Reduced shadow */
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5); /* Bolder shadow */
   transition:
     transform 0.2s,
     box-shadow 0.2s;
+  z-index: 2;
 }
 
 .pin-icon-wrapper span {
   transform: rotate(45deg);
-  font-size: 9px; /* Was 16px */
+  font-size: 13px; /* Increased for visibility */
 }
 
 /* Pinezka działu (kwadratowa) */
@@ -4168,7 +4234,8 @@ input[type="date"] {
 
 /* Animacja pulsowania punktu START */
 @keyframes pulse-start {
-  0%, 100% {
+  0%,
+  100% {
     transform: rotate(-45deg) scale(1);
     box-shadow: 0 8px 24px rgba(16, 185, 129, 0.6);
   }
@@ -4180,7 +4247,8 @@ input[type="date"] {
 
 /* Animacja pulsowania punktu END */
 @keyframes pulse-end {
-  0%, 100% {
+  0%,
+  100% {
     transform: rotate(-45deg) scale(1);
     box-shadow: 0 8px 24px rgba(0, 122, 255, 0.6);
   }
@@ -4197,7 +4265,6 @@ input[type="date"] {
   font-weight: 700;
   font-size: 13px;
 }
-
 
 /* Dark mode dla etykiet */
 [data-theme="dark"] .pin-label {

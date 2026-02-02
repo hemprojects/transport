@@ -1397,48 +1397,50 @@
   // =============================================
   // 12. MAP MANAGER - SMART ROUTING (DIJKSTRA)
   // =============================================
+  /* =========================================
+     MAP MANAGER (LEAFLET.JS IMPLEMENTATION)
+     ========================================= */
   const MapManager = {
     mode: "view", // 'view' | 'pick' | 'edit_network' | 'show_route'
     targetLocationId: null,
     tempCoords: null,
-    panzoomInstance: null,
+    
+    // Leaflet instances
+    map: null,
+    imageOverlay: null,
+    markersLayer: null,
+    routeLayer: null,
+    tempMarker: null,
+    
+    // Metadata
+    mapWidth: 0,
+    mapHeight: 0,
     isInitialized: false,
-    lastOpenTime: 0, // iOS fix - throttle map opening
+    lastOpenTime: 0,
 
-    // Dane sieci dróg
-    nodes: [], // [{id, x, y}, ...]
-    connections: [], // [{from, to}, ...]
-
+    // Dane sieci dróg (dla edytora)
+    nodes: [], 
+    connections: [], 
+    
     // Stan edycji
     selectedNodeId: null,
 
     // Stan trasy
-    currentRoute: null, // [x, y, x, y...]
-    routeFrom: null, // Nazwa lokalizacji start
-    routeTo: null, // Nazwa lokalizacji end
-
-    ctx: null,
+    routeFrom: null,
+    routeTo: null,
 
     init() {
       // Lazy initialization
     },
 
     async open(mode = "view", data = null) {
-      // iOS Fix: Throttle - zapobiegaj wielokrotnym kliknięciom
       const now = Date.now();
-      if (this.lastOpenTime && now - this.lastOpenTime < 500) {
-        console.warn("⚠️ Map open throttled - too soon after last open");
-        return;
-      }
+      if (this.lastOpenTime && now - this.lastOpenTime < 500) return;
       this.lastOpenTime = now;
 
-      if (this.isOpening) return; // Zapobiegaj podwójnym kliknięciom
-      this.isOpening = true;
-
-      console.group("🗺️ MapManager.open");
+      console.group("🗺️ MapManager.open (Leaflet)");
       console.log(`🚀 Mode: ${mode}`, data);
 
-      // Reset stanu
       this.mode = mode;
       this.isInitialized = false;
 
@@ -1451,35 +1453,21 @@
       // Konfiguracja UI
       if (mode === "pick") {
         this.targetLocationId = data;
-
-        // FIX: Cleanup old temp pin FIRST
-        const oldTemp = Utils.$("#temp-pin");
-        if (oldTemp) oldTemp.remove();
-        this.tempCoords = null;
-
-        if (titleEl)
-          titleEl.textContent = "📍 Zaznacz lokalizację: Kliknij na mapie";
+        this.tempCoords = null; 
+        if (titleEl) titleEl.textContent = "📍 Zaznacz lokalizację: Kliknij na mapie";
         Utils.show(saveBtn);
 
-        // FIX: Check if we are editing an existing location (passed as ID or object)
-        // If data is an ID, find the location object
+        // Znajdź istniejącą lokalizację
         let existingLoc = null;
         if (typeof data === "number" || typeof data === "string") {
-          existingLoc = [...state.locations, ...state.departments].find(
-            (l) => l.id == data,
-          );
+          existingLoc = [...state.locations, ...state.departments].find(l => l.id == data);
         } else if (typeof data === "object") {
           existingLoc = data;
         }
 
-        // If existing location has coordinates, pre-populate temp pin!
-        if (
-          existingLoc &&
-          existingLoc.map_x != null &&
-          existingLoc.map_y != null
-        ) {
+        // Jeśli ma współrzędne, ustaw tymczasowy pin
+        if (existingLoc && existingLoc.map_x != null && existingLoc.map_y != null) {
           this.tempCoords = { x: existingLoc.map_x, y: existingLoc.map_y };
-          // Enable save button immediately as we have a valid pos
           if (saveBtn) saveBtn.disabled = false;
         } else {
           if (saveBtn) saveBtn.disabled = true;
@@ -1492,631 +1480,348 @@
         const toText = data?.to || "?";
         if (titleEl) titleEl.textContent = `📍 Trasa: ${fromText} ➡️ ${toText}`;
         Utils.hide(saveBtn);
-
-        // Zapisz dane trasy dla renderowania pinezek
         this.routeFrom = data?.from;
         this.routeTo = data?.to;
-
-        if (this.calculateRoute && data) {
-          setTimeout(() => this.calculateRoute(data.from, data.to), 500);
-        }
       } else {
         if (titleEl) titleEl.textContent = "🗺️ Mapa Zakładu";
         Utils.hide(saveBtn);
       }
 
       this.showLoading();
-      console.log("⏳ Opening modal...");
       Modal.open("modal-map");
 
-      try {
-        console.log("📡 Fetching road network...");
-        const network = await API.getRoadNetwork();
-        this.nodes = network.nodes || [];
-        this.connections = network.connections || [];
-        console.log(`✅ Road network loaded: ${this.nodes.length} nodes`);
-      } catch (e) {
-        console.error("❌ Road network error:", e);
+      // Pobierz sieć dróg jeśli potrzebna
+      if (mode === 'edit_network' || mode === 'show_route') {
+          try {
+            const network = await API.getRoadNetwork();
+            this.nodes = network.nodes || [];
+            this.connections = network.connections || [];
+          } catch (e) { console.error(e); }
       }
 
-      console.log("⏳ Waiting for modal render (150ms)...");
-      await new Promise((resolve) => setTimeout(resolve, 150));
-
+      // Czekaj na render modala
+      await new Promise(r => setTimeout(r, 150));
+      
       this.initializeMap();
-      this.isOpening = false;
       console.groupEnd();
     },
 
     initializeMap() {
-      console.group("🔧 MapManager.initializeMap");
-      const wrapper = document.querySelector(".map-wrapper");
       const container = document.getElementById("map-container");
-      const img = document.getElementById("facility-map");
-
-      console.log("Elements:", { wrapper, container, img });
-
-      if (!wrapper || !container || !img) {
-        console.error("❌ CRITICAL: Missing DOM elements!");
-        console.groupEnd();
-        return;
+      // Pobierz URL z ukrytego obrazka lub hardcoded
+      let mapUrl = "img/mapa.webp";
+      const existingImg = document.getElementById("facility-map");
+      if (existingImg && existingImg.getAttribute("data-src")) {
+        mapUrl = existingImg.getAttribute("data-src").split("?")[0];
       }
 
-      // REMOVED EARLY HIDE LOADING
-      // this.hideLoading();
+      console.log(`🗺️ initializeMap: Start. Container:`, container);
 
-      // Toggle edit-mode class for cursor change
-      if (this.mode === "edit_network") {
-        wrapper.classList.add("edit-mode");
-      } else {
-        wrapper.classList.remove("edit-mode");
+      // 1. Wyczyść kontener (Leaflet potrzebuje pustego diva)
+      if (this.map) {
+        console.log("♻️ Removing existing map instance");
+        this.map.remove();
+        this.map = null;
       }
+      container.innerHTML = "";
 
-      if (this.panzoomInstance) {
-        console.log("♻️ Destroying old Panzoom instance");
-        try {
-          this.panzoomInstance.destroy();
-        } catch (e) {}
-      }
-
-      // Android Fix: Cache-buster i pełna ścieżka
-      const timestamp = Date.now();
-      const rawSrc = img.getAttribute("data-src") || "img/mapa.webp";
-      // Upewnij się że ścieżka nie ma podwójnego timestampu
-      const baseSrc = rawSrc.split("?")[0];
-
-      console.log("🔄 Preparing map image:", baseSrc);
-
-      const initializeAfterLoad = () => {
-        console.log(
-          `✅ Image loaded: ${img.naturalWidth}x${img.naturalHeight}`,
-        );
-
-        if (!img.naturalWidth) {
-          console.error("❌ Image loaded but width is 0!");
-          return;
+      // 2. Preload obrazka żeby znać wymiary
+      console.log(`🖼️ Loading map image: ${mapUrl}`);
+      const img = new Image();
+      img.onload = () => {
+        console.log(`✅ Map image loaded! Size: ${img.naturalWidth}x${img.naturalHeight}`);
+        this.mapWidth = img.naturalWidth;
+        this.mapHeight = img.naturalHeight;
+        this.initLeaflet(container, mapUrl);
+      };
+      img.onerror = (err) => {
+        console.error("❌ Map image load FAILED:", err, mapUrl);
+        // Fallback do png
+        if (mapUrl.endsWith(".webp")) {
+             console.warn("⚠️ Falling back to PNG...");
+             img.src = "img/mapa.png";
+             mapUrl = "img/mapa.png";
+        } else {
+            Toast.error("Błąd ładowania mapy");
+            this.hideLoading();
         }
+      };
+      // Cache bust
+      img.src = `${mapUrl}?t=${Date.now()}`;
+    },
 
-        // A. PC FIX: Wymuś proporcje wrappera (żeby modal był wąski)
-        // Jeśli aspect-ratio jest zdefiniowane, wrapper dopasuje szerokość do wysokości (90vh)
-        const ratio = img.naturalWidth / img.naturalHeight;
-        wrapper.style.aspectRatio = `${ratio}`;
-        wrapper.style.height = "100%"; // Dopasuj do wysokości modala
-        wrapper.style.width = "auto"; // Szerokość wyniknie z ratio
+    initLeaflet(container, mapUrl) {
+      console.log("🍃 initLeaflet called with:", mapUrl, this.mapWidth, this.mapHeight);
 
-        // Wymuś przeliczenie layoutu modala
-        // FIX: Prevent blinking - hide immediately without transition
-        container.style.transition = "none";
-        container.style.opacity = "0";
+      // 3. Oblicz bounds: [[0,0], [height, width]]
+      // W CRS.Simple Y rośnie w GÓRĘ. Pixel Y rośnie w DÓŁ.
+      
+      const bounds = [[0, 0], [this.mapHeight, this.mapWidth]];
 
-        container.style.display = "none";
-        container.offsetHeight; // reflow
-        container.style.display = "block";
+      this.map = L.map(container, {
+        crs: L.CRS.Simple,
+        minZoom: -2,
+        maxZoom: 2,
+        zoomSnap: 0.5,
+        zoomDelta: 0.5,
+        attributionControl: false,
+        zoomControl: false, // Disable default top-left buttons
+        maxBounds: bounds,  // Restrict panning
+        maxBoundsViscosity: 1.0, // Bouncy hard edge
+        bounceAtZoomLimits: false // Disable rubber-banding on minZoom
+      });
+      console.log("🍃 Leaflet map instance created");
 
-        const waitForLayout = () => {
-          const wrapperW = wrapper.clientWidth;
-          const wrapperH = wrapper.clientHeight;
+      this.imageOverlay = L.imageOverlay(mapUrl, bounds).addTo(this.map);
+      
+      // Calculate minZoom to fit the map exactly within container
+      // This prevents zooming out into the void
+      const fitZoom = this.map.getBoundsZoom(bounds);
+      
+      // Update map settings
+      this.map.setMinZoom(fitZoom);
+      this.map.setMaxBounds(bounds);
+      
+      // Initial fit
+      this.map.fitBounds(bounds);
+      
+      console.log(`🍃 Leaflet configured: ImageOverlay added, minZoom=${fitZoom}`);
 
-          if (wrapperW === 0 || wrapperH === 0) {
-            console.log("⏳ Waiting for layout...");
-            requestAnimationFrame(waitForLayout);
-            return;
-          }
+      // Layers
+      this.markersLayer = L.layerGroup().addTo(this.map);
+      this.routeLayer = L.layerGroup().addTo(this.map);
 
-          console.log(
-            `📏 Wrapper Layout: ${wrapperW}x${wrapperH} (Ratio: ${wrapperW / wrapperH})`,
-          );
+      // Eventy
+      this.map.on("click", (e) => this.onMapClick(e));
 
-          // 1. Native Size
-          const containerW = img.naturalWidth;
-          const containerH = img.naturalHeight;
+      // Renderuj w każdym trybie, bo toolbar decyduje co pokazać (np. przycisk Edytuj w trybie View)
+      this.renderNetworkToolbar();
 
-          // 2. Fit Scale
-          const scaleX = wrapperW / containerW;
-          const scaleY = wrapperH / containerH;
-          const fitScale = Math.min(scaleX, scaleY);
+      // Renderuj sieć jeśli w edycji
+      if (this.mode === "edit_network") {
+        this.renderNetwork();
+      }
 
-          // ZWIĘKSZONY ZOOM: 1.2x fitScale dla bliższego widoku początkowego
-          const initialZoom = fitScale * 1.2;
+      // Renderuj pinezki
+      this.renderPins();
 
-          // 3. Apply Styles
-          container.style.width = containerW + "px";
-          container.style.height = containerH + "px";
-          container.style.transformOrigin = "0 0";
+      // Renderuj kontrolki (Zoom, Reset)
+      this.renderControls();
 
-          img.style.width = "100%";
-          img.style.height = "100%";
-          img.style.objectFit = "cover";
+      // Jeśli mamy tempCoords (Pick Mode), dodaj marker
+      if (this.mode === "pick" && this.tempCoords) {
+        this.renderTempPin(this.tempCoords.x, this.tempCoords.y);
+      }
 
-          // 4. Init Panzoom z LEPSZYM LOADEREM
-          console.log(
-            `🎯 FitScale: ${fitScale.toFixed(3)}, InitialZoom: ${initialZoom.toFixed(3)} (1.2x)`,
-          );
+      // Jeśli Show Route
+      if (this.mode === "show_route" && this.routeFrom && this.routeTo) {
+         if (this.calculateRoute) this.calculateRoute(this.routeFrom, this.routeTo);
+      }
 
-          // FIX: Używamy Overlay loadera (this.showLoading) zamiast opacity na container
-          // Container ma opacity 0 tylko dla smooth fade-in
+      // Smooth Fade-In effect
+      setTimeout(() => {
+        container.classList.add("loaded");
+        this.hideLoading();
+      }, 300); // Small delay to ensure rendering frames are ready
+    },
 
-          this.initCanvas(container, img);
-          this.setupPanzoom(wrapper, container, img, fitScale);
+    // Konwersja Pixeli (Top-Left) na Leaflet (Y-Up)
+    toLeaflet(x, y) {
+      return [this.mapHeight - y, x];
+    },
+    // Konwersja Leaflet na Pixele
+    toPixels(latlng) {
+      return { x: latlng.lng, y: this.mapHeight - latlng.lat };
+    },
 
-          // FIX: Enable transition and fade in
-          requestAnimationFrame(() => {
-            container.style.transition = "opacity 0.6s ease-in";
-            container.style.opacity = "1";
+    // NEW: Percentage helpers for compatibility with backend data
+    percentToLeaflet(pctX, pctY) {
+       const pxX = (pctX / 100) * this.mapWidth;
+       const pxY = (pctY / 100) * this.mapHeight;
+       return this.toLeaflet(pxX, pxY);
+    },
 
-            // FIX: If we have pre-populated temp coords, render the temp pin NOW
-            if (this.mode === "pick" && this.tempCoords) {
-              this.renderTempPin(this.tempCoords.x, this.tempCoords.y);
-            }
+    leafletToPercent(latlng) {
+       const { x, y } = this.toPixels(latlng);
+       return {
+          x: (Number(x) / this.mapWidth) * 100,
+          y: (Number(y) / this.mapHeight) * 100
+       };
+    },
 
-            // Ukryj loader dopiero po pełnym fade-in
-            setTimeout(() => this.hideLoading(), 600);
-          });
-        };
-
-        requestAnimationFrame(waitForLayout);
+    renderPins() {
+      this.markersLayer.clearLayers();
+      
+      const createIcon = (color, label, type) => {
+        // Adjust style based on type
+        const isDept = type === 'department';
+        const wrapperClass = isDept ? 'pin-dept' : '';
+        const iconChar = isDept ? '🏢' : '📍';
+        
+        return L.divIcon({
+          className: 'custom-pin-icon',
+          html: `
+            <div class="map-pin ${wrapperClass}" style="position: relative; transform: none; left: 0; top: 0;">
+              <div class="pin-icon-wrapper" style="background-color: ${color};">
+                <span>${iconChar}</span>
+              </div>
+              <div class="pin-label">${label}</div>
+            </div>
+          `,
+          iconSize: [40, 40],
+          iconAnchor: [20, 24] // Adjusted to move visual pin down
+        });
       };
 
-      // Zawsze przeładuj dla pewności (Android fix)
-      img.onload = initializeAfterLoad;
-      img.onerror = () => {
-        console.error("❌ Map load error! Trying backup...");
-        img.src = "img/mapa.webp?backup=" + timestamp;
-      };
-      img.src = `${baseSrc}?t=${timestamp}`;
+      // Renderuj lokalizacje
+      [...state.locations, ...state.departments].forEach(loc => {
+         if (loc.map_x != null && loc.map_y != null) {
+            const color = loc.type === 'location' ? 'var(--primary)' : 'var(--accent)';
+            // FIX: Use percentToLeaflet
+            const marker = L.marker(this.percentToLeaflet(loc.map_x, loc.map_y), {
+                icon: createIcon(color, loc.name, loc.type)
+            });
+            
+            // Add click handler (e.g., for routing or info)
+            marker.on('click', () => {
+                if (this.mode === 'show_route') {
+                    // Logic to select route points could go here
+                }
+            });
+            marker.addTo(this.markersLayer);
+         }
+      });
     },
 
-    setupPanzoom(wrapper, container, img, fitScale) {
-      try {
-        // Wykryj iOS dla specjalnych optymalizacji
-        const isIOS =
-          /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
-        const isSafari = /^((?!chrome|android).)*safari/i.test(
-          navigator.userAgent,
-        );
-        const isAndroid = /Android/i.test(navigator.userAgent);
+    renderTempPin(x, y) {
+      if (this.tempMarker) this.tempMarker.remove();
+      
+      const icon = L.divIcon({
+        className: 'temp-pin-icon',
+        html: `
+            <div class="map-pin pin-temp" style="position: relative; transform: none; left: 0; top: 0;">
+              <div class="pin-icon-wrapper">
+                <span>📍</span>
+              </div>
+            </div>
+        `,
+        iconSize: [40, 40],
+        iconAnchor: [20, 24]
+      });
 
-        // FIX #3: Simplified Zoom Logic
-        // initialZoom = 1.2x fitScale (calculated earlier in initializeMap but let's re-calc or just use fitScale)
-        // Let's stick to fitScale as base, but zoom slightly if user wants.
-        // Actually best UX is start at fitScale so whole map is visible.
-        const startZoom = fitScale;
-
-        this.panzoomInstance = Panzoom(container, {
-          // MaxScale: 10x dla bardzo bliskiego zoomu
-          maxScale: 10.0,
-          // FIX #4: MinScale = fitScale (nie 0.8x) - zapobiega przeskakiwaniu przy oddalaniu
-          minScale: fitScale,
-          // FIX #2: Start bez zoomu (pełny widok) - zapobiega skokowi
-          // startScale: startZoom, // FIX: Use explicit startScale
-          startScale: startZoom,
-          startX: 0,
-          startY: 0,
-
-          contain: "outside",
-
-          cursor: this.mode === "edit_network" ? "crosshair" : "grab",
-          // FIX #2: Wyłącz animację przy starcie - eliminuje skakanie
-          duration: 0,
-          easing: "ease-out",
-
-          // FIX #1 & #5: force2d dla iOS/Safari + canvas dla lepszej wydajności mobilnej
-          force2d: isIOS || isSafari,
-          canvas: true,
-
-          // FIX #5: Optymalizacja gestów mobilnych
-          disablePan: false,
-          disableZoom: false,
-
-          // FIX #5: Lepsza responsywność na mobile - większe skoki zoomu
-          step: 0.2, // Płynniejsze kroki zoomu (20% zamiast 5%)
-          animate: true, // Krótka animacja dla płynności
-
-          // Wyklucz pinezki z obsługi panowania
-          excludeClass: "map-pin",
-        });
-
-        // FIX #1: iOS rendering fix
-        if (isIOS) {
-          requestAnimationFrame(() => {
-            container.style.transform = container.style.transform;
-            // FIX #1: Wymuś wysoką jakość renderowania na iOS
-            container.style.webkitBackfaceVisibility = "hidden";
-            container.style.webkitPerspective = "1000";
-            container.style.webkitTransform = "translate3d(0,0,0)";
-            img.style.imageRendering = "-webkit-optimize-contrast";
-          });
-        }
-
-        wrapper.addEventListener("wheel", this.panzoomInstance.zoomWithWheel);
-
-        // Ustaw kursor dynamicznie
-        this.updateCursor();
-
-        // FIX #4: Smooth boundary enforcement przy zoom
-        container.addEventListener("panzoomend", () => {
-          const scale = this.panzoomInstance.getScale();
-          // Jeśli zbyt oddalony, płynnie przywróć do minScale
-          if (scale < fitScale) {
-            this.panzoomInstance.zoom(fitScale, { animate: true });
-          }
-        });
-
-        // Logika skali dla CSS (Pinezek)
-        const updateScaleVar = () => {
-          const s = this.panzoomInstance.getScale();
-          // KLUCZOWE: Ustaw na :root żeby CSS variable był dostępny dla wszystkich pinezek!
-          document.documentElement.style.setProperty("--map-scale", s);
-          // console.log(`🎚️ Scale updated: --map-scale = ${s.toFixed(3)}`);
-        };
-        container.addEventListener("panzoomchange", updateScaleVar);
-        // FIX #10: Force update immediately with startZoom to ensure pins are sized correctly from frame 1
-        document.documentElement.style.setProperty("--map-scale", startZoom);
-        console.log(`✅ Scale tracking initialized`);
-
-        // Obsługa kliknięcia
-        let pStartX = 0,
-          pStartY = 0;
-
-        container.addEventListener("pointerdown", (e) => {
-          pStartX = e.clientX;
-          pStartY = e.clientY;
-        });
-
-        container.addEventListener("pointerup", (e) => {
-          const dist = Math.hypot(e.clientX - pStartX, e.clientY - pStartY);
-          if (dist > 15) return;
-
-          if (e.target.closest(".map-pin")) {
-            e.stopPropagation();
-            return;
-          }
-          this.onMapClick(e);
-        });
-
-        this.initCanvas(container, img);
-
-        // RENDERUJ KONTROLKI I TOOLBAR!
-        this.renderPins();
-        this.renderControls();
-        this.renderNetworkToolbar();
-        this.draw();
-
-        console.log(
-          `✅ Panzoom ready! (iOS: ${isIOS}, Android: ${isAndroid}, force2d: ${isIOS || isSafari})`,
-        );
-      } catch (err) {
-        console.error("❌ Panzoom error:", err);
-      }
-
-      // this.hideLoading(); // Moved to initializeMap timeout for smoother transition
-      this.isInitialized = true;
-      console.groupEnd();
+      // FIX: Use percentToLeaflet (x,y are %)
+      this.tempMarker = L.marker(this.percentToLeaflet(x, y), { icon: icon, draggable: true }).addTo(this.map);
+      
+      this.tempMarker.on('dragend', (e) => {
+         // Convert back to % on drag
+         const pos = this.leafletToPercent(e.target.getLatLng());
+         this.tempCoords = pos;
+         const saveBtn = Utils.$("#map-save-btn");
+         if (saveBtn) saveBtn.disabled = false;
+      });
     },
 
-    // Alias dla draw (w razie gdyby gdzieś było wywoływane drawCanvas)
-    drawCanvas() {
-      this.draw();
-    },
-
-    initCanvas(container, img) {
-      let canvas = container.querySelector("canvas.map-paths-layer");
-      if (!canvas) {
-        canvas = document.createElement("canvas");
-        canvas.className = "map-paths-layer";
-
-        // FIX #6: Canvas musi być NAD obrazem mapy (z-index 1) ale POD pinezkami (z-index 100)
-        canvas.style.position = "absolute";
-        canvas.style.top = "0";
-        canvas.style.left = "0";
-        canvas.style.zIndex = "50"; // Zmienione z 100 na 50
-        canvas.style.pointerEvents = "none";
-        canvas.style.width = "100%";
-        canvas.style.height = "100%";
-        // FIX: Ensure visibility
-        canvas.style.display = "block";
-        canvas.style.opacity = "1";
-
-        container.appendChild(canvas);
-      }
-
-      // FIX #1 & #6: HIGH-DPI / Retina support dla ostrej jakości (2x multiplier)
-      // Trik: Zwiększ rozdzielczość canvas 2x ponad DPR, aby przy zoomie wyglądało ostro
-      const dpr = window.devicePixelRatio || 1;
-      const superRes = 2;
-      canvas.width = img.naturalWidth * dpr * superRes;
-      canvas.height = img.naturalHeight * dpr * superRes;
-
-      // Skaluj context dla retina + superRes
-      this.ctx = canvas.getContext("2d", { alpha: true });
-      // FIX: Reset transform to prevent cumulative scaling on re-init
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-      this.ctx.scale(dpr * superRes, dpr * superRes);
-
-      // FIX #1 & #6: Włącz wysoką jakość antyaliasingu dla ostrych linii i punktów
-      this.ctx.imageSmoothingEnabled = false; // Pixel-perfect rendering for vectors often looks sharper with false if drawing straight lines, but lets keep true for anti-aliasing.
-      this.ctx.imageSmoothingEnabled = true;
-      this.ctx.imageSmoothingQuality = "high";
-
-      // CSS wymiary normalne (nie skalowane)
-      canvas.style.width = img.naturalWidth + "px";
-      canvas.style.height = img.naturalHeight + "px";
-
-      console.log(
-        `🎨 Canvas initialized: ${canvas.width}x${canvas.height} (DPR: ${dpr}, Quality: high, z-index: 100)`,
-      );
-    },
-
-    updateCursor() {
-      const wrapper = document.querySelector(".map-wrapper");
-      const container = document.getElementById("map-container");
-      if (!wrapper || !container) return;
-
-      if (this.mode === "edit_network") {
-        wrapper.style.cursor = "crosshair";
-        container.style.cursor = "crosshair";
-      } else {
-        wrapper.style.cursor = "grab";
-        container.style.cursor = "grab";
-      }
+    onMapClick(e) {
+       if (this.mode === "pick") {
+          // FIX: Convert to %
+          const { x, y } = this.leafletToPercent(e.latlng);
+          this.tempCoords = { x, y };
+          this.renderTempPin(x, y);
+          const saveBtn = Utils.$("#map-save-btn");
+          if (saveBtn) saveBtn.disabled = false;
+       } else if (this.mode === "edit_network") {
+          // FIX: Convert to %
+          const { x, y } = this.leafletToPercent(e.latlng);
+          this.handleNetworkClick(x, y);
+       }
     },
 
     showLoading() {
-      const wrapper = document.querySelector(".map-wrapper");
-      if (wrapper) {
-        wrapper.classList.add("loading");
-        // Można dodać spinner przez CSS ::after
-      }
+       const loader = Utils.$(".screen .loading-container");
+       if (loader) loader.classList.add("active");
     },
-
     hideLoading() {
-      // 1. Remove overlay
-      Utils.hide(".map-loading-overlay");
-
-      // 2. Remove CSS class from wrapper (if used)
-      const wrapper = document.querySelector(".map-wrapper");
-      if (wrapper) wrapper.classList.remove("loading");
+       const loader = Utils.$(".screen .loading-container");
+       if (loader) loader.classList.remove("active");
     },
 
-    // FIX #6: GŁÓWNA PĘTLA RYSOWANIA z debug logging
+    // LEAFLET DOES NOT USE DRAW
     draw() {
-      if (!this.ctx) {
-        console.warn("⚠️ draw() called but ctx is null");
-        return;
-      }
-      const ctx = this.ctx;
+        // No-op
+    },
 
-      const img = Utils.$("#facility-map");
-      if (!img || !img.naturalWidth) {
-        console.warn("⚠️ draw() called but image not ready");
-        return;
-      }
+    // --- NETWORK & ROUTING (Simplified adapter) ---
+    renderNetwork() {
+       // Rysowanie węzłów i połączeń używając L.circleMarker i L.polyline
+       if (!this.map) return;
+       
+       this.routeLayer.clearLayers();
 
-      const w = img.naturalWidth;
-      const h = img.naturalHeight;
-
-      const dpr = window.devicePixelRatio || 1;
-      const superRes = 2; // Match initCanvas
-
-      // Wyczyść canvas (uwzględniając scale)
-      ctx.clearRect(
-        0,
-        0,
-        ctx.canvas.width / (dpr * superRes),
-        ctx.canvas.height / (dpr * superRes),
-      );
-
-      // FIX #6: DEBUG - Loguj zawsze w trybie edycji sieci
-      if (this.mode === "edit_network") {
-        console.log(
-          `🎨 draw() - Mode: ${this.mode}, Nodes: ${this.nodes.length}, Connections: ${this.connections.length}, DPR: ${dpr}, Canvas: ${ctx.canvas.width}x${ctx.canvas.height}`,
-        );
-      }
-
-      // Oblicz współczynnik skali (Inverse Scaling)
-      let scale = 1;
-      if (this.panzoomInstance) {
-        scale = this.panzoomInstance.getScale();
-      }
-      scale = Math.max(scale, 0.001);
-      const sf = 1 / scale;
-
-      // FIX #6: Rysuj sieć dróg - ZAWSZE gdy są dane
-      if (
-        this.nodes.length > 0 &&
-        (this.mode === "edit_network" || state.currentUser?.id === 1)
-      ) {
-        // FIX #3: Zmniejszone linie - o połowę (3px edit, 2px view)
-        ctx.lineWidth = (this.mode === "edit_network" ? 3 : 2) * sf;
-        // FIX: POMARAŃCZOWY zamiast czarnego - widoczny na każdym zoomie!
-        ctx.strokeStyle =
-          this.mode === "edit_network"
-            ? "rgba(255, 140, 0, 0.95)"
-            : "rgba(255, 165, 0, 0.8)";
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-
-        // FIX #6: DEBUG - Loguj każde połączenie
-        if (this.mode === "edit_network" && this.connections.length > 0) {
-          console.log(`🔗 Drawing ${this.connections.length} connections...`);
-        }
-
-        this.connections.forEach((conn, idx) => {
-          const n1 = this.nodes.find((n) => n.id === conn.from);
-          const n2 = this.nodes.find((n) => n.id === conn.to);
+       this.connections.forEach(conn => {
+          const n1 = this.nodes.find(n => n.id === conn.from);
+          const n2 = this.nodes.find(n => n.id === conn.to);
           if (n1 && n2) {
-            const x1 = (n1.x * w) / 100;
-            const y1 = (n1.y * h) / 100;
-            const x2 = (n2.x * w) / 100;
-            const y2 = (n2.y * h) / 100;
-
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.stroke();
-
-            if (this.mode === "edit_network" && idx === 0) {
-              console.log(
-                `  Line #${idx}: (${x1.toFixed(1)}, ${y1.toFixed(1)}) -> (${x2.toFixed(1)}, ${y2.toFixed(1)})`,
-              );
-            }
+             // FIX: Use percentToLeaflet
+             L.polyline([this.percentToLeaflet(n1.x, n1.y), this.percentToLeaflet(n2.x, n2.y)], { color: 'blue', weight: 2 }).addTo(this.routeLayer);
           }
-        });
+       });
 
-        // Węzły (tylko w trybie edycji) - BARDZO DUŻE z wyraźną obwódką
-        if (this.mode === "edit_network") {
-          console.log(`⭕ Drawing ${this.nodes.length} nodes...`);
-
-          this.nodes.forEach((node, idx) => {
-            const x = (node.x * w) / 100;
-            const y = (node.y * h) / 100;
-            // FIX #3: Kropki mniejsze o połowę (2.5 -> 1.5)
-            const radius = 1.5 * sf;
-
-            ctx.beginPath();
-            ctx.arc(x, y, radius, 0, Math.PI * 2);
-            ctx.fillStyle =
-              node.id === this.selectedNodeId ? "#00FF00" : "#007AFF";
-            ctx.fill();
-            ctx.lineWidth = 2 * sf; // was 5
-            ctx.strokeStyle = "#000";
-            ctx.stroke();
-
-            if (idx === 0) {
-              console.log(
-                `  Node #${idx}: (${x.toFixed(1)}, ${y.toFixed(1)}), radius: ${radius.toFixed(1)}`,
-              );
-            }
-          });
-        }
-      }
-
-      // Rysuj wyznaczoną trasę (jeśli jest)
-      if (this.currentRoute && this.currentRoute.length > 0) {
-        ctx.lineCap = "round";
-        ctx.lineJoin = "round";
-
-        // Glow
-        ctx.beginPath();
-        ctx.lineWidth = 15 * sf;
-        ctx.strokeStyle = "rgba(0, 122, 255, 0.3)";
-        this.drawPolyline(this.currentRoute, w, h);
-        ctx.stroke();
-
-        // Solid line
-        ctx.beginPath();
-        ctx.lineWidth = 5 * sf;
-        ctx.strokeStyle = "#007AFF";
-        ctx.setLineDash([10 * sf, 10 * sf]);
-        this.drawPolyline(this.currentRoute, w, h);
-        ctx.stroke();
-        ctx.setLineDash([]);
-      }
+       this.nodes.forEach(node => {
+          const color = this.selectedNodeId === node.id ? 'red' : 'blue';
+          // FIX: Use percentToLeaflet
+          L.circleMarker(this.percentToLeaflet(node.x, node.y), { radius: 5, color: color, fillColor: color, fillOpacity: 0.8 }).addTo(this.routeLayer);
+       });
     },
 
-    drawPolyline(points, w, h) {
-      if (points.length < 2) return;
-      this.ctx.moveTo((points[0].x * w) / 100, (points[0].y * h) / 100);
-      for (let i = 1; i < points.length; i++) {
-        this.ctx.lineTo((points[i].x * w) / 100, (points[i].y * h) / 100);
-      }
-    },
-
-    // --- OBSŁUGA EDYCJI SIECI ---
-    onMapClick(e) {
-      if (this.mode === "pick") {
-        this.handlePickClick(e);
-        return;
-      }
-
-      if (this.mode !== "edit_network") return;
-
-      // FIX: SIMPLIFIED Coordinate Calculation
-      // Always calculate relative to the IMAGE element, which carries the transform
-      const img = Utils.$("#facility-map");
-      const rect = img.getBoundingClientRect();
-
-      // Calculate position relative to the image's top-left corner (in screen pixels)
-      const relX = e.clientX - rect.left;
-      const relY = e.clientY - rect.top;
-
-      // Convert to percentage of the CURRENT rendered size (rect.width/height)
-      // This works perfectly regardless of zoom/pan because rect matches what the user sees
-      const x = (relX / rect.width) * 100;
-      const y = (relY / rect.height) * 100;
-
-      // Sprawdź czy kliknięto w istniejący węzeł (z tolerancją)
-      // Tolerancja np. 2% szerokości mapy
-      const tolerance = 2;
-      // FIX: Use natural aspect ratio instead of rect
-      const aspectRatio = img.naturalWidth / img.naturalHeight;
-      const clickedNode = this.nodes.find(
-        (n) =>
-          Math.abs(n.x - x) < tolerance &&
-          Math.abs(n.y - y) < tolerance * aspectRatio,
-      );
+    handleNetworkClick(x, y) {
+      // Proste znajdowanie najbliższego węzła
+      // NOTA: x, y są TERAZ w procentach. Threshold też musi być w %.
+      const threshold = 2; // 2% szerokości mapy
+      
+      // Calculate aspect ratio correction for distance?
+      // Simple Euclidean on % works OK for selecting.
+      
+      const clickedNode = this.nodes.find((n) => {
+        const dist = Math.hypot(n.x - x, n.y - y);
+        return dist < threshold;
+      });
 
       if (clickedNode) {
-        // Kliknięto w węzeł
         if (this.selectedNodeId === null) {
-          // Zaznacz pierwszy
           this.selectedNodeId = clickedNode.id;
-        } else if (this.selectedNodeId === clickedNode.id) {
-          // Odznacz
-          this.selectedNodeId = null;
         } else {
-          // Połącz dwa węzły
-          this.toggleConnection(this.selectedNodeId, clickedNode.id);
-          this.selectedNodeId = clickedNode.id; // Przeskocz na nowy (łańcuchowe rysowanie)
-        }
-      } else {
-        // Kliknięto w puste miejsce -> Dodaj nowy węzeł
-        const newNodeId = Date.now();
-        this.nodes.push({ id: newNodeId, x, y });
-
-        // SMART AUTO-CONNECT:
-        if (this.selectedNodeId) {
-          // Jeśli coś było zaznaczone, połącz z nowym
-          this.toggleConnection(this.selectedNodeId, newNodeId);
-        } else if (this.nodes.length > 1) {
-          // AUTO-CONNECT do NAJBLIŻSZEGO node (gdy nic nie zaznaczono)
-          let nearest = null;
-          let minDist = Infinity;
-
-          this.nodes.forEach((n) => {
-            if (n.id === newNodeId) return;
-            const dx = n.x - x;
-            const dy = n.y - y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < minDist) {
-              minDist = dist;
-              nearest = n;
-            }
-          });
-
-          if (nearest) {
-            // FIX: Disable auto-connect to nearest for now, as it confuses users (creates lines from far away)
-            // this.toggleConnection(nearest.id, newNodeId);
-            // console.log(`🔗 Auto-connected to nearest #${nearest.id}`);
+          if (this.selectedNodeId !== clickedNode.id) {
+            this.connections.push({
+              from: this.selectedNodeId,
+              to: clickedNode.id,
+            });
+            API.saveRoadNetwork({
+              nodes: this.nodes,
+              connections: this.connections,
+            });
+            this.selectedNodeId = null;
           }
         }
-        this.selectedNodeId = newNodeId;
-      }
-
-      this.draw();
-    },
-
-    toggleConnection(id1, id2) {
-      const existsIdx = this.connections.findIndex(
-        (c) =>
-          (c.from === id1 && c.to === id2) || (c.from === id2 && c.to === id1),
-      );
-
-      if (existsIdx >= 0) {
-        // Rozłącz jeśli już połączone (opcjonalne, może lepiej nie usuwać przy przypadkowym kliku)
-        // this.connections.splice(existsIdx, 1);
       } else {
-        this.connections.push({ from: id1, to: id2 });
+        const newNode = {
+          id: Date.now(),
+          x: x, // Percent
+          y: y, // Percent
+        };
+        this.nodes.push(newNode);
+        if (this.selectedNodeId) {
+          this.connections.push({
+            from: this.selectedNodeId,
+            to: newNode.id,
+          });
+          this.selectedNodeId = null;
+        }
+        API.saveRoadNetwork({
+          nodes: this.nodes,
+          connections: this.connections,
+        });
       }
+      this.renderNetwork();
     },
 
     async saveNetwork() {
@@ -2125,10 +1830,10 @@
           nodes: this.nodes,
           connections: this.connections,
         });
-        Toast.success("Sieć dróg zapisana!");
+        Toast.success("200 OK");
         this.mode = "view";
-        this.renderNetworkToolbar();
-        this.draw();
+        this.renderNetwork();
+        this.renderNetworkToolbar(); // Restore toolbar
       } catch (e) {
         Toast.error("Błąd zapisu");
       }
@@ -2138,12 +1843,14 @@
       if (confirm("Czy na pewno usunąć całą sieć dróg?")) {
         this.nodes = [];
         this.connections = [];
-        this.draw();
+        this.renderNetwork();
       }
     },
 
     // --- ALGORYTM DIJKSTRA ---
     calculateRoute(startName, endName) {
+      console.log("Calculating route...", startName, endName);
+      
       const allLocs = [...state.locations, ...state.departments];
       const startLoc = allLocs.find((l) => l.name === startName);
       const endLoc = allLocs.find((l) => l.name === endName);
@@ -2152,145 +1859,202 @@
         Toast.warning("Brak współrzędnych dla lokalizacji");
         return;
       }
+      
+      this.routeLayer.clearLayers();
 
       // 1. Znajdź najbliższe węzły sieci dla startu i końca
+      // map_x/y are %
       const startNode = this.findNearestNode(startLoc.map_x, startLoc.map_y);
       const endNode = this.findNearestNode(endLoc.map_x, endLoc.map_y);
 
       if (!startNode || !endNode) {
         // Brak sieci? Rysuj linię prostą
-        this.currentRoute = [
-          { x: startLoc.map_x, y: startLoc.map_y },
-          { x: endLoc.map_x, y: endLoc.map_y },
-        ];
-        console.log(
-          `⚠️ No road network - drawing straight line from "${startName}" to "${endName}"`,
-        );
-        this.draw();
+        console.log("⚠️ No road network - drawing straight line");
+        // FIX: Use percentToLeaflet
+        L.polyline([
+          this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
+          this.percentToLeaflet(endLoc.map_x, endLoc.map_y)
+        ], { color: 'blue', dashArray: '10, 10', weight: 3 }).addTo(this.routeLayer);
         return;
       }
 
-      // 2. Dijkstra
-      const path = this.findPath(startNode.id, endNode.id);
-
+      // 2. Uruchom Dijkstrę
+      const path = this.runDijkstra(startNode, endNode);
       if (path) {
-        // Zbuduj trasę: Start -> NearestNode -> ... Path ... -> NearestNode -> End
-        this.currentRoute = [
-          { x: startLoc.map_x, y: startLoc.map_y },
-          ...path.map((id) => this.nodes.find((n) => n.id === id)),
-          { x: endLoc.map_x, y: endLoc.map_y },
-        ];
-        console.log(
-          `✅ Route calculated via Dijkstra: ${this.currentRoute.length} points`,
-        );
+         // FIX: Use percentToLeaflet
+         const latlngs = [
+            this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
+            ...path.map(n => this.percentToLeaflet(n.x, n.y)),
+            this.percentToLeaflet(endLoc.map_x, endLoc.map_y)
+         ];
+         
+         L.polyline(latlngs, { color: 'blue', weight: 5, opacity: 0.7 }).addTo(this.routeLayer);
       } else {
-        // Nie znaleziono drogi - linia prosta
-        this.currentRoute = [
-          { x: startLoc.map_x, y: startLoc.map_y },
-          { x: endLoc.map_x, y: endLoc.map_y },
-        ];
-        console.log(`⚠️ No path found via network - drawing straight line`);
+        Toast.error("Nie znaleziono trasy");
       }
-
-      // KRYTYCZNE FIX: Wywołaj draw() żeby narysować trasę!
-      // Bez tego trasa jest obliczona ale niewidoczna
-      this.draw();
-      console.log(
-        `🎨 Route drawn on canvas from "${startName}" to "${endName}"`,
-      );
     },
 
     findNearestNode(x, y) {
+      if (this.nodes.length === 0) return null;
       let nearest = null;
       let minDist = Infinity;
-
-      this.nodes.forEach((node) => {
-        const dist = Math.sqrt(
-          Math.pow(node.x - x, 2) + Math.pow(node.y - y, 2),
-        );
+      this.nodes.forEach((n) => {
+        // Simple dist in % space
+        const dx = n.x - x;
+        const dy = n.y - y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist < minDist) {
           minDist = dist;
-          nearest = node;
+          nearest = n;
+        }
+      });
+      if (minDist > 15) return null; // Increased threshold to 15%
+      return nearest;
+    },
+
+    runDijkstra(startNode, endNode) {
+      const graph = {};
+      this.nodes.forEach((n) => (graph[n.id] = []));
+      this.connections.forEach((c) => {
+        const n1 = this.nodes.find((n) => n.id === c.from);
+        const n2 = this.nodes.find((n) => n.id === c.to);
+        if (n1 && n2) {
+          // Distance in percentage units is fine for graph weights
+          const dist = Math.hypot(n1.x - n2.x, n1.y - n2.y);
+          if (!graph[c.from]) graph[c.from] = [];
+          if (!graph[c.to]) graph[c.to] = [];
+          graph[c.from].push({ node: c.to, weight: dist });
+          graph[c.to].push({ node: c.from, weight: dist });
         }
       });
 
-      // Jeśli najbliższy węzeł jest za daleko (np. > 20% mapy), uznajemy że nie ma połączenia
-      return minDist < 20 ? nearest : null;
-    },
-
-    findPath(startId, endId) {
       const distances = {};
       const previous = {};
-      const queue = new Set(this.nodes.map((n) => n.id));
+      const pq = new PriorityQueue();
 
-      this.nodes.forEach((n) => (distances[n.id] = Infinity));
-      distances[startId] = 0;
+      this.nodes.forEach((n) => {
+        distances[n.id] = Infinity;
+        previous[n.id] = null;
+      });
+      distances[startNode.id] = 0;
+      pq.enqueue(startNode.id, 0);
 
-      while (queue.size > 0) {
-        // Znajdź węzeł z najmniejszym dystansem
-        let u = null;
-        let min = Infinity;
-        for (const id of queue) {
-          if (distances[id] < min) {
-            min = distances[id];
-            u = id;
-          }
-        }
+      while (!pq.isEmpty()) {
+        const { element: uId } = pq.dequeue();
+        if (uId === endNode.id) break;
 
-        if (u === null || u === endId) break;
-        queue.delete(u);
-
-        // Sąsiedzi
-        const neighbors = this.connections
-          .filter((c) => c.from === u || c.to === u)
-          .map((c) => (c.from === u ? c.to : c.from));
-
-        for (const v of neighbors) {
-          if (!queue.has(v)) continue;
-
-          const uNode = this.nodes.find((n) => n.id === u);
-          const vNode = this.nodes.find((n) => n.id === v);
-          const dist = Math.sqrt(
-            Math.pow(uNode.x - vNode.x, 2) + Math.pow(uNode.y - vNode.y, 2),
-          );
-
-          const alt = distances[u] + dist;
-          if (alt < distances[v]) {
-            distances[v] = alt;
-            previous[v] = u;
-          }
+        if (graph[uId]) {
+          graph[uId].forEach((neighbor) => {
+            const alt = distances[uId] + neighbor.weight;
+            if (alt < distances[neighbor.node]) {
+              distances[neighbor.node] = alt;
+              previous[neighbor.node] = uId;
+              pq.enqueue(neighbor.node, alt);
+            }
+          });
         }
       }
-
-      if (distances[endId] === Infinity) return null;
 
       const path = [];
-      let curr = endId;
-      while (curr !== undefined) {
-        path.unshift(curr);
-        curr = previous[curr];
+      let current = endNode.id;
+      if (previous[current] || current === startNode.id) {
+          while (current) {
+            const n = this.nodes.find((nod) => nod.id === current);
+            if (n) path.unshift(n);
+            current = previous[current];
+          }
+          return path;
       }
-      return path;
+      return null;
+    },
+    
+    renderControls() {
+      const wrapper = Utils.$(".map-wrapper");
+      let controls = wrapper.querySelector(".map-controls");
+      if (!controls) {
+        controls = document.createElement("div");
+        controls.className = "map-controls";
+        wrapper.appendChild(controls);
+      }
+      
+      controls.innerHTML = `
+        <button class="btn-icon map-btn" onclick="TransportTracker.MapManager.map.zoomIn()">➕</button>
+        <button class="btn-icon map-btn" onclick="TransportTracker.MapManager.map.zoomOut()">➖</button>
+        <button class="btn-icon map-btn" onclick="TransportTracker.MapManager.resetView()">🔄</button>
+      `;
     },
 
-    // --- UI TOOLS ---
+    resetView() {
+      if (this.map) {
+         const bounds = [[0, 0], [this.mapHeight, this.mapWidth]];
+         this.map.fitBounds(bounds);
+      }
+    },
+
+    async savePickedLocation() {
+      if (!this.tempCoords || !this.targetLocationId) return;
+
+      try {
+        const payload = {
+          map_x: this.tempCoords.x,
+          map_y: this.tempCoords.y
+        };
+
+        // Determine if target is location or department based on ID lookup
+        // (Assuming IDs are unique across both, or we need to know type)
+        // MapManager.open seems to handle 'data' as ID.
+        // Let's rely on finding it in state.
+        const allLocs = [...state.locations, ...state.departments];
+        const target = allLocs.find(l => l.id == this.targetLocationId);
+        
+        if (!target) {
+            console.error("Target location not found:", this.targetLocationId);
+            return;
+        }
+
+        if (target.type === 'department') {
+            await API.updateDepartment(target.id, payload);
+        } else {
+            await API.updateLocation(target.id, payload);
+        }
+
+        Toast.success("Lokalizacja zaktualizowana");
+        
+        // Update local state immediately to reflect change without reload
+        target.map_x = this.tempCoords.x;
+        target.map_y = this.tempCoords.y;
+        
+        Modal.close("modal-map");
+        
+        // Refresh grids if needed
+        if (typeof renderLocations === 'function') renderLocations(); 
+        if (typeof renderDepartments === 'function') renderDepartments();
+
+      } catch (e) {
+        console.error(e);
+        Toast.error("Błąd zapisu lokalizacji");
+      }
+    },
+
     renderNetworkToolbar() {
       const wrapper = Utils.$(".map-wrapper");
+      // Create toolbar only if it doesn't represent
       let toolbar = wrapper.querySelector("#network-toolbar");
       if (!toolbar) {
-        toolbar = document.createElement("div");
-        toolbar.id = "network-toolbar";
-        toolbar.className = "map-draw-toolbar"; // Użyj tej samej klasy co wcześniej
-        wrapper.appendChild(toolbar);
+          toolbar = document.createElement("div");
+          toolbar.id = "network-toolbar";
+          toolbar.className = "map-draw-toolbar"; // Reuse existing css
+          wrapper.appendChild(toolbar);
       }
 
-      // Pokaż tylko jeśli admin ID 1
+      // Check permissions (Admin ID 1 only)
       if (state.currentUser?.id !== 1) {
-        toolbar.classList.add("hidden");
-        return;
+          toolbar.classList.add("hidden");
+          return;
       }
 
-      // Pokaż tylko w trybie view/edit
+
+      // Hide in pick/route modes
       if (this.mode === "pick" || this.mode === "show_route") {
         toolbar.classList.add("hidden");
         return;
@@ -2300,266 +2064,81 @@
 
       if (this.mode === "view") {
         toolbar.innerHTML = `
-                <button class="btn btn-primary btn-small" onclick="TransportTracker.MapManager.setEditMode(true)">
-                    🔧 Edytuj sieć dróg
-                </button>
-            `;
+            <button class="btn btn-primary btn-small" onclick="TransportTracker.MapManager.open('edit_network')">
+                🔧 Edytuj sieć dróg
+            </button>
+        `;
       } else {
         toolbar.innerHTML = `
-                <button class="btn btn-success btn-small" onclick="TransportTracker.MapManager.saveNetwork()">
-                    💾 Zapisz
-                </button>
-                <button class="btn btn-danger btn-small" onclick="TransportTracker.MapManager.clearNetwork()">
-                    🗑️ Wyczyść
-                </button>
-                <button class="btn btn-secondary btn-small" onclick="TransportTracker.MapManager.setEditMode(false)">
-                    ❌ Anuluj
-                </button>
-            `;
-      }
-    },
-
-    setEditMode(enable) {
-      this.mode = enable ? "edit_network" : "view";
-      this.selectedNodeId = null;
-
-      // Toggle edit-mode class for cursor
-      const wrapper = document.querySelector(".map-wrapper");
-      if (enable) {
-        wrapper?.classList.add("edit-mode");
-      } else {
-        wrapper?.classList.remove("edit-mode");
-      }
-
-      // KLUCZOWE: Zastosuj kursor
-      this.updateCursor();
-
-      this.renderNetworkToolbar();
-      this.draw();
-      if (enable)
-        Toast.info("Klikaj na mapie aby dodawać punkty i łączyć je ścieżkami.");
-    },
-
-    // KLIKANIE - obsługa różnych ekranów i zoomów
-    handlePickClick(e) {
-      // FIX: SIMPLIFIED Coordinate Calculation for Picking
-      const img = Utils.$("#facility-map");
-      const container = Utils.$("#map-container");
-      const rect = img.getBoundingClientRect();
-
-      const relX = e.clientX - rect.left;
-      const relY = e.clientY - rect.top;
-
-      const x = (relX / rect.width) * 100;
-      const y = (relY / rect.height) * 100;
-
-      console.log(
-        `🖱️ Click Fixed: screen(${e.clientX},${e.clientY}) -> local(${relX.toFixed(1)},${relY.toFixed(1)}) -> %(${x.toFixed(1)},${y.toFixed(1)})`,
-      );
-      this.renderTempPin(x, y);
-    },
-
-    renderTempPin(x, y) {
-      this.tempCoords = { x, y };
-      const oldTemp = Utils.$("#temp-pin");
-      if (oldTemp) oldTemp.remove();
-
-      const container = Utils.$("#map-container");
-      // Temp pin z procentami
-      const pin = document.createElement("div");
-      pin.className = "map-pin pin-temp";
-      pin.id = "temp-pin";
-      pin.style.position = "absolute";
-      pin.style.left = `${x}%`;
-      pin.style.top = `${y}%`;
-      pin.style.transform = "translate(-50%, -100%)";
-      pin.style.transformOrigin = "bottom center";
-
-      pin.innerHTML = `<div class="pin-icon-wrapper" style="background:var(--success)"><span>📍</span></div>`;
-      container.appendChild(pin);
-
-      Utils.$("#map-save-btn").disabled = false;
-    },
-
-    // Potrzebne dla przycisków HTML onclick
-    savePickedLocation() {
-      if (AdminPanel.onMapPick && this.tempCoords) {
-        AdminPanel.onMapPick(this.tempCoords);
-        Modal.close("modal-map");
-      }
-    },
-
-    // Helpers
-    showLoading() {
-      let overlay = document.querySelector(".map-loading-overlay");
-      if (!overlay) {
-        const wrapper = document.querySelector(".map-wrapper");
-        if (wrapper) {
-          overlay = document.createElement("div");
-          overlay.className = "map-loading-overlay";
-          overlay.innerHTML =
-            '<div class="map-loading-spinner"></div><div>Ładowanie mapy...</div>';
-          wrapper.appendChild(overlay);
-        }
-      }
-      if (overlay) {
-        overlay.style.display = "flex";
-        // Utils.show might rely on existing classes, use direct style to be sure
-        // Utils.show(".map-loading-overlay");
-      }
-    },
-    hideLoading() {
-      const overlay = document.querySelector(".map-loading-overlay");
-      if (overlay) {
-        overlay.style.display = "none";
-      }
-    },
-    renderPins() {
-      /* (Kod renderowania pinezek - taki sam jak był) */ this.renderPinsLogic();
-    },
-    renderControls() {
-      /* (Kod kontrolek - taki sam jak był) */ this.renderControlsLogic();
-    },
-
-    // FIX #7 CRITICAL - renderowanie pinezek
-    renderPinsLogic() {
-      Utils.$$(".map-pin:not(#temp-pin)").forEach((el) => el.remove());
-      const container = Utils.$("#map-container");
-      const img = Utils.$("#facility-map");
-
-      if (!img || !img.naturalWidth) {
-        console.warn("⚠️ Cannot render pins - image not loaded");
-        return;
-      }
-
-      // NOWA FUNKCJA: W trybie show_route wyróżnij tylko punkty A i B
-      const isRouteMode = this.mode === "show_route";
-      const routeFromName = this.routeFrom;
-      const routeToName = this.routeTo;
-
-      [...state.locations, ...state.departments].forEach((loc) => {
-        if (loc.map_x != null && loc.map_y != null) {
-          // Sprawdź czy to punkt A lub B trasy
-          // Sprawdź czy to punkt A lub B trasy
-          const isRoutePoint =
-            isRouteMode &&
-            (loc.name === routeFromName || loc.name === routeToName);
-          const isOtherPin = isRouteMode && !isRoutePoint;
-
-          // FIX: HIDE original pin if we are currently editing it!
-          // We use loose comparison (==) because IDs might be string vs number
-          if (this.mode === "pick" && this.targetLocationId == loc.id) {
-            return; // Skip rendering this pin, as the GREEN TEMP PIN will take its place
-          }
-
-          const pin = document.createElement("div");
-          pin.className = `map-pin ${loc.type === "department" ? "pin-dept" : "pin-loc"}`;
-
-          // Dodaj specjalne klasy dla trasy
-          if (isRoutePoint) {
-            pin.classList.add("pin-route-highlight");
-            if (loc.name === routeFromName)
-              pin.classList.add("pin-route-start");
-            if (loc.name === routeToName) pin.classList.add("pin-route-end");
-          }
-          if (isOtherPin) {
-            pin.classList.add("pin-dimmed");
-          }
-
-          // FIX #7: POWRÓT DO PROCENTÓW - to działa identycznie na wszystkich urządzeniach!
-          // Procenty są relatywne do rodzica (map-container) który ma stałe wymiary
-          // Nie zależą od DPR ani rozmiaru viewport
-          pin.style.position = "absolute";
-          pin.style.left = `${loc.map_x}%`;
-          pin.style.top = `${loc.map_y}%`;
-          // transform używany tylko do centrowania (względne wartości %, nie px)
-          pin.style.transform = "translate(-50%, -100%)";
-          pin.style.transformOrigin = "bottom center";
-
-          // Ikona
-          let icon = loc.type === "department" ? "🏢" : "📍";
-          if (loc.name === routeFromName) icon = "🅰️"; // A dla startu
-          if (loc.name === routeToName) icon = "🅱️"; // B dla końca
-
-          pin.innerHTML = `<div class="pin-icon-wrapper"><span>${icon}</span></div><div class="pin-label">${loc.name}</div>`;
-          container.appendChild(pin);
-        }
-      });
-
-      console.log(
-        `📍 Rendered ${[...state.locations, ...state.departments].filter((l) => l.map_x != null).length} pins (percentage-based positioning)${isRouteMode ? " - route mode" : ""}`,
-      );
-    },
-
-    renderControlsLogic() {
-      const wrapper = Utils.$(".map-wrapper");
-      if (wrapper.querySelector(".map-controls")) return;
-      const c = document.createElement("div");
-      c.className = "map-controls";
-      c.innerHTML = `
-            <button class="btn-icon" onclick="TransportTracker.MapManager.panzoomInstance.zoomIn()">+</button>
-            <button class="btn-icon" onclick="TransportTracker.MapManager.panzoomInstance.zoomOut()">-</button>
-            <button class="btn-icon" onclick="TransportTracker.MapManager.panzoomInstance.reset()">⟲</button>
+            <button class="btn btn-success btn-small" onclick="TransportTracker.MapManager.saveNetwork()">
+                💾 Zapisz
+            </button>
+            <button class="btn btn-danger btn-small" onclick="TransportTracker.MapManager.clearNetwork()">
+                🗑️ Wyczyść
+            </button>
+            <button class="btn btn-secondary btn-small" onclick="TransportTracker.MapManager.open('view')">
+                ❌ Anuluj
+            </button>
         `;
-      wrapper.appendChild(c);
-    },
+      }
+    }
   };
-  // =============================================
-  // 13. AUTH
-  // =============================================
-  const Auth = {
-    async init() {
-      // 1. Ładowanie CACHE (Optymistyczny start)
-      try {
-        const cachedUsers = localStorage.getItem(CONFIG.STORAGE_KEYS.USERS);
-        const cachedLocs = localStorage.getItem(CONFIG.STORAGE_KEYS.LOCATIONS);
-        const cachedDepts = localStorage.getItem(
-          CONFIG.STORAGE_KEYS.DEPARTMENTS,
-        );
-        const cachedTasks = localStorage.getItem(CONFIG.STORAGE_KEYS.TASKS);
-
-        if (cachedUsers) state.users = JSON.parse(cachedUsers);
-        if (cachedLocs) state.locations = JSON.parse(cachedLocs);
-        if (cachedDepts) state.departments = JSON.parse(cachedDepts);
-        if (cachedTasks) state.taskCache = JSON.parse(cachedTasks);
-      } catch (e) {
-        console.warn("Błąd ładowania cache:", e);
-      }
-
-      const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
-
-      if (savedUser) {
-        try {
-          const parsed = JSON.parse(savedUser);
-
-          // Sprawdź czy dane są poprawne
-          if (!parsed || !parsed.token || !parsed.id) {
-            throw new Error("Uszkodzone dane sesji");
-          }
-
-          // Przywróć stan
-          state.currentUser = parsed;
-
-          // Przejdź dalej
-          await this.onLoginSuccess();
-        } catch (e) {
-          console.error("Session error:", e);
-          this.logout(true); // Wymuś wylogowanie i czyszczenie
-        }
-      } else {
-        await this.showLoginScreen();
-      }
-    },
-
-    async showLoginScreen() {
-      try {
-        state.users = await API.getUsers();
-        this.populateUserSelect();
-      } catch (error) {
-        Toast.error("Nie udało się załadować użytkowników");
-      }
-      Screen.show("login");
-    },
+   // =============================================
+   // 13. AUTH
+   // =============================================
+   const Auth = {
+     async init() {
+       // 1. Ładowanie CACHE (Optymistyczny start)
+       try {
+         const cachedUsers = localStorage.getItem(CONFIG.STORAGE_KEYS.USERS);
+         const cachedLocs = localStorage.getItem(CONFIG.STORAGE_KEYS.LOCATIONS);
+         const cachedDepts = localStorage.getItem(
+           CONFIG.STORAGE_KEYS.DEPARTMENTS,
+         );
+         const cachedTasks = localStorage.getItem(CONFIG.STORAGE_KEYS.TASKS);
+ 
+         if (cachedUsers) state.users = JSON.parse(cachedUsers);
+         if (cachedLocs) state.locations = JSON.parse(cachedLocs);
+         if (cachedDepts) state.departments = JSON.parse(cachedDepts);
+         if (cachedTasks) state.taskCache = JSON.parse(cachedTasks);
+       } catch (e) {
+         console.warn("Błąd ładowania cache:", e);
+       }
+ 
+       const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
+ 
+       if (savedUser) {
+         try {
+           const parsed = JSON.parse(savedUser);
+ 
+           // Sprawdź czy dane są poprawne
+           if (!parsed || !parsed.token || !parsed.id) {
+             throw new Error("Uszkodzone dane sesji");
+           }
+ 
+           // Przywróć stan
+           state.currentUser = parsed;
+ 
+           // Przejdź dalej
+           await this.onLoginSuccess();
+         } catch (e) {
+           console.error("Session error:", e);
+           this.logout(true); // Wymuś wylogowanie i czyszczenie
+         }
+       } else {
+         await this.showLoginScreen();
+       }
+     },
+ 
+     async showLoginScreen() {
+       try {
+         state.users = await API.getUsers();
+         this.populateUserSelect();
+       } catch (error) {
+         Toast.error("Nie udało się załadować użytkowników");
+       }
+       Screen.show("login");
+     },
 
     populateUserSelect() {
       const select = Utils.$("#login-user");
