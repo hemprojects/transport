@@ -2730,14 +2730,56 @@
         return;
       }
 
+      // SUGGESTION LOGIC: Find last completed task today to suggest next nearby task
+      let lastCompletedLoc = null;
+      // Get completed tasks for today, sorted by timestamp descending (if available) or by list order
+      const completedToday = state.tasks.filter(t => t.status === 'completed' || t.has_completed);
+      if (completedToday.length > 0) {
+          // Assuming the last one in the list (or we could sort by update time if tracked)
+          // For now, let's take the one that appears last in the list as "recenlty done"
+          const lastTask = completedToday[completedToday.length - 1]; 
+          
+          if (lastTask.task_type === 'transport') lastCompletedLoc = lastTask.location_to;
+          else if (lastTask.task_type === 'unloading') lastCompletedLoc = lastTask.department; // Unloading ends at dept
+          // Loading ends at dept too? No, loading starts at dept? 
+          // Logic: where is the driver NOW?
+          // Transport: at location_to
+          // Unloading: at department
+          // Loading: at... finishes at department? or finishes when loaded? 
+          // Usually loading task means "Go to Dept, Load". So you are at Dept.
+          else if (lastTask.task_type === 'loading') lastCompletedLoc = lastTask.department;
+          else if (lastTask.task_type === 'other') lastCompletedLoc = lastTask.location_to || lastTask.location_from;
+      }
+
       Utils.hide(emptyState);
       tasksList.innerHTML = filteredTasks
-        .map((task) => this.renderTaskCard(task))
+        .map((task) => {
+            // Check if this task should be suggested
+            let isSuggested = false;
+            // Only suggest pending tasks
+            if (lastCompletedLoc && (task.status === 'pending' || task.status === 'paused')) {
+                let startLoc = null;
+                if (task.task_type === 'transport') startLoc = task.location_from;
+                else if (task.task_type === 'loading') startLoc = task.department;
+                else if (task.task_type === 'unloading') startLoc = task.department; //? Unloading starts where? Usually from previous. 
+                // Wait, Unloading task: "Take stuff FROM X and unload". So start is X?
+                // If Unloading means "Unload at X", then start is... wherever the stuff is.
+                // Let's assume standard flow:
+                // Transport: From -> To.
+                // Loading: At Dept.
+                // Unloading: At Dept.
+                
+                if (startLoc && Utils.isNearby(lastCompletedLoc, startLoc)) {
+                    isSuggested = true;
+                }
+            }
+            return this.renderTaskCard(task, isSuggested);
+        })
         .join("");
       this.attachTaskEventListeners();
     },
 
-    renderTaskCard(task) {
+    renderTaskCard(task, isSuggested = false) {
       const isMyTask = task.assigned_to === state.currentUser.id;
       const isJoined =
         task.additional_drivers &&
@@ -2900,19 +2942,7 @@
         }
       }
 
-      // SMART SUGGESTION CHECK - oparte na bliskości geograficznej
-      const lastLoc = localStorage.getItem("last_known_location");
-      let isSuggested = false;
-
-      if (task.status === "pending" && task.location_from && lastLoc) {
-        // Dokładne dopasowanie
-        if (task.location_from === lastLoc) {
-          isSuggested = true;
-        } else {
-          // Sprawdź bliskość na mapie
-          isSuggested = Utils.isNearby(task.location_from, lastLoc);
-        }
-      }
+      // SMART SUGGESTION CHECK - Passed as argument
       const suggestionClass = isSuggested ? "suggestion-ring" : "";
 
       return `
