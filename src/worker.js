@@ -301,8 +301,10 @@ async function handleAPI(request, env, path, corsHeaders) {
     return await deleteUser(path.split("/").pop(), env, corsHeaders);
   }
   if (path.match(/^\/api\/users\/\d+$/) && method === "PUT") {
-    if (!canManageUsers) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
-    return await updateUser(path.split("/").pop(), request, env, corsHeaders);
+    const targetId = parseInt(path.split("/").pop());
+    const isSelf = userId === targetId;
+    if (!canManageUsers && !isSelf) return new Response(JSON.stringify({ error: "Brak uprawnień" }), { status: 403, headers: corsHeaders });
+    return await updateUser(targetId, request, env, corsHeaders, canManageUsers);
   }
 
   // LOCATIONS
@@ -582,7 +584,7 @@ async function createUser(request, env, corsHeaders) {
   );
 }
 
-async function updateUser(id, request, env, corsHeaders) {
+async function updateUser(id, request, env, corsHeaders, canManageUsers = false) {
   const {
     name,
     pin,
@@ -597,37 +599,43 @@ async function updateUser(id, request, env, corsHeaders) {
   let q = "UPDATE users SET ";
   let p = [];
   let u = [];
-  if (name) {
-    u.push("name = ?");
-    p.push(name);
+  
+  // Only admins/managers can change these fields
+  if (canManageUsers) {
+    if (name) {
+        u.push("name = ?");
+        p.push(name);
+    }
+    if (role) {
+        u.push("role = ?");
+        p.push(role);
+    }
+    if (work_start) {
+        u.push("work_start = ?");
+        p.push(work_start);
+    }
+    if (work_end) {
+        u.push("work_end = ?");
+        p.push(work_end);
+    }
+    if (perm_users !== undefined) {
+        u.push("perm_users = ?");
+        p.push(perm_users);
+    }
+    if (perm_locations !== undefined) {
+        u.push("perm_locations = ?");
+        p.push(perm_locations);
+    }
+    if (perm_reports !== undefined) {
+        u.push("perm_reports = ?");
+        p.push(perm_reports);
+    }
   }
-  if (role) {
-    u.push("role = ?");
-    p.push(role);
-  }
-  if (work_start) {
-    u.push("work_start = ?");
-    p.push(work_start);
-  }
-  if (work_end) {
-    u.push("work_end = ?");
-    p.push(work_end);
-  }
+
+  // Everyone (including self) can change these
   if (force_pin_change !== undefined) {
     u.push("force_pin_change = ?");
     p.push(force_pin_change);
-  }
-  if (perm_users !== undefined) {
-    u.push("perm_users = ?");
-    p.push(perm_users);
-  }
-  if (perm_locations !== undefined) {
-    u.push("perm_locations = ?");
-    p.push(perm_locations);
-  }
-  if (perm_reports !== undefined) {
-    u.push("perm_reports = ?");
-    p.push(perm_reports);
   }
   if (pin) {
     u.push("pin = ?");
