@@ -610,11 +610,10 @@ ol {
     backdrop-filter: blur(5px);
   }
 
-
   #modal-map .modal-container {
     background: var(--bg-secondary);
     border: 1px solid var(--border-color);
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
     border-radius: 16px;
     width: 40vw !important;
     max-width: 550px !important;
@@ -639,7 +638,7 @@ ol {
     overflow: hidden;
     background: #000;
   }
-  
+
   #map-container {
     flex: 1;
     width: 100% !important;
@@ -647,9 +646,9 @@ ol {
   }
 
   #modal-map .modal-footer {
-     flex-shrink: 0;
-     border-top: 1px solid var(--border-color);
-     background: var(--bg-secondary);
+    flex-shrink: 0;
+    border-top: 1px solid var(--border-color);
+    background: var(--bg-secondary);
   }
 
   #modal-map .section-desc {
@@ -662,7 +661,6 @@ ol {
     border-bottom: 1px solid var(--border-color);
     box-sizing: border-box;
   }
-
 }
 
 /* Global Smooth Loading Fade */
@@ -1816,8 +1814,10 @@ ol {
 .task-card.suggestion-ring::before {
   content: "💡 Sugestia";
   position: absolute;
-  top: -10px;
-  right: 10px;
+  bottom: 10px;
+  left: 10px;
+  top: auto;
+  right: auto;
   background: #ffd700;
   color: #000;
   font-size: 10px;
@@ -4068,7 +4068,7 @@ input[type="date"] {
   transform-origin: bottom center;
   cursor: pointer;
   z-index: 100;
-  
+
   display: flex !important;
   justify-content: center !important;
   align-items: center !important;
@@ -4094,16 +4094,16 @@ input[type="date"] {
 }
 
 .pin-icon-wrapper {
-  width: 24px; 
-  height: 24px; 
+  width: 24px;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   background-color: var(--danger); /* Fallback */
-  border: 2px solid white; 
+  border: 2px solid white;
   border-radius: 50% 50% 50% 0;
   transform: rotate(-45deg);
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6); 
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.6);
   transition:
     transform 0.2s,
     box-shadow 0.2s;
@@ -4111,7 +4111,6 @@ input[type="date"] {
   opacity: 1 !important; /* Force solid */
   filter: contrast(1.2) brightness(1.1); /* Make it pop */
 }
-
 
 .pin-icon-wrapper span {
   transform: rotate(45deg);
@@ -4140,38 +4139,44 @@ input[type="date"] {
 }
 
 /* Etykieta pinezki */
+/* Etykieta pinezki */
 .pin-label {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%; /* Wyśrodkowanie względem środka pinezki */
-  transform: translateX(-50%); /* Pełne wyśrodkowanie chmurki */
+  /* Zmieniono z bottom: calc(100% + 8px) na bottom: 50% */
+  /* User chce "nad pinezką" - standardowo. */
+  /* Pinezka ma 40x40. IconAnchor 20,24. */
+  /* top:0 to góra obrazka. */
+  /* bottom: 45px; <- This was too high */
+  bottom: calc(100% + 5px); /* Back to relative positioning, but slightly lower than +8px */
+  left: 50%;
+  transform: translateX(-50%);
   transform-origin: bottom center;
   background: white;
   color: #333;
-  padding: 6px 12px;
-  border-radius: 8px;
-  font-size: 11px; /* Zmniejszony z 12px */
-  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600; /* Revert to 600 from 700 */
   white-space: nowrap;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  opacity: 0;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  opacity: 0; /* Hidden by default */
   pointer-events: none;
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
+  z-index: 200;
+  transition: opacity 0.2s, transform 0.2s; /* Restore transition */
 }
 
+/* Strzałka w dół */
 .pin-label::after {
   content: "";
   position: absolute;
   top: 100%;
   left: 50%;
   transform: translateX(-50%);
-  border: 6px solid transparent;
+  border: 5px solid transparent;
   border-top-color: white;
 }
 
-/* Pokazanie etykiety */
+/* Restore Hover/Active Logic */
 .map-pin:hover .pin-label,
 .map-pin.pin-popover-open .pin-label,
 .map-pin.pin-active .pin-label {
@@ -4179,58 +4184,12 @@ input[type="date"] {
   transform: translateX(-50%) scale(1);
 }
 
-/* Ukryj etykiety gdy mocno oddalone */
-.map-container.zoomed-out
-  .map-pin:not(.pin-popover-open):not(.pin-active)
-  .pin-label {
-  display: none;
-}
+/* ... REMOVED HOVER ONLY LOGIC ... */
 
-/* Tymczasowa pinezka (nowa pozycja) */
-.pin-temp .pin-icon-wrapper {
-  background: var(--success);
-  animation: pin-pulse 1s ease-in-out infinite;
-}
-
-@keyframes pin-pulse {
-  0%,
-  100% {
-    transform: rotate(-45deg) scale(1);
-  }
-  50% {
-    transform: rotate(-45deg) scale(1.1);
-  }
-}
-
-/* NOWA FUNKCJA: Route preview mode - przyciemnione i wyróżnione pinezki */
-.map-pin.pin-dimmed {
-  opacity: 0.25; /* Przyciemnij inne pinezki */
-  filter: grayscale(0.7); /* Dodatkowo odbarwienie */
-  pointer-events: none; /* Wyłącz interakcję */
-}
-
-.map-pin.pin-route-highlight {
-  z-index: 300 !important; /* Najwyżej na mapie */
-  opacity: 1 !important;
-  filter: none !important;
-}
-
-/* Punkt START (A) - zielony */
-.map-pin.pin-route-start .pin-icon-wrapper {
-  background: var(--success);
-  border-color: white;
-  border-width: 2px; /* Was 4px */
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.6);
-  animation: pulse-start 2s ease-in-out infinite;
-}
-
-/* Punkt END (B) - niebieski */
+/* Punkt END (B) */
 .map-pin.pin-route-end .pin-icon-wrapper {
   background: var(--primary);
   border-color: white;
-  border-width: 2px; /* Was 4px */
-  box-shadow: 0 4px 12px rgba(0, 122, 255, 0.6);
-  animation: pulse-end 2s ease-in-out infinite 0.5s; /* Opóźnienie dla efektu */
 }
 
 /* Animacja pulsowania punktu START */

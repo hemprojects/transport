@@ -62,11 +62,38 @@
   const Utils = {
     formatDate(dateStr) {
       if (!dateStr) return "";
-      const date = new Date(dateStr + "T00:00:00");
+      let date;
+      // Handle full datetime strings (e.g. from SQL)
+      if (dateStr.includes(" ") || dateStr.includes("T")) {
+          // Replace space with T for Safari compatibility if needed, though simple replacement might be enough
+          // But beware of timezone. Backend usually sends local time in simple string?
+          // Let's use the explicit parsing logic from formatRelativeTime which is robust.
+          if (dateStr.includes(" ")) {
+            const parts = dateStr.split(" ");
+            const dateParts = parts[0].split("-");
+            const timeParts = parts[1].split(":");
+            date = new Date(
+              parseInt(dateParts[0]),
+              parseInt(dateParts[1]) - 1,
+              parseInt(dateParts[2]),
+              parseInt(timeParts[0] || 0),
+              parseInt(timeParts[1] || 0),
+              parseInt(timeParts[2] || 0)
+            );
+          } else {
+            date = new Date(dateStr);
+          }
+      } else {
+          // Just YYYY-MM-DD
+          date = new Date(dateStr + "T00:00:00");
+      }
+      
+      if (isNaN(date.getTime())) return "Invalid Date"; // Fallback
+
       return date.toLocaleDateString(CONFIG.DATE_FORMAT, {
-        weekday: "long",
+        weekday: "short", // Changed to short to save space in logs
         day: "numeric",
-        month: "long",
+        month: "numeric", // Changed to numeric (10.02) per user request style "DD.MM" usually
         year: "numeric",
       });
     },
@@ -1430,14 +1457,14 @@
     mode: "view", // 'view' | 'pick' | 'edit_network' | 'show_route'
     targetLocationId: null,
     tempCoords: null,
-    
+
     // Leaflet instances
     map: null,
     imageOverlay: null,
     markersLayer: null,
     routeLayer: null,
     tempMarker: null,
-    
+
     // Metadata
     mapWidth: 0,
     mapHeight: 0,
@@ -1445,9 +1472,9 @@
     lastOpenTime: 0,
 
     // Dane sieci dróg (dla edytora)
-    nodes: [], 
-    connections: [], 
-    
+    nodes: [],
+    connections: [],
+
     // Stan edycji
     selectedNodeId: null,
 
@@ -1479,20 +1506,27 @@
       // Konfiguracja UI
       if (mode === "pick") {
         this.targetLocationId = data;
-        this.tempCoords = null; 
-        if (titleEl) titleEl.textContent = "📍 Zaznacz lokalizację: Kliknij na mapie";
+        this.tempCoords = null;
+        if (titleEl)
+          titleEl.textContent = "📍 Zaznacz lokalizację: Kliknij na mapie";
         Utils.show(saveBtn);
 
         // Znajdź istniejącą lokalizację
         let existingLoc = null;
         if (typeof data === "number" || typeof data === "string") {
-          existingLoc = [...state.locations, ...state.departments].find(l => l.id == data);
+          existingLoc = [...state.locations, ...state.departments].find(
+            (l) => l.id == data,
+          );
         } else if (typeof data === "object") {
           existingLoc = data;
         }
 
         // Jeśli ma współrzędne, ustaw tymczasowy pin
-        if (existingLoc && existingLoc.map_x != null && existingLoc.map_y != null) {
+        if (
+          existingLoc &&
+          existingLoc.map_x != null &&
+          existingLoc.map_y != null
+        ) {
           this.tempCoords = { x: existingLoc.map_x, y: existingLoc.map_y };
           if (saveBtn) saveBtn.disabled = false;
         } else {
@@ -1516,18 +1550,29 @@
       this.showLoading();
       Modal.open("modal-map");
 
+      this.showLoading();
+      Modal.open("modal-map");
+
+      // FIX MOBILE SAVE BUTTON
+      // Wait for modal to render then bind
+      setTimeout(() => {
+         this.bindSaveButton();
+      }, 200);
+
       // Pobierz sieć dróg jeśli potrzebna
-      if (mode === 'edit_network' || mode === 'show_route') {
-          try {
-            const network = await API.getRoadNetwork();
-            this.nodes = network.nodes || [];
-            this.connections = network.connections || [];
-          } catch (e) { console.error(e); }
+      if (mode === "edit_network" || mode === "show_route") {
+        try {
+          const network = await API.getRoadNetwork();
+          this.nodes = network.nodes || [];
+          this.connections = network.connections || [];
+        } catch (e) {
+          console.error(e);
+        }
       }
 
       // Czekaj na render modala
-      await new Promise(r => setTimeout(r, 150));
-      
+      await new Promise((r) => setTimeout(r, 150));
+
       this.initializeMap();
       console.groupEnd();
     },
@@ -1555,7 +1600,9 @@
       console.log(`🖼️ Loading map image: ${mapUrl}`);
       const img = new Image();
       img.onload = () => {
-        console.log(`✅ Map image loaded! Size: ${img.naturalWidth}x${img.naturalHeight}`);
+        console.log(
+          `✅ Map image loaded! Size: ${img.naturalWidth}x${img.naturalHeight}`,
+        );
         this.mapWidth = img.naturalWidth;
         this.mapHeight = img.naturalHeight;
         this.initLeaflet(container, mapUrl);
@@ -1564,12 +1611,12 @@
         console.error("❌ Map image load FAILED:", err, mapUrl);
         // Fallback do png
         if (mapUrl.endsWith(".webp")) {
-             console.warn("⚠️ Falling back to PNG...");
-             img.src = "img/mapa.png";
-             mapUrl = "img/mapa.png";
+          console.warn("⚠️ Falling back to PNG...");
+          img.src = "img/mapa.png";
+          mapUrl = "img/mapa.png";
         } else {
-            Toast.error("Błąd ładowania mapy");
-            this.hideLoading();
+          Toast.error("Błąd ładowania mapy");
+          this.hideLoading();
         }
       };
       // Cache bust
@@ -1577,12 +1624,20 @@
     },
 
     initLeaflet(container, mapUrl) {
-      console.log("🍃 initLeaflet called with:", mapUrl, this.mapWidth, this.mapHeight);
+      console.log(
+        "🍃 initLeaflet called with:",
+        mapUrl,
+        this.mapWidth,
+        this.mapHeight,
+      );
 
       // 3. Oblicz bounds: [[0,0], [height, width]]
       // W CRS.Simple Y rośnie w GÓRĘ. Pixel Y rośnie w DÓŁ.
-      
-      const bounds = [[0, 0], [this.mapHeight, this.mapWidth]];
+
+      const bounds = [
+        [0, 0],
+        [this.mapHeight, this.mapWidth],
+      ];
 
       this.map = L.map(container, {
         crs: L.CRS.Simple,
@@ -1592,26 +1647,28 @@
         zoomDelta: 0.5,
         attributionControl: false,
         zoomControl: false, // Disable default top-left buttons
-        maxBounds: bounds,  // Restrict panning
+        maxBounds: bounds, // Restrict panning
         maxBoundsViscosity: 1.0, // Bouncy hard edge
-        bounceAtZoomLimits: false // Disable rubber-banding on minZoom
+        bounceAtZoomLimits: false, // Disable rubber-banding on minZoom
       });
       console.log("🍃 Leaflet map instance created");
 
       this.imageOverlay = L.imageOverlay(mapUrl, bounds).addTo(this.map);
-      
+
       // Calculate minZoom to fit the map exactly within container
       // This prevents zooming out into the void
       const fitZoom = this.map.getBoundsZoom(bounds);
-      
+
       // Update map settings
       this.map.setMinZoom(fitZoom);
       this.map.setMaxBounds(bounds);
-      
+
       // Initial fit
       this.map.fitBounds(bounds);
-      
-      console.log(`🍃 Leaflet configured: ImageOverlay added, minZoom=${fitZoom}`);
+
+      console.log(
+        `🍃 Leaflet configured: ImageOverlay added, minZoom=${fitZoom}`,
+      );
 
       // Layers
       this.markersLayer = L.layerGroup().addTo(this.map);
@@ -1641,7 +1698,8 @@
 
       // Jeśli Show Route
       if (this.mode === "show_route" && this.routeFrom && this.routeTo) {
-         if (this.calculateRoute) this.calculateRoute(this.routeFrom, this.routeTo);
+        if (this.calculateRoute)
+          this.calculateRoute(this.routeFrom, this.routeTo);
       }
 
       // Smooth Fade-In effect
@@ -1662,83 +1720,106 @@
 
     // NEW: Percentage helpers for compatibility with backend data
     percentToLeaflet(pctX, pctY) {
-       const pxX = (pctX / 100) * this.mapWidth;
-       const pxY = (pctY / 100) * this.mapHeight;
-       return this.toLeaflet(pxX, pxY);
+      const pxX = (pctX / 100) * this.mapWidth;
+      const pxY = (pctY / 100) * this.mapHeight;
+      return this.toLeaflet(pxX, pxY);
     },
 
     leafletToPercent(latlng) {
-       const { x, y } = this.toPixels(latlng);
-       return {
-          x: (Number(x) / this.mapWidth) * 100,
-          y: (Number(y) / this.mapHeight) * 100
-       };
+      const { x, y } = this.toPixels(latlng);
+      return {
+        x: (Number(x) / this.mapWidth) * 100,
+        y: (Number(y) / this.mapHeight) * 100,
+      };
     },
 
     renderPins() {
       this.markersLayer.clearLayers();
-      
-      const createIcon = (color, label, type, extraStyle = '') => {
+
+      const createIcon = (color, label, type, extraStyle = '', symbolOverride = null) => {
         // Adjust style based on type
         const isDept = type === 'department';
         const wrapperClass = isDept ? 'pin-dept' : '';
-        const iconChar = isDept ? '🏢' : '📍';
+        // If symbolOverride is provided (e.g. "A" or "B"), use it. Otherwise default to icon.
+        const iconChar = symbolOverride || (isDept ? '🏢' : '📍');
         
         return L.divIcon({
           className: 'custom-pin-icon',
           html: `
             <div class="map-pin ${wrapperClass}" style="position: relative; transform: none; left: 0; top: 0; ${extraStyle}">
               <div class="pin-icon-wrapper" style="background-color: ${color};">
-                <span>${iconChar}</span>
+                <span style="${symbolOverride ? 'font-weight:bold; font-family:sans-serif;' : ''}">${iconChar}</span>
               </div>
               <div class="pin-label">${label}</div>
             </div>
           `,
           iconSize: [40, 40],
-          iconAnchor: [20, 24] // Adjusted to move visual pin down
+          iconAnchor: [20, 24], // Adjusted to move visual pin down
         });
       };
 
       // Renderuj lokalizacje
-      [...state.locations, ...state.departments].forEach(loc => {
-         if (loc.map_x != null && loc.map_y != null) {
-            let color = loc.type === 'location' ? 'var(--primary)' : 'var(--accent)';
-            
-            // Check if we are in route mode to dim unrelated pins
-            let dimStyle = '';
-            if ((this.mode === 'show_route' || this.mode === 'view_task') && this.routeFrom && this.routeTo) {
-               if (loc.name !== this.routeFrom && loc.name !== this.routeTo) {
-                   // Dim this pin
-                   dimStyle = 'opacity: 0.3; filter: grayscale(100%); pointer-events: none;';
-               } else {
-                   // Highlight this pin
-                   color = 'var(--success)';
-                   dimStyle = 'z-index: 1000 !important; transform: scale(1.2);';
-               }
-            }
+      [...state.locations, ...state.departments].forEach((loc) => {
+        if (loc.map_x != null && loc.map_y != null) {
+          let color =
+            loc.type === "location" ? "var(--primary)" : "var(--accent)";
 
-            // FIX: Use percentToLeaflet
-            const marker = L.marker(this.percentToLeaflet(loc.map_x, loc.map_y), {
-                icon: createIcon(color, loc.name, loc.type, dimStyle),
-                zIndexOffset: (loc.name === this.routeFrom || loc.name === this.routeTo) ? 1000 : 0
-            });
-            
-            // Add click handler (e.g., for routing or info)
-            marker.on('click', () => {
-                if (this.mode === 'show_route') {
-                    // Logic to select route points could go here
-                }
-            });
-            marker.addTo(this.markersLayer);
-         }
+          // Check if we are in route mode to dim unrelated pins
+          let dimStyle = "";
+          if (
+            (this.mode === "show_route" || this.mode === "view_task") &&
+            this.routeFrom &&
+            this.routeTo
+          ) {
+            if (loc.name !== this.routeFrom && loc.name !== this.routeTo) {
+              // Dim this pin
+              dimStyle =
+                "opacity: 0.3; filter: grayscale(100%); pointer-events: none;";
+            } else {
+              // Highlight this pin
+              color = "var(--success)";
+              dimStyle = "z-index: 1000 !important; transform: scale(1.2);";
+            }
+          }
+
+          // NEW: Custom Logic for A/B pins in Show Route mode
+          // Pin Label stays as Location Name (loc.name)
+          // Pin Icon becomes "A" or "B"
+          let symbolOverride = null;
+          let isRoutePin = false;
+
+          if ((this.mode === 'show_route') && this.routeFrom && this.routeTo) {
+             if (loc.name === this.routeFrom) {
+                 symbolOverride = "A";
+                 isRoutePin = true;
+             } else if (loc.name === this.routeTo) {
+                 symbolOverride = "B";
+                 isRoutePin = true;
+             }
+          }
+
+          // FIX: Use percentToLeaflet
+          const marker = L.marker(this.percentToLeaflet(loc.map_x, loc.map_y), {
+              icon: createIcon(color, loc.name, loc.type, dimStyle, symbolOverride),
+              zIndexOffset: isRoutePin ? 1000 : 0
+          });
+
+          // Add click handler (e.g., for routing or info)
+          marker.on("click", () => {
+            if (this.mode === "show_route") {
+              // Logic to select route points could go here
+            }
+          });
+          marker.addTo(this.markersLayer);
+        }
       });
     },
 
     renderTempPin(x, y) {
       if (this.tempMarker) this.tempMarker.remove();
-      
+
       const icon = L.divIcon({
-        className: 'temp-pin-icon',
+        className: "temp-pin-icon",
         html: `
             <div class="map-pin pin-temp" style="position: relative; transform: none; left: 0; top: 0;">
               <div class="pin-icon-wrapper">
@@ -1747,81 +1828,95 @@
             </div>
         `,
         iconSize: [40, 40],
-        iconAnchor: [20, 24]
+        iconAnchor: [20, 24],
       });
 
       // FIX: Use percentToLeaflet (x,y are %)
-      this.tempMarker = L.marker(this.percentToLeaflet(x, y), { icon: icon, draggable: true }).addTo(this.map);
-      
-      this.tempMarker.on('dragend', (e) => {
-         // Convert back to % on drag
-         const pos = this.leafletToPercent(e.target.getLatLng());
-         this.tempCoords = pos;
-         const saveBtn = Utils.$("#map-save-btn");
-         if (saveBtn) saveBtn.disabled = false;
+      this.tempMarker = L.marker(this.percentToLeaflet(x, y), {
+        icon: icon,
+        draggable: true,
+      }).addTo(this.map);
+
+      this.tempMarker.on("dragend", (e) => {
+        // Convert back to % on drag
+        const pos = this.leafletToPercent(e.target.getLatLng());
+        this.tempCoords = pos;
+        const saveBtn = Utils.$("#map-save-btn");
+        if (saveBtn) saveBtn.disabled = false;
       });
     },
 
     onMapClick(e) {
-       if (this.mode === "pick") {
-          // FIX: Convert to %
-          const { x, y } = this.leafletToPercent(e.latlng);
-          this.tempCoords = { x, y };
-          this.renderTempPin(x, y);
-          const saveBtn = Utils.$("#map-save-btn");
-          if (saveBtn) saveBtn.disabled = false;
-       } else if (this.mode === "edit_network") {
-          // FIX: Convert to %
-          const { x, y } = this.leafletToPercent(e.latlng);
-          this.handleNetworkClick(x, y);
-       }
+      if (this.mode === "pick") {
+        // FIX: Convert to %
+        const { x, y } = this.leafletToPercent(e.latlng);
+        this.tempCoords = { x, y };
+        this.renderTempPin(x, y);
+        const saveBtn = Utils.$("#map-save-btn");
+        if (saveBtn) saveBtn.disabled = false;
+      } else if (this.mode === "edit_network") {
+        // FIX: Convert to %
+        const { x, y } = this.leafletToPercent(e.latlng);
+        this.handleNetworkClick(x, y);
+      }
     },
 
     showLoading() {
-       const loader = Utils.$(".screen .loading-container");
-       if (loader) loader.classList.add("active");
+      const loader = Utils.$(".screen .loading-container");
+      if (loader) loader.classList.add("active");
     },
     hideLoading() {
-       const loader = Utils.$(".screen .loading-container");
-       if (loader) loader.classList.remove("active");
+      const loader = Utils.$(".screen .loading-container");
+      if (loader) loader.classList.remove("active");
     },
 
     // LEAFLET DOES NOT USE DRAW
     draw() {
-        // No-op
+      // No-op
     },
 
     // --- NETWORK & ROUTING (Simplified adapter) ---
     renderNetwork() {
-       // Rysowanie węzłów i połączeń używając L.circleMarker i L.polyline
-       if (!this.map) return;
-       
-       this.routeLayer.clearLayers();
+      // Rysowanie węzłów i połączeń używając L.circleMarker i L.polyline
+      if (!this.map) return;
 
-       this.connections.forEach(conn => {
-          const n1 = this.nodes.find(n => n.id === conn.from);
-          const n2 = this.nodes.find(n => n.id === conn.to);
-          if (n1 && n2) {
-             // FIX: Use percentToLeaflet
-             L.polyline([this.percentToLeaflet(n1.x, n1.y), this.percentToLeaflet(n2.x, n2.y)], { color: 'blue', weight: 2 }).addTo(this.routeLayer);
-          }
-       });
+      this.routeLayer.clearLayers();
 
-       this.nodes.forEach(node => {
-          const color = this.selectedNodeId === node.id ? 'red' : 'blue';
+      this.connections.forEach((conn) => {
+        const n1 = this.nodes.find((n) => n.id === conn.from);
+        const n2 = this.nodes.find((n) => n.id === conn.to);
+        if (n1 && n2) {
           // FIX: Use percentToLeaflet
-          L.circleMarker(this.percentToLeaflet(node.x, node.y), { radius: 5, color: color, fillColor: color, fillOpacity: 0.8 }).addTo(this.routeLayer);
-       });
+          L.polyline(
+            [
+              this.percentToLeaflet(n1.x, n1.y),
+              this.percentToLeaflet(n2.x, n2.y),
+            ],
+            { color: "blue", weight: 2 },
+          ).addTo(this.routeLayer);
+        }
+      });
+
+      this.nodes.forEach((node) => {
+        const color = this.selectedNodeId === node.id ? "red" : "blue";
+        // FIX: Use percentToLeaflet
+        L.circleMarker(this.percentToLeaflet(node.x, node.y), {
+          radius: 5,
+          color: color,
+          fillColor: color,
+          fillOpacity: 0.8,
+        }).addTo(this.routeLayer);
+      });
     },
 
     handleNetworkClick(x, y) {
       // Proste znajdowanie najbliższego węzła
       // NOTA: x, y są TERAZ w procentach. Threshold też musi być w %.
       const threshold = 2; // 2% szerokości mapy
-      
+
       // Calculate aspect ratio correction for distance?
       // Simple Euclidean on % works OK for selecting.
-      
+
       const clickedNode = this.nodes.find((n) => {
         const dist = Math.hypot(n.x - x, n.y - y);
         return dist < threshold;
@@ -1891,7 +1986,7 @@
     // --- ALGORYTM DIJKSTRA ---
     calculateRoute(startName, endName) {
       console.log("Calculating route...", startName, endName);
-      
+
       const allLocs = [...state.locations, ...state.departments];
       const startLoc = allLocs.find((l) => l.name === startName);
       const endLoc = allLocs.find((l) => l.name === endName);
@@ -1900,7 +1995,7 @@
         Toast.warning("Brak współrzędnych dla lokalizacji");
         return;
       }
-      
+
       this.routeLayer.clearLayers();
 
       // 1. Znajdź najbliższe węzły sieci dla startu i końca
@@ -1912,48 +2007,59 @@
         // Brak sieci? Rysuj linię prostą
         console.log("⚠️ No road network - drawing straight line");
         // FIX: Use percentToLeaflet
-        L.polyline([
-          this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
-          this.percentToLeaflet(endLoc.map_x, endLoc.map_y)
-        ], { color: 'blue', dashArray: '10, 10', weight: 3 }).addTo(this.routeLayer);
+        L.polyline(
+          [
+            this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
+            this.percentToLeaflet(endLoc.map_x, endLoc.map_y),
+          ],
+          { color: "blue", dashArray: "10, 10", weight: 3 },
+        ).addTo(this.routeLayer);
         return;
       }
 
       // 2. Uruchom Dijkstrę
       let path = null;
       try {
-          if (typeof PriorityQueue === 'undefined') {
-              console.error("PriorityQueue missing!");
-          } else {
-             path = this.runDijkstra(startNode, endNode);
-          }
-      } catch(e) {
-          console.error("Dijkstra error:", e);
+        if (typeof PriorityQueue === "undefined") {
+          console.error("PriorityQueue missing!");
+        } else {
+          path = this.runDijkstra(startNode, endNode);
+        }
+      } catch (e) {
+        console.error("Dijkstra error:", e);
       }
-      
+
       if (path && path.length > 0) {
-         // Found valid network path
-         const latlngs = [
-            this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
-            ...path.map(n => this.percentToLeaflet(n.x, n.y)),
-            this.percentToLeaflet(endLoc.map_x, endLoc.map_y)
-         ];
-         
-         L.polyline(latlngs, { color: '#007aff', weight: 5, opacity: 0.8 }).addTo(this.routeLayer);
-         
-         // Add distance label?
-         const totalDist = path.length * 5; // Rough estimate
-         // Toast.info(`Znaleziono trasę`);
+        // Found valid network path
+        const latlngs = [
+          this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
+          ...path.map((n) => this.percentToLeaflet(n.x, n.y)),
+          this.percentToLeaflet(endLoc.map_x, endLoc.map_y),
+        ];
+
+        L.polyline(latlngs, {
+          color: "#00008b", // Very Dark Blue
+          weight: 5,
+          opacity: 0.9,
+        }).addTo(this.routeLayer);
+
+        // Add distance label?
+        const totalDist = path.length * 5; // Rough estimate
+        // Toast.info(`Znaleziono trasę`);
       } else {
         // Fallback: Straight line (dashed)
         console.warn("⚠️ No path found - fallback straight line");
-        
-        L.polyline([
-          this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
-          this.percentToLeaflet(endLoc.map_x, endLoc.map_y)
-        ], { color: '#ff9500', dashArray: '10, 10', weight: 3, opacity: 0.6 }).addTo(this.routeLayer);
-        
-        if (!path) Toast.warning("Brak połączenia w sieci dróg - pokazuję linię prostą");
+
+        L.polyline(
+          [
+            this.percentToLeaflet(startLoc.map_x, startLoc.map_y),
+            this.percentToLeaflet(endLoc.map_x, endLoc.map_y),
+          ],
+          { color: "#ff9500", dashArray: "10, 10", weight: 3, opacity: 0.6 },
+        ).addTo(this.routeLayer);
+
+        if (!path)
+          Toast.warning("Brak połączenia w sieci dróg - pokazuję linię prostą");
       }
     },
 
@@ -2021,16 +2127,16 @@
       const path = [];
       let current = endNode.id;
       if (previous[current] || current === startNode.id) {
-          while (current) {
-            const n = this.nodes.find((nod) => nod.id === current);
-            if (n) path.unshift(n);
-            current = previous[current];
-          }
-          return path;
+        while (current) {
+          const n = this.nodes.find((nod) => nod.id === current);
+          if (n) path.unshift(n);
+          current = previous[current];
+        }
+        return path;
       }
       return null;
     },
-    
+
     renderControls() {
       const wrapper = Utils.$(".map-wrapper");
       let controls = wrapper.querySelector(".map-controls");
@@ -2039,7 +2145,7 @@
         controls.className = "map-controls";
         wrapper.appendChild(controls);
       }
-      
+
       controls.innerHTML = `
         <button class="btn-icon map-btn" onclick="TransportTracker.MapManager.map.zoomIn()">➕</button>
         <button class="btn-icon map-btn" onclick="TransportTracker.MapManager.map.zoomOut()">➖</button>
@@ -2049,47 +2155,83 @@
 
     resetView() {
       if (this.map) {
-         const bounds = [[0, 0], [this.mapHeight, this.mapWidth]];
-         this.map.fitBounds(bounds);
+        const bounds = [
+          [0, 0],
+          [this.mapHeight, this.mapWidth],
+        ];
+        this.map.fitBounds(bounds);
       }
     },
 
     async savePickedLocation() {
-      if (!this.tempCoords || !this.targetLocationId) return;
+      if (!this.tempCoords) {
+           Toast.error("Nie wybrano lokalizacji na mapie");
+           return;
+      }
 
       try {
-        const payload = {
-          map_x: this.tempCoords.x,
-          map_y: this.tempCoords.y
-        };
+        // CASE 1: "PICK" MODE (Adding new location / editing form fields)
+        // This is used when identifying coordinates for a form input (e.g. Add Location)
+        if (this.mode === "pick") {
+       
+          const inputX = Utils.$("#location-map-x");
+          const inputY = Utils.$("#location-map-y");
 
-        // Determine if target is location or department based on ID lookup
-        // (Assuming IDs are unique across both, or we need to know type)
-        // MapManager.open seems to handle 'data' as ID.
-        // Let's rely on finding it in state.
-        const allLocs = [...state.locations, ...state.departments];
-        const target = allLocs.find(l => l.id == this.targetLocationId);
-        
-        if (!target) {
-            console.error("Target location not found:", this.targetLocationId);
+          if (inputX && inputY) {
+            inputX.value = this.tempCoords.x;
+            inputY.value = this.tempCoords.y;
+            
+            // Close the map modal
+            Modal.close("modal-map");
+            
+            // Ensure the location modal is visible (it might be behind)
+            Modal.open("modal-location");
+            
+            Toast.info("Współrzędne zapisane w formularzu.");
             return;
+          } else {
+             console.error("Inputs #location-map-x/y not found in pick mode");
+             Toast.error("Błąd: Nie znaleziono formularza");
+             return;
+          }
         }
 
-        // Both locations and departments use the same update endpoint in this app
+        // CASE 2: DIRECT UPDATE (Editing existing location via map interaction)
+        // Only if we have a target ID
+        if (!this.targetLocationId) {
+             // If we are here, we are not in pick mode, but have no ID.
+             // This suggests a logic error or missing context.
+             console.error("No targetLocationId for direct update");
+             return;
+        }
+
+        const payload = {
+          map_x: this.tempCoords.x,
+          map_y: this.tempCoords.y,
+        };
+
+        // Determine if target is location or department
+        const allLocs = [...state.locations, ...state.departments];
+        const target = allLocs.find((l) => l.id == this.targetLocationId);
+
+        if (!target) {
+          console.error("Target location not found:", this.targetLocationId);
+          return;
+        }
+
         await API.updateLocation(target.id, payload);
 
-
         Toast.success("Lokalizacja zaktualizowana");
-        
-        // Update local state immediately to reflect change without reload
+
+        // Update local state immediately
         target.map_x = this.tempCoords.x;
         target.map_y = this.tempCoords.y;
         
-        Modal.close("modal-map");
+        // Refresh map to show new position
+        this.renderPins();
         
-        // Refresh grids if needed
-        if (typeof renderLocations === 'function') renderLocations(); 
-        if (typeof renderDepartments === 'function') renderDepartments();
+        // Close modal
+        Modal.close("modal-map");
 
       } catch (e) {
         console.error(e);
@@ -2097,23 +2239,43 @@
       }
     },
 
+
+
+    // Fix for Mobile: Explicitly bind touch event if simple onclick fails
+    bindSaveButton() {
+       const btn = Utils.$("#map-save-btn");
+       if (btn) {
+           // Remove old listeners to be safe (cloning is a cheap way or just careful binding)
+           const newBtn = btn.cloneNode(true);
+           if (btn.parentNode) btn.parentNode.replaceChild(newBtn, btn);
+           
+           const handler = (e) => {
+               e.preventDefault();
+               e.stopPropagation(); // Stop map click through
+               this.savePickedLocation();
+           };
+           
+           newBtn.addEventListener("click", handler);
+           newBtn.addEventListener("touchstart", handler, { passive: false });
+       }
+    },
+
     renderNetworkToolbar() {
       const wrapper = Utils.$(".map-wrapper");
       // Create toolbar only if it doesn't represent
       let toolbar = wrapper.querySelector("#network-toolbar");
       if (!toolbar) {
-          toolbar = document.createElement("div");
-          toolbar.id = "network-toolbar";
-          toolbar.className = "map-draw-toolbar"; // Reuse existing css
-          wrapper.appendChild(toolbar);
+        toolbar = document.createElement("div");
+        toolbar.id = "network-toolbar";
+        toolbar.className = "map-draw-toolbar"; // Reuse existing css
+        wrapper.appendChild(toolbar);
       }
 
       // Check permissions (Admin ID 1 only)
       if (state.currentUser?.id !== 1) {
-          toolbar.classList.add("hidden");
-          return;
+        toolbar.classList.add("hidden");
+        return;
       }
-
 
       // Hide in pick/route modes
       if (this.mode === "pick" || this.mode === "show_route") {
@@ -2142,64 +2304,64 @@
             </button>
         `;
       }
-    }
+    },
   };
-   // =============================================
-   // 13. AUTH
-   // =============================================
-   const Auth = {
-     async init() {
-       // 1. Ładowanie CACHE (Optymistyczny start)
-       try {
-         const cachedUsers = localStorage.getItem(CONFIG.STORAGE_KEYS.USERS);
-         const cachedLocs = localStorage.getItem(CONFIG.STORAGE_KEYS.LOCATIONS);
-         const cachedDepts = localStorage.getItem(
-           CONFIG.STORAGE_KEYS.DEPARTMENTS,
-         );
-         const cachedTasks = localStorage.getItem(CONFIG.STORAGE_KEYS.TASKS);
- 
-         if (cachedUsers) state.users = JSON.parse(cachedUsers);
-         if (cachedLocs) state.locations = JSON.parse(cachedLocs);
-         if (cachedDepts) state.departments = JSON.parse(cachedDepts);
-         if (cachedTasks) state.taskCache = JSON.parse(cachedTasks);
-       } catch (e) {
-         console.warn("Błąd ładowania cache:", e);
-       }
- 
-       const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
- 
-       if (savedUser) {
-         try {
-           const parsed = JSON.parse(savedUser);
- 
-           // Sprawdź czy dane są poprawne
-           if (!parsed || !parsed.token || !parsed.id) {
-             throw new Error("Uszkodzone dane sesji");
-           }
- 
-           // Przywróć stan
-           state.currentUser = parsed;
- 
-           // Przejdź dalej
-           await this.onLoginSuccess();
-         } catch (e) {
-           console.error("Session error:", e);
-           this.logout(true); // Wymuś wylogowanie i czyszczenie
-         }
-       } else {
-         await this.showLoginScreen();
-       }
-     },
- 
-     async showLoginScreen() {
-       try {
-         state.users = await API.getUsers();
-         this.populateUserSelect();
-       } catch (error) {
-         Toast.error("Nie udało się załadować użytkowników");
-       }
-       Screen.show("login");
-     },
+  // =============================================
+  // 13. AUTH
+  // =============================================
+  const Auth = {
+    async init() {
+      // 1. Ładowanie CACHE (Optymistyczny start)
+      try {
+        const cachedUsers = localStorage.getItem(CONFIG.STORAGE_KEYS.USERS);
+        const cachedLocs = localStorage.getItem(CONFIG.STORAGE_KEYS.LOCATIONS);
+        const cachedDepts = localStorage.getItem(
+          CONFIG.STORAGE_KEYS.DEPARTMENTS,
+        );
+        const cachedTasks = localStorage.getItem(CONFIG.STORAGE_KEYS.TASKS);
+
+        if (cachedUsers) state.users = JSON.parse(cachedUsers);
+        if (cachedLocs) state.locations = JSON.parse(cachedLocs);
+        if (cachedDepts) state.departments = JSON.parse(cachedDepts);
+        if (cachedTasks) state.taskCache = JSON.parse(cachedTasks);
+      } catch (e) {
+        console.warn("Błąd ładowania cache:", e);
+      }
+
+      const savedUser = localStorage.getItem(CONFIG.STORAGE_KEYS.USER);
+
+      if (savedUser) {
+        try {
+          const parsed = JSON.parse(savedUser);
+
+          // Sprawdź czy dane są poprawne
+          if (!parsed || !parsed.token || !parsed.id) {
+            throw new Error("Uszkodzone dane sesji");
+          }
+
+          // Przywróć stan
+          state.currentUser = parsed;
+
+          // Przejdź dalej
+          await this.onLoginSuccess();
+        } catch (e) {
+          console.error("Session error:", e);
+          this.logout(true); // Wymuś wylogowanie i czyszczenie
+        }
+      } else {
+        await this.showLoginScreen();
+      }
+    },
+
+    async showLoginScreen() {
+      try {
+        state.users = await API.getUsers();
+        this.populateUserSelect();
+      } catch (error) {
+        Toast.error("Nie udało się załadować użytkowników");
+      }
+      Screen.show("login");
+    },
 
     populateUserSelect() {
       const select = Utils.$("#login-user");
@@ -2616,6 +2778,22 @@
 
     sortTasks() {
       if (!state.currentUser) return;
+
+      // NEW: Explicit Morning Reset Logic for Sorting
+      // If no tasks are completed in the current list (Today), assume Driver is at "Parking TIR".
+      // This overrides any stale localStorage data from previous days.
+      let referenceLoc = localStorage.getItem("last_known_location");
+      const referenceX = parseFloat(localStorage.getItem("last_known_x"));
+      const referenceY = parseFloat(localStorage.getItem("last_known_y"));
+      
+      const hasCompletedTasksToday = state.tasks.some(t => t.status === "completed");
+      
+      if (!hasCompletedTasksToday) {
+          referenceLoc = "Parking TIR";
+          // Coordinates for Parking TIR would internally be handled by isNearby if needed,
+          // or we rely on exact name match which is robust for "Parking TIR".
+      }
+
       state.tasks.sort((a, b) => {
         // 1. Zakończone ZAWSZE na dole
         if (a.status === "completed" && b.status !== "completed") return 1;
@@ -2626,27 +2804,26 @@
         if (b.status === "in_progress" && a.status !== "in_progress") return 1;
 
         // Smart Suggestions Logic - oparte na bliskości geograficznej
-        const lastLoc = localStorage.getItem("last_known_location");
-        const lastX = parseFloat(localStorage.getItem("last_known_x"));
-        const lastY = parseFloat(localStorage.getItem("last_known_y"));
-
+        
+        // Use pre-calculated referenceLoc
         let isASugg = false;
         let isBSugg = false;
 
-        if (lastLoc && a.status === "pending" && a.location_from) {
-          // Sprawdź dokładne dopasowanie LUB bliskość na mapie
-          if (a.location_from === lastLoc) {
+        if (referenceLoc && a.status === "pending" && a.location_from) {
+          if (a.location_from === referenceLoc) {
             isASugg = true;
-          } else if (!isNaN(lastX) && !isNaN(lastY)) {
-            isASugg = Utils.isNearby(a.location_from, lastLoc);
+          } else if (hasCompletedTasksToday && !isNaN(referenceX) && !isNaN(referenceY)) {
+             // Only use coordinate check if we have valid coords AND it's not the forced "Parking TIR" morning state
+             // (unless we knew Parking TIR coords, but name match is safer for abstract locations)
+             isASugg = Utils.isNearby(a.location_from, referenceLoc);
           }
         }
 
-        if (lastLoc && b.status === "pending" && b.location_from) {
-          if (b.location_from === lastLoc) {
+        if (referenceLoc && b.status === "pending" && b.location_from) {
+          if (b.location_from === referenceLoc) {
             isBSugg = true;
-          } else if (!isNaN(lastX) && !isNaN(lastY)) {
-            isBSugg = Utils.isNearby(b.location_from, lastLoc);
+          } else if (hasCompletedTasksToday && !isNaN(referenceX) && !isNaN(referenceY)) {
+             isBSugg = Utils.isNearby(b.location_from, referenceLoc);
           }
         }
 
@@ -2656,9 +2833,8 @@
         let scoreA = pScore[a.priority] || 200;
         let scoreB = pScore[b.priority] || 200;
 
-        // Boost for suggestions (but don't override higher priority tier unless desired)
-        // User Rule: "High first... then suggest normal... then suggest low"
-        // So: High (300) > Sug-Normal (200+50) > Normal (200) > Sug-Low (100+50) > Low (100)
+        // Boost for suggestions (but don't override higher priority tier)
+        // High (300/350) > Normal (200/250) > Low (100/150).
         if (isASugg) scoreA += 50;
         if (isBSugg) scoreB += 50;
 
@@ -2733,47 +2909,63 @@
       // SUGGESTION LOGIC: Find last completed task today to suggest next nearby task
       let lastCompletedLoc = null;
       // Get completed tasks for today, sorted by timestamp descending (if available) or by list order
-      const completedToday = state.tasks.filter(t => t.status === 'completed' || t.has_completed);
+      const completedToday = state.tasks.filter(
+        (t) => t.status === "completed" || t.has_completed,
+      );
       if (completedToday.length > 0) {
-          // Assuming the last one in the list (or we could sort by update time if tracked)
-          // For now, let's take the one that appears last in the list as "recenlty done"
-          const lastTask = completedToday[completedToday.length - 1]; 
-          
-          if (lastTask.task_type === 'transport') lastCompletedLoc = lastTask.location_to;
-          else if (lastTask.task_type === 'unloading') lastCompletedLoc = lastTask.department; // Unloading ends at dept
-          // Loading ends at dept too? No, loading starts at dept? 
-          // Logic: where is the driver NOW?
-          // Transport: at location_to
-          // Unloading: at department
-          // Loading: at... finishes at department? or finishes when loaded? 
-          // Usually loading task means "Go to Dept, Load". So you are at Dept.
-          else if (lastTask.task_type === 'loading') lastCompletedLoc = lastTask.department;
-          else if (lastTask.task_type === 'other') lastCompletedLoc = lastTask.location_to || lastTask.location_from;
+        // Assuming the last one in the list (or we could sort by update time if tracked)
+        // For now, let's take the one that appears last in the list as "recenlty done"
+        const lastTask = completedToday[completedToday.length - 1];
+
+        if (lastTask.task_type === "transport")
+          lastCompletedLoc = lastTask.location_to;
+        else if (lastTask.task_type === "unloading")
+          lastCompletedLoc = lastTask.department; // Unloading ends at dept
+        // Loading ends at dept too? No, loading starts at dept?
+        // Logic: where is the driver NOW?
+        // Transport: at location_to
+        // Unloading: at department
+        // Loading: at... finishes at department? or finishes when loaded?
+        // Usually loading task means "Go to Dept, Load". So you are at Dept.
+        else if (lastTask.task_type === "loading")
+          lastCompletedLoc = lastTask.department;
+        else if (lastTask.task_type === "other")
+          lastCompletedLoc = lastTask.location_to || lastTask.location_from;
+      }
+
+      // NEW: Morning Reset Logic
+      // "Jeśli kierowca rozpoczyna dzień to rozpoczyna każdy dzień w parking TIR"
+      // If no tasks completed today, we assume "Parking TIR" as the last location.
+      if (!lastCompletedLoc && completedToday.length === 0) {
+        lastCompletedLoc = "Parking TIR";
       }
 
       Utils.hide(emptyState);
       tasksList.innerHTML = filteredTasks
         .map((task) => {
-            // Check if this task should be suggested
-            let isSuggested = false;
-            // Only suggest pending tasks
-            if (lastCompletedLoc && (task.status === 'pending' || task.status === 'paused')) {
-                let startLoc = null;
-                if (task.task_type === 'transport') startLoc = task.location_from;
-                else if (task.task_type === 'loading') startLoc = task.department;
-                else if (task.task_type === 'unloading') startLoc = task.department; //? Unloading starts where? Usually from previous. 
-                // Wait, Unloading task: "Take stuff FROM X and unload". So start is X?
-                // If Unloading means "Unload at X", then start is... wherever the stuff is.
-                // Let's assume standard flow:
-                // Transport: From -> To.
-                // Loading: At Dept.
-                // Unloading: At Dept.
-                
-                if (startLoc && Utils.isNearby(lastCompletedLoc, startLoc)) {
-                    isSuggested = true;
-                }
+          // Check if this task should be suggested
+          let isSuggested = false;
+          // Only suggest pending tasks
+          if (
+            lastCompletedLoc &&
+            (task.status === "pending" || task.status === "paused")
+          ) {
+            let startLoc = null;
+            if (task.task_type === "transport") startLoc = task.location_from;
+            else if (task.task_type === "loading") startLoc = task.department;
+            else if (task.task_type === "unloading") startLoc = task.department; //? Unloading starts where? Usually from previous.
+            // Wait, Unloading task: "Take stuff FROM X and unload". So start is X?
+            // If Unloading means "Unload at X", then start is... wherever the stuff is.
+            // Let's assume standard flow:
+            // Transport: From -> To.
+            // Loading: At Dept.
+            // Unloading: At Dept.
+
+            if (startLoc && Utils.isNearby(lastCompletedLoc, startLoc)) {
+              isSuggested = true;
             }
-            return this.renderTaskCard(task, isSuggested);
+          }
+          return this.renderTaskCard(task, isSuggested);
         })
         .join("");
       this.attachTaskEventListeners();
@@ -3058,6 +3250,8 @@
     async startTask(taskId) {
       if (this._startingTask) return;
       this._startingTask = true;
+      // Safety timeout
+      setTimeout(() => { this._startingTask = false; }, 2000);
 
       Notifications.markRelatedRead(taskId);
 
@@ -3076,13 +3270,14 @@
           this.setFilter("in_progress");
           Toast.success("Zadanie rozpoczęte! 🚀");
         },
-      ).finally(() => {
-        this._startingTask = false;
-      });
+      );
+      // .finally(() => { this._startingTask = false; }); // Handled by timeout
     },
 
     async completeTask(taskId) {
       if (this._completingTask) return;
+      this._completingTask = true;
+      setTimeout(() => { this._completingTask = false; }, 2000);
 
       Modal.confirm(
         "Zakończyć zadanie?",
@@ -3135,15 +3330,19 @@
               this.loadTasks(true);
             })
             .finally(() => {
-              this._completingTask = false;
+              // this._completingTask = false; // Handled by timeout now to prevent double clicks entirely
             });
         },
         "Zakończ",
-        false,
+        false
       );
     },
 
     async pauseTask(taskId) {
+      if (this._pausingTask) return; // Debounce
+      this._pausingTask = true;
+      // Reset flag after 2 seconds to allow retries if needed
+      setTimeout(() => { this._pausingTask = false; }, 2000);
       Modal.confirm(
         "Wstrzymać zadanie?",
         "Zadanie zostanie oznaczone jako wstrzymane. Inny kierowca będzie mógł je wznowić.",
@@ -3164,11 +3363,17 @@
           );
         },
         "Wstrzymaj",
-        false,
+        false
       );
+      // Ensure flag is reset if user cancels
+      // But Modal.confirm is async callback based...
+      // The simple timeout above is sufficient for "accidental double clicks".
     },
 
     async resumeTask(taskId) {
+      if (this._resumingTask) return;
+      this._resumingTask = true;
+      setTimeout(() => { this._resumingTask = false; }, 2000);
       Sync.enqueue(
         "updateTaskStatus",
         { id: taskId, status: "in_progress", userId: state.currentUser.id },
@@ -3393,7 +3598,7 @@
                                                                         <div class="task-log-meta">
                                         ${Utils.escapeHtml(
                                           log.user_name || "Nieznany",
-                                        )} • ${Utils.formatTime(log.created_at)}
+                                        )} • ${Utils.formatDate(log.created_at)} ${Utils.formatTime(log.created_at)}
                                     </div>
                                 </div>
                             </div>
@@ -3595,14 +3800,14 @@
         // Determine start/end from task data
         let from = task.location_from;
         let to = task.location_to;
-        
+
         // Handle specialized types
-        if (task.task_type === 'unloading') {
-            to = task.department;
-        } else if (task.task_type === 'loading') {
-            from = task.department;
+        if (task.task_type === "unloading") {
+          to = task.department;
+        } else if (task.task_type === "loading") {
+          from = task.department;
         }
-        
+
         // Use the new standard method
         MapManager.open("show_route", { from, to });
       });
@@ -5393,10 +5598,12 @@
           if (type === "department") state.departments.push(newItem);
           else state.locations.push(newItem);
 
+          // Render optimistically (shows item with tempId)
           this.renderLocations();
           DataLists.updateAll();
+          
           Toast.success(
-            type === "department" ? "Dział dodany" : "Lokalizacja dodana",
+            type === "department" ? "Dział dodany" : "Lokalizacja dodana"
           );
 
           // 2. API Call
@@ -5408,15 +5615,25 @@
           });
 
           // 3. Update ID from API
-          const list =
-            type === "department" ? state.departments : state.locations;
-          const item = list.find((x) => x.id === tempId);
-          if (item) item.id = result.id;
+          // We need to find the item we just added and update its ID
+          // The item reference 'newItem' is still valid!
+          newItem.id = result.id;
+          
+          // Re-render to ensure buttons have the correct ID
+          this.renderLocations();
+          DataLists.updateAll();
+          
+          // Also refresh map pins to ensure they have the correct ID for click events
+          if (MapManager && typeof MapManager.renderPins === 'function') {
+              MapManager.renderPins();
+          }
+
         }
       } catch (error) {
         console.error(error);
         Toast.error("Błąd zapisu (odśwież stronę)");
-        // In a real app we would revert state here
+        // In a real app we would revert state here (remove the optimistic item)
+        // But for now just error toast.
       } finally {
         this._addingLocation = false;
       }
