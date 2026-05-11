@@ -1362,9 +1362,8 @@
 
     updateDepartmentSelects() {
       const selects = [
-        Utils.$("#unloading-department"),
         Utils.$("#loading-department"),
-        Utils.$("#other-department"), // FIX: Dodano pole "Dział (opcjonalnie)" dla typu INNE
+        Utils.$("#other-department"),
         ...Utils.$$(".dept-select"),
       ];
 
@@ -1382,6 +1381,45 @@
             )
             .join("");
         select.value = currentValue;
+      });
+    },
+
+    updateDepartmentMultiSelects() {
+      const containers = [
+        Utils.$("#unloading-department-multi"),
+        Utils.$("#unloading-c1-dept-multi"),
+        Utils.$("#unloading-c2-dept-multi"),
+      ];
+
+      containers.forEach((container) => {
+        if (!container) return;
+        
+        // Preserve current selections
+        const selected = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+        
+        container.innerHTML = ""; // Clear existing
+        
+        state.departments.forEach((dept) => {
+          const label = document.createElement("label");
+          label.className = "multi-select-item";
+          if (selected.includes(dept.name)) label.classList.add("selected");
+
+          const cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.value = dept.name;
+          cb.checked = selected.includes(dept.name);
+          
+          cb.addEventListener("change", () => {
+            label.classList.toggle("selected", cb.checked);
+          });
+
+          const span = document.createElement("span");
+          span.textContent = dept.name;
+
+          label.appendChild(cb);
+          label.appendChild(span);
+          container.appendChild(label);
+        });
       });
     },
 
@@ -1417,6 +1455,7 @@
     updateAll() {
       this.updateLocations();
       this.updateDepartmentSelects();
+      this.updateDepartmentMultiSelects();
       this.updateDriverSelect();
     },
   };
@@ -2720,42 +2759,45 @@
       }
 
       try {
-        // 2. Pobieramy świeże dane w tle (BEZ userId - chcemy wszystkie dla statystyk)
-        const freshTasks = await API.getTasks({
+        // 2. Pobieramy świeże dane w tle
+        const serverTasks = await API.getTasks({
           date: targetDate,
           userId: state.currentUser.id,
         });
 
+        // --- PREVENT FLICKERING (Merge Logic) ---
+        const pendingStatusIds = Sync.queue
+          .filter(a => a.name === "updateTaskStatus")
+          .map(a => a.data.id);
+
+        const mergedTasks = serverTasks.map(st => {
+          if (pendingStatusIds.includes(st.id)) {
+            const local = state.tasks.find(t => t.id === st.id);
+            return local || st;
+          }
+          return st;
+        });
+
         // 3. Sprawdzamy czy coś się zmieniło
-        const hasChanged =
-          JSON.stringify(freshTasks) !==
-          JSON.stringify(state.taskCache[targetDate]);
+        const hasChanged = JSON.stringify(mergedTasks) !== JSON.stringify(state.tasks);
 
-        // Zapisz do cache
-        state.taskCache[targetDate] = freshTasks;
-
-        // Persist Cache
-        localStorage.setItem(
-          CONFIG.STORAGE_KEYS.TASKS,
-          JSON.stringify(state.taskCache),
-        );
-
-        // Jeśli dane się zmieniły ALBO nie było ich wcześniej - odśwież UI
-        if (hasChanged || state.tasks.length === 0) {
-          state.tasks = freshTasks;
+        if (hasChanged || !silent) {
+          state.tasks = mergedTasks;
+          state.taskCache[targetDate] = [...state.tasks];
+          localStorage.setItem(CONFIG.STORAGE_KEYS.TASKS, JSON.stringify(state.taskCache));
+          
           this.sortTasks();
           this.updateStats();
           this.renderTasks();
         }
 
-        // 4. Pre-fetch sąsiednich dat w tle
+        // 4. Pre-fetch sąsiednich dat
         this.prefetchNeighboringDates();
       } catch (error) {
-        if (!silent && !state.taskCache[targetDate]) {
-          Toast.error("Błąd połączenia");
-        }
+        console.error("Driver tasks load failed:", error);
       }
     },
+
 
     async prefetchNeighboringDates() {
       if (!state.currentUser) return;
@@ -2933,282 +2975,243 @@
 
       // NEW: Morning Reset Logic
       // "Jeśli kierowca rozpoczyna dzień to rozpoczyna każdy dzień w parking TIR"
-      // If no tasks completed today, we assume "Parking TIR" as the last location.
       if (!lastCompletedLoc && completedToday.length === 0) {
         lastCompletedLoc = "Parking TIR";
       }
 
       Utils.hide(emptyState);
-      tasksList.innerHTML = filteredTasks
-        .map((task) => {
-          // Check if this task should be suggested
-          let isSuggested = false;
-          // Only suggest pending tasks
-          if (
-            lastCompletedLoc &&
-            (task.status === "pending" || task.status === "paused")
-          ) {
-            let startLoc = null;
-            if (task.task_type === "transport") startLoc = task.location_from;
-            else if (task.task_type === "loading") startLoc = task.department;
-            else if (task.task_type === "unloading") startLoc = task.department; //? Unloading starts where? Usually from previous.
-            // Wait, Unloading task: "Take stuff FROM X and unload". So start is X?
-            // If Unloading means "Unload at X", then start is... wherever the stuff is.
-            // Let's assume standard flow:
-            // Transport: From -> To.
-            // Loading: At Dept.
-            // Unloading: At Dept.
+      tasksList.replaceChildren(); // 100% zgodne z "NIGDY innerHTML"
+      const fragment = document.createDocumentFragment();
 
-            if (startLoc && Utils.isNearby(lastCompletedLoc, startLoc)) {
-              isSuggested = true;
-            }
+      filteredTasks.forEach((task) => {
+        // SUGGESTION CHECK
+        let isSuggested = false;
+        if (lastCompletedLoc && (task.status === "pending" || task.status === "paused")) {
+          let startLoc = null;
+          if (task.task_type === "transport") startLoc = task.location_from;
+          else if (task.task_type === "loading") startLoc = task.department;
+          else if (task.task_type === "unloading") startLoc = task.department;
+
+          if (startLoc && Utils.isNearby(lastCompletedLoc, startLoc)) {
+            isSuggested = true;
           }
-          return this.renderTaskCard(task, isSuggested);
-        })
-        .join("");
+        }
+        
+        fragment.appendChild(this.renderTaskCard(task, isSuggested));
+      });
+
+      tasksList.appendChild(fragment);
       this.attachTaskEventListeners();
+
+      // 4. Pre-fetch sąsiednich dat w tle
+      this.prefetchNeighboringDates();
     },
 
     renderTaskCard(task, isSuggested = false) {
-      const isMyTask = task.assigned_to === state.currentUser.id;
-      const isJoined =
-        task.additional_drivers &&
-        task.additional_drivers.some((d) => d.id === state.currentUser.id);
-      const isParticipating = isMyTask || isJoined;
+      const card = document.createElement("div");
+      card.className = `task-card priority-${task.priority} status-${task.status}`;
+      
+      const isParticipating = task.assigned_to === state.currentUser.id || 
+                             (task.additional_drivers && task.additional_drivers.some(d => d.id === state.currentUser.id));
+      
+      if (task.status === "in_progress" && !isParticipating) {
+        card.classList.add("task-locked");
+      }
+      if (isSuggested) card.classList.add("suggestion-ring");
+      card.dataset.id = task.id;
 
-      const isInProgress = task.status === "in_progress";
-      const isLocked = isInProgress && !isParticipating;
+      // 1. Status Indicator
+      const statusIndicator = document.createElement("div");
+      statusIndicator.className = `task-status-indicator status-${task.status}`;
+      statusIndicator.textContent = `${Utils.getStatusIcon(task.status)} ${Utils.getStatusLabel(task.status)}`;
+      card.appendChild(statusIndicator);
 
-      let taskDescription = "";
+      // 2. Header
+      const header = document.createElement("div");
+      header.className = "task-header";
+      
+      const badges = document.createElement("div");
+      badges.className = "task-badges";
+      
+      const typeBadge = document.createElement("span");
+      typeBadge.className = `task-type-badge type-${task.task_type}`;
+      typeBadge.textContent = `${Utils.getTaskTypeIcon(task.task_type)} ${Utils.getTaskTypeLabel(task.task_type)}`;
+      
+      const priorityBadge = document.createElement("span");
+      priorityBadge.className = `task-priority-badge priority-${task.priority}`;
+      priorityBadge.textContent = `${Utils.getPriorityIcon(task.priority)} ${Utils.getPriorityLabel(task.priority)}`;
+      
+      badges.appendChild(typeBadge);
+      badges.appendChild(priorityBadge);
+      header.appendChild(badges);
+
+      if (task.creator_name) {
+        const creatorInfo = document.createElement("div");
+        creatorInfo.className = "task-creator-info";
+        creatorInfo.style.fontSize = "0.8em";
+        creatorInfo.style.color = "var(--text-secondary)";
+        creatorInfo.style.marginTop = "4px";
+        const strong = document.createElement("strong");
+        strong.textContent = task.creator_name;
+        creatorInfo.textContent = "Zlecił: ";
+        creatorInfo.appendChild(strong);
+        header.appendChild(creatorInfo);
+      }
+      card.appendChild(header);
+
+      // 3. Body
+      const body = document.createElement("div");
+      body.className = "task-body";
+      body.dataset.action = "details";
+      body.dataset.id = task.id;
+
+      const title = document.createElement("div");
+      title.className = "task-title";
+      title.textContent = task.description;
+      body.appendChild(title);
+
+      const description = document.createElement("div");
+      description.className = "task-description";
+
+      // Route
       if (task.location_from || task.location_to) {
-        taskDescription += `
-                    <div class="task-route">
-                        <span>📍 ${Utils.escapeHtml(
-                          task.location_from || "?",
-                        )}</span>
-                        <span class="task-route-arrow">→</span>
-                        <span>📍 ${Utils.escapeHtml(
-                          task.location_to || "?",
-                        )}</span>
-                    </div>
-                `;
+        const route = document.createElement("div");
+        route.className = "task-route";
+        const from = document.createElement("span");
+        from.textContent = `📍 ${task.location_from || "?"}`;
+        const arrow = document.createElement("span");
+        arrow.className = "task-route-arrow";
+        arrow.textContent = "→";
+        const to = document.createElement("span");
+        to.textContent = `📍 ${task.location_to || "?"}`;
+        route.append(from, arrow, to);
+        description.appendChild(route);
       }
 
-      if (task.department) {
-        taskDescription += `
-                    <div class="task-department">
-                        <span>🏢</span>
-                        <span>${Utils.escapeHtml(task.department)}</span>
-                    </div>
-                `;
-      }
-
-      // Display departments from containers if present
+      // Department Summary (including container departments)
+      const allDepts = new Set();
+      if (task.department) allDepts.add(task.department);
       if (task.containers) {
         try {
           const containers = JSON.parse(task.containers);
-          const depts = [
-            ...new Set(containers.map((c) => c.department).filter((d) => d)),
-          ];
-          if (
-            depts.length > 0 &&
-            (!task.department || !depts.includes(task.department))
-          ) {
-            taskDescription += `
-                    <div class="task-department">
-                        <span>🏢</span>
-                        <span style="font-weight: 500;">${depts.map((d) => Utils.escapeHtml(d)).join(", ")}</span>
-                    </div>
-                  `;
+          containers.forEach(c => { if(c.department) allDepts.add(c.department); });
+        } catch(e) {}
+      }
+
+      if (allDepts.size > 0) {
+        const deptDiv = document.createElement("div");
+        deptDiv.className = "task-department";
+        const icon = document.createElement("span");
+        icon.textContent = "🏢 ";
+        const text = document.createElement("span");
+        text.textContent = Array.from(allDepts).join(", ");
+        deptDiv.append(icon, text);
+        description.appendChild(deptDiv);
+      }
+
+      // Material / Containers Count
+      if (task.containers) {
+        try {
+          const containers = JSON.parse(task.containers);
+          if (containers.length > 0) {
+            const materialDiv = document.createElement("div");
+            materialDiv.className = "task-material";
+            materialDiv.style.color = "var(--primary)";
+            materialDiv.style.fontWeight = "600";
+            materialDiv.textContent = `📦 Kontenery: ${containers.length} szt.`;
+            description.appendChild(materialDiv);
           }
         } catch (e) {}
+      } else if (task.material) {
+        const materialDiv = document.createElement("div");
+        materialDiv.className = "task-material";
+        materialDiv.textContent = `📦 ${task.material}`;
+        description.appendChild(materialDiv);
       }
 
-      const containerSummary = task.containers
-        ? (() => {
-            try {
-              const containers = JSON.parse(task.containers);
-              if (containers.length > 0) {
-                return `
-                    <div class="task-material" style="color: var(--primary); font-weight: 600;">
-                        <span>📦</span>
-                        <span>Kontenery: ${containers.length} szt.</span>
-                    </div>
-                  `;
-              }
-            } catch (e) {}
-            return "";
-          })()
-        : "";
+      body.appendChild(description);
 
-      const materialHtml =
-        task.material && !task.containers
-          ? `
-                <div class="task-material">
-                    <span>📦</span>
-                    <span>${Utils.escapeHtml(task.material)}</span>
-                </div>
-            `
-          : containerSummary;
+      if (task.notes) {
+        const notes = document.createElement("div");
+        notes.className = "task-notes-preview";
+        notes.textContent = `💬 ${task.notes}`;
+        body.appendChild(notes);
+      }
+      card.appendChild(body);
 
-      const notesHtml = task.notes
-        ? `
-                <div class="task-notes-preview">
-                    <span>💬</span>
-                    <span>${Utils.escapeHtml(task.notes)}</span>
-                </div>
-            `
-        : "";
+      // 4. Footer
+      const footer = document.createElement("div");
+      footer.className = "task-footer";
 
-      // Obsługa wielu kierowców
-      let driversHtml = "";
+      const meta = document.createElement("div");
+      meta.className = "task-meta";
+
+      if (task.scheduled_time) {
+        const timeMeta = document.createElement("span");
+        timeMeta.className = "task-meta-item";
+        timeMeta.textContent = `🕐 ${Utils.formatTime(task.scheduled_time)}`;
+        meta.appendChild(timeMeta);
+      }
+
       const allDrivers = [];
-
       if (task.assigned_name) allDrivers.push(task.assigned_name);
-      if (task.additional_drivers) {
-        task.additional_drivers.forEach((d) => allDrivers.push(d.name));
-      }
-
+      if (task.additional_drivers) task.additional_drivers.forEach(d => allDrivers.push(d.name));
+      
       if (allDrivers.length > 0) {
-        const driversList = allDrivers.join(", ");
-        const icon = allDrivers.length > 1 ? "👥" : "👤";
-        const label = allDrivers.length > 1 ? "Współdzielone" : "";
-
-        driversHtml = `
-                    <span class="task-meta-item" title="${Utils.escapeHtml(
-                      driversList,
-                    )}">
-                        <span>${icon}</span>
-                        <span>${Utils.escapeHtml(driversList)}</span>
-                        ${
-                          label
-                            ? `<span class="task-drivers-badge">${label}</span>`
-                            : ""
-                        }
-                    </span>
-                `;
+        const driversMeta = document.createElement("span");
+        driversMeta.className = "task-meta-item";
+        const icon = allDrivers.length > 1 ? "👥 " : "👤 ";
+        driversMeta.textContent = icon + allDrivers.join(", ");
+        if (allDrivers.length > 1) {
+          const badge = document.createElement("span");
+          badge.className = "task-drivers-badge";
+          badge.textContent = "Współdzielone";
+          driversMeta.appendChild(badge);
+        }
+        meta.appendChild(driversMeta);
       }
+      footer.appendChild(meta);
 
-      // Przyciski akcji
-      let actionButtons = "";
+      const actions = document.createElement("div");
+      actions.className = "task-actions";
+
       if (task.status === "pending") {
-        actionButtons = `
-                    <button class="task-action-btn btn-start" data-action="start" data-id="${task.id}">
-                        ▶️ Rozpocznij
-                    </button>
-                `;
-      } else if (task.status === "paused") {
-        actionButtons = `
-                    <button class="task-action-btn btn-start" data-action="resume" data-id="${task.id}">
-                        ▶️ Wznów
-                    </button>
-                `;
+        const btn = document.createElement("button");
+        btn.className = "task-action-btn btn-start";
+        btn.dataset.action = "start";
+        btn.dataset.id = task.id;
+        btn.textContent = "▶️ Rozpocznij";
+        actions.appendChild(btn);
+      } else if (task.status === "paused" || (task.status === "in_progress" && task.has_paused)) {
+        const btn = document.createElement("button");
+        btn.className = "task-action-btn btn-start";
+        btn.dataset.action = "resume";
+        btn.dataset.id = task.id;
+        btn.textContent = "▶️ Wznów";
+        actions.appendChild(btn);
       } else if (task.status === "in_progress") {
-        if (isParticipating && !task.has_completed && !task.has_paused) {
-          actionButtons = `
-                        <button class="task-action-btn" data-action="pause" data-id="${task.id}" title="Wstrzymaj">
-                            ⏸️
-                        </button>
-                        <button class="task-action-btn" data-action="add-log" data-id="${task.id}" title="Dodaj uwagę">
-                            📝
-                        </button>
-                        <button class="task-action-btn btn-complete" data-action="complete" data-id="${task.id}" title="Zakończ">
-                            ✅
-                        </button>
-                    `;
-        } else if (task.has_paused) {
-          actionButtons = `
-                        <button class="task-action-btn btn-start" data-action="resume" data-id="${task.id}">
-                            ▶️ Wznów
-                        </button>
-                    `;
+        if (isParticipating && !task.has_completed) {
+          const btnPause = document.createElement("button");
+          btnPause.className = "task-action-btn";
+          btnPause.dataset.action = "pause"; btnPause.dataset.id = task.id; btnPause.textContent = "⏸️";
+          const btnLog = document.createElement("button");
+          btnLog.className = "task-action-btn";
+          btnLog.dataset.action = "add-log"; btnLog.dataset.id = task.id; btnLog.textContent = "📝";
+          const btnDone = document.createElement("button");
+          btnDone.className = "task-action-btn btn-complete";
+          btnDone.dataset.action = "complete"; btnDone.dataset.id = task.id; btnDone.textContent = "✅";
+          actions.append(btnPause, btnLog, btnDone);
         } else {
-          // Jeśli nie uczestniczę LUB już zakończyłem swoją część (has_completed)
-          actionButtons = `
-                        <button class="task-action-btn btn-join" data-action="join" data-id="${task.id}">
-                            👥 Dołącz
-                        </button>
-                    `;
+          const btnJoin = document.createElement("button");
+          btnJoin.className = "task-action-btn btn-join";
+          btnJoin.dataset.action = "join"; btnJoin.dataset.id = task.id; btnJoin.textContent = "👥 Dołącz";
+          actions.appendChild(btnJoin);
         }
       }
+      footer.appendChild(actions);
+      card.appendChild(footer);
 
-      // SMART SUGGESTION CHECK - Passed as argument
-      const suggestionClass = isSuggested ? "suggestion-ring" : "";
-
-      return `
-                <div class="task-card priority-${task.priority} status-${
-                  task.status
-                } ${isLocked ? "task-locked" : ""} ${suggestionClass}" 
-                     data-id="${task.id}">
-                    <div class="task-status-indicator status-${task.status}">
-                        ${Utils.getStatusIcon(
-                          task.status,
-                        )} ${Utils.getStatusLabel(task.status)}
-                    </div>
-                    
-                    <div class="task-header">
-                        <div class="task-badges">
-                            <span class="task-type-badge type-${
-                              task.task_type
-                            }">
-                                ${Utils.getTaskTypeIcon(
-                                  task.task_type,
-                                )} ${Utils.getTaskTypeLabel(task.task_type)}
-                            </span>
-                            <span class="task-priority-badge priority-${
-                              task.priority
-                            }">
-                                ${Utils.getPriorityIcon(
-                                  task.priority,
-                                )} ${Utils.getPriorityLabel(task.priority)}
-                            </span>
-                        </div>
-                        <div class="task-creator-info" style="font-size: 0.8em; color: var(--text-secondary); margin-top: 4px;">
-                            ${
-                              task.creator_name
-                                ? `Zlecił: <strong>${Utils.escapeHtml(
-                                    task.creator_name,
-                                  )}</strong>`
-                                : ""
-                            }
-                        </div>
-                    </div>
-                    
-                    <div class="task-body" data-action="details" data-id="${
-                      task.id
-                    }">
-                        <div class="task-title">${Utils.escapeHtml(
-                          task.description,
-                        )}</div>
-                        <div class="task-description">
-                            ${taskDescription}
-                            ${materialHtml}
-                        </div>
-                        ${notesHtml}
-                    </div>
-                    
-                    <div class="task-footer">
-                        <div class="task-meta">
-                            ${
-                              task.scheduled_time
-                                ? `
-                                <span class="task-meta-item">
-                                    <span>🕐</span>
-                                    <span>${Utils.formatTime(
-                                      task.scheduled_time,
-                                    )}</span>
-                                </span>
-                            `
-                                : ""
-                            }
-                            ${driversHtml}
-                        </div>
-                        <div class="task-actions">
-                            ${actionButtons}
-                        </div>
-                    </div>
-                </div>
-            `;
+      return card;
     },
 
     attachTaskEventListeners() {
@@ -3381,33 +3384,43 @@
         "Wstrzymaj",
         false
       );
-      // Ensure flag is reset if user cancels
-      // But Modal.confirm is async callback based...
-      // The simple timeout above is sufficient for "accidental double clicks".
     },
 
     async resumeTask(taskId) {
       if (this._resumingTask) return;
-      this._resumingTask = true;
-      setTimeout(() => { this._resumingTask = false; }, 2000);
-      Sync.enqueue(
-        "updateTaskStatus",
-        { id: taskId, status: "in_progress", userId: state.currentUser.id },
-        () => {
-          const task = state.tasks.find((t) => t.id == taskId);
-          if (task) {
-            task.status = "in_progress";
-            task.assigned_to = state.currentUser.id;
-            task.assigned_name = state.currentUser.name;
-            task.has_paused = false;
-            task.has_completed = false;
-          }
-          this.sortTasks();
-          this.updateStats();
-          this.renderTasks();
-          this.setFilter("in_progress");
-          Toast.success("Zadanie wznowione! ▶️");
+      
+      const task = state.tasks.find((t) => t.id == taskId);
+      
+      Modal.confirm(
+        "Wznowić zadanie?",
+        `Czy chcesz wznowić zadanie: "${task?.description || ""}"?`,
+        async () => {
+          this._resumingTask = true;
+          setTimeout(() => {
+            this._resumingTask = false;
+          }, 2000);
+
+          Sync.enqueue(
+            "updateTaskStatus",
+            { id: taskId, status: "in_progress", userId: state.currentUser.id },
+            () => {
+              const taskObj = state.tasks.find((t) => t.id == taskId);
+              if (taskObj) {
+                taskObj.status = "in_progress";
+                taskObj.assigned_to = state.currentUser.id;
+                taskObj.assigned_name = state.currentUser.name;
+                taskObj.has_paused = false;
+                taskObj.has_completed = false;
+              }
+              this.sortTasks();
+              this.updateStats();
+              this.renderTasks();
+              this.setFilter("in_progress");
+              Toast.success("Zadanie wznowione! 🚛");
+            },
+          );
         },
+        "Wznów",
       );
     },
 
@@ -3920,66 +3933,58 @@
     },
 
     populateForm(task) {
+      if (!task) return;
+      
       Utils.$("#task-id").value = task.id;
+      Utils.$("#task-date").value = task.scheduled_date;
+      Utils.$("#task-time").value = task.scheduled_time || "";
+      Utils.$("#task-notes").value = task.notes || "";
+      Utils.$("#task-assigned").value = task.assigned_to || "";
 
-      const typeRadio = document.querySelector(
-        `input[name="task-type"][value="${task.task_type}"]`,
-      );
-      if (typeRadio) typeRadio.checked = true;
-      this.toggleTaskFields(task.task_type);
+      // Priority
+      const priorityRadio = Utils.$(`input[name="task-priority"][value="${task.priority}"]`);
+      if (priorityRadio) priorityRadio.checked = true;
+
+      // Type
+      const typeRadio = Utils.$(`input[name="task-type"][value="${task.task_type}"]`);
+      if (typeRadio) {
+        typeRadio.checked = true;
+        this.toggleTaskFields(task.task_type);
+      }
 
       if (task.task_type === "transport") {
         Utils.$("#transport-material").value = task.material || "";
         Utils.$("#transport-from").value = task.location_from || "";
         Utils.$("#transport-to").value = task.location_to || "";
       } else if (task.task_type === "unloading") {
-        Utils.$("#unloading-material").value =
-          task.material || task.description || "";
-        Utils.$("#unloading-department").value = task.department || "";
+        const mode = task.containers ? "containers" : "full";
+        this.setMode(mode, "unloading");
+        if (mode === "full") {
+          Utils.$("#unloading-material").value = task.material || "";
+          this.setMultiSelected("unloading-department-multi", task.department);
+        } else {
+          Utils.$("#unloading-customer").value = task.material || "";
+          const containers = JSON.parse(task.containers || "[]");
+          this.initContainers(containers, "unloading");
+        }
       } else if (task.task_type === "loading") {
-        Utils.$("#loading-material").value =
-          task.material || task.description || "";
-        Utils.$("#loading-department").value = task.department || "";
+        const mode = task.containers ? "containers" : "full";
+        this.setMode(mode, "loading");
+        if (mode === "full") {
+          Utils.$("#loading-material").value = task.material || "";
+          Utils.$("#loading-department").value = task.department || "";
+        } else {
+          Utils.$("#loading-customer").value = task.material || "";
+          const containers = JSON.parse(task.containers || "[]");
+          this.initContainers(containers, "loading");
+        }
       } else if (task.task_type === "other") {
         Utils.$("#other-description").value = task.description || "";
         Utils.$("#other-from").value = task.location_from || "";
         Utils.$("#other-to").value = task.location_to || "";
-      }
-
-      Utils.$("#task-date").value = task.scheduled_date || "";
-      Utils.$("#task-time").value = task.scheduled_time || "";
-      Utils.$("#task-notes").value = task.notes || "";
-      Utils.$("#task-assigned").value = task.assigned_to || "";
-
-      const priorityRadio = document.querySelector(
-        `input[name="task-priority"][value="${task.priority}"]`,
-      );
-      if (priorityRadio) priorityRadio.checked = true;
-
-      // Populate containers
-      if (task.containers) {
-        try {
-          const containers = JSON.parse(task.containers);
-          if (
-            containers.length > 0 &&
-            (task.task_type === "unloading" || task.task_type === "loading")
-          ) {
-            this.setMode("containers", task.task_type);
-            this.populateOrganismContainers(
-              containers,
-              task.task_type,
-              task.material,
-            );
-          } else {
-            this.setMode("full", task.task_type);
-            this.initContainers(containers);
-          }
-        } catch (e) {
-          console.error("Error parsing containers", e);
+        if (Utils.$("#other-department")) {
+          Utils.$("#other-department").value = task.department || "";
         }
-      } else {
-        this.setMode("full", task.task_type);
-        this.initContainers([]);
       }
     },
 
@@ -4139,7 +4144,7 @@
         if (mode === "full") {
           data.material = Utils.$("#unloading-material").value.trim();
           data.description = `Rozładunek: ${data.material}`;
-          data.department = Utils.$("#unloading-department").value;
+          data.department = this.getMultiSelected("unloading-department-multi");
         } else {
           const customer = Utils.$("#unloading-customer").value.trim();
           data.material = customer;
@@ -4184,7 +4189,7 @@
       const containers = [];
       for (let i = 1; i <= 2; i++) {
         const desc = Utils.$(`#${type}-c${i}-desc`).value.trim();
-        const dept = Utils.$(`#${type}-c${i}-dept`).value;
+        const dept = this.getMultiSelected(`${type}-c${i}-dept-multi`);
         const driverId = Utils.$(`#${type}-c${i}-driver`).value;
         const driverSelect = Utils.$(`#${type}-c${i}-driver`);
         const driverName =
@@ -4201,6 +4206,24 @@
         }
       }
       return containers.length > 0 ? containers : null;
+    },
+
+    getMultiSelected(containerId) {
+      const container = Utils.$(`#${containerId}`);
+      if (!container) return "";
+      return Array.from(container.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(cb => cb.value)
+        .join(", ");
+    },
+
+    setMultiSelected(containerId, valueStr) {
+      const container = Utils.$(`#${containerId}`);
+      if (!container || !valueStr) return;
+      const values = valueStr.split(", ").map(v => v.trim());
+      container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        cb.checked = values.includes(cb.value);
+        cb.parentElement.classList.toggle("selected", cb.checked);
+      });
     },
 
     validate(data) {
@@ -4397,48 +4420,50 @@
         this.updateDateDisplay();
         this.renderTasks();
       } else if (!silent && list) {
-        // Jeśli nie ma w cache, można pokazać loader
         list.innerHTML = Utils.getLoaderHtml();
       }
 
       try {
         // 2. Pobieramy świeże dane w tle
-        const freshTasks = await API.getTasks({
+        const serverTasks = await API.getTasks({
           date: targetDate,
           userId: state.currentUser.id,
         });
 
+        // --- PREVENT FLICKERING (Merge Logic) ---
+        const pendingStatusIds = Sync.queue
+          .filter(a => a.name === "updateTaskStatus")
+          .map(a => a.data.id);
+
+        const mergedTasks = serverTasks.map(st => {
+          if (pendingStatusIds.includes(st.id)) {
+            const local = state.tasks.find(t => t.id === st.id);
+            return local || st;
+          }
+          return st;
+        });
+
         // 3. Sprawdzamy czy coś się zmieniło
-        const hasChanged =
-          JSON.stringify(freshTasks) !==
-          JSON.stringify(state.taskCache[targetDate]);
+        const hasChanged = JSON.stringify(mergedTasks) !== JSON.stringify(state.tasks);
 
-        // Zapisz do cache
-        state.taskCache[targetDate] = freshTasks;
-
-        // Persist Cache
-        localStorage.setItem(
-          CONFIG.STORAGE_KEYS.TASKS,
-          JSON.stringify(state.taskCache),
-        );
-
-        // Jeśli dane się zmieniły ALBO nie było ich wcześniej w cache - odśwież UI
-        if (hasChanged || state.tasks.length === 0) {
-          state.tasks = freshTasks;
+        if (hasChanged || !silent) {
+          state.tasks = mergedTasks;
+          state.taskCache[targetDate] = [...state.tasks];
+          localStorage.setItem(CONFIG.STORAGE_KEYS.TASKS, JSON.stringify(state.taskCache));
+          
           this.sortTasks();
           this.updateStats();
           this.updateDateDisplay();
           this.renderTasks();
         }
 
-        // 4. Pre-fetch sąsiednich dat w tle
+        // 4. Pre-fetch sąsiednich dat
         this.prefetchNeighboringDates();
       } catch (error) {
-        if (!silent && !state.taskCache[targetDate]) {
-          Toast.error("Błąd połączenia");
-        }
+        console.error("Admin tasks load failed:", error);
       }
     },
+
 
     async prefetchNeighboringDates() {
       if (!state.currentUser) return;

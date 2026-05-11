@@ -794,6 +794,57 @@ ol {
   box-shadow: var(--shadow-xl);
 }
 
+/* Multi-select for Departments */
+.multi-select-container {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+  max-height: 200px;
+  overflow-y: auto;
+  padding: var(--spacing-sm);
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--border-color);
+}
+
+.multi-select-container.small {
+  max-height: 120px;
+}
+
+.multi-select-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm);
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  border: 1px solid transparent;
+}
+
+.multi-select-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.multi-select-item input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.multi-select-item span {
+  font-size: var(--font-size-md);
+  color: var(--text-primary);
+}
+
+.multi-select-item.selected {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+
 .login-header {
   text-align: center;
   margin-bottom: var(--spacing-xl);

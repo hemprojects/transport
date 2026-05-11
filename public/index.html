@@ -30,7 +30,7 @@
     <script
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     ></script>
-    <link rel="stylesheet" href="css/style.css?v=3.16" />
+    <link rel="stylesheet" href="css/style.css?v=3.17" />
     <link
       rel="icon"
       href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚛</text></svg>"
@@ -893,10 +893,10 @@
                   />
                 </div>
                 <div class="form-group">
-                  <label for="unloading-department">Na jaki dział *</label>
-                  <select id="unloading-department">
-                    <option value="">Wybierz dział...</option>
-                  </select>
+                  <label>Na jaki dział (można wybrać kilka) *</label>
+                  <div id="unloading-department-multi" class="multi-select-container">
+                    <!-- Checkboxy ładowane przez JS -->
+                  </div>
                 </div>
               </div>
 
@@ -924,10 +924,10 @@
                   </div>
                   <div class="form-row">
                     <div class="form-group">
-                      <label>Na jaki dział</label>
-                      <select id="unloading-c1-dept" class="dept-select">
-                        <option value="">Wybierz dział...</option>
-                      </select>
+                      <label>Na jaki dział (multi)</label>
+                      <div id="unloading-c1-dept-multi" class="multi-select-container small">
+                        <!-- Checkboxy -->
+                      </div>
                     </div>
                     <div class="form-group">
                       <label>Przypisz do kierowcy</label>
@@ -951,10 +951,10 @@
                   </div>
                   <div class="form-row">
                     <div class="form-group">
-                      <label>Na jaki dział</label>
-                      <select id="unloading-c2-dept" class="dept-select">
-                        <option value="">Wybierz dział...</option>
-                      </select>
+                      <label>Na jaki dział (multi)</label>
+                      <div id="unloading-c2-dept-multi" class="multi-select-container small">
+                        <!-- Checkboxy -->
+                      </div>
                     </div>
                     <div class="form-group">
                       <label>Przypisz do kierowcy</label>
@@ -1939,6 +1939,6 @@
 
     <div id="printable-report" class="hidden-print"></div>
 
-    <script src="js/app.js?v=3.16"></script>
+    <script src="js/app.js?v=3.17"></script>
   </body>
 </html>
