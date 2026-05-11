@@ -2480,16 +2480,15 @@
 
         // OneSignal - inicjalizuj SDK (nie blokuje UI)
         OneSignalService.init()
-          .then(() => {
+          .then((success) => {
+            if (!success) return;
+            
             setTimeout(async () => {
+              // Sprawdzamy uprawnienia, ale login wywołujemy TYLKO jeśli 
+              // nie zrobił tego już mechanizm wewnątrz requestPermission
               const hasPermission = await OneSignalService.requestPermission();
-              if (hasPermission && state.currentUser) {
-                await OneSignalService.login(
-                  state.currentUser.id,
-                  state.currentUser.role,
-                );
-              }
-            }, 2000);
+              console.log("🔔 OneSignal Permission:", hasPermission);
+            }, 5000); // Wydłużono do 5s dla pewności stabilności SDK
           })
           .catch((err) => {});
       } catch (error) {
@@ -2724,6 +2723,7 @@
         // 2. Pobieramy świeże dane w tle (BEZ userId - chcemy wszystkie dla statystyk)
         const freshTasks = await API.getTasks({
           date: targetDate,
+          userId: state.currentUser.id,
         });
 
         // 3. Sprawdzamy czy coś się zmieniło
@@ -3264,9 +3264,12 @@
             task.status = "in_progress";
             task.assigned_to = state.currentUser.id;
             task.assigned_name = state.currentUser.name;
+            task.has_paused = false;
+            task.has_completed = false;
           }
           this.sortTasks();
           this.updateStats();
+          this.renderTasks();
           this.setFilter("in_progress");
           Toast.success("Zadanie rozpoczęte! 🚀");
         },
@@ -3383,6 +3386,8 @@
             task.status = "in_progress";
             task.assigned_to = state.currentUser.id;
             task.assigned_name = state.currentUser.name;
+            task.has_paused = false;
+            task.has_completed = false;
           }
           this.sortTasks();
           this.updateStats();
@@ -6531,36 +6536,44 @@
     },
 
     async login(userId, role) {
-      if (!this.initialized) {
-        return;
-      }
+      if (!this.initialized) return;
+      
+      // Prevent double login for the same user
+      if (this._lastLoginId === userId) return;
+      this._lastLoginId = userId;
 
       window.OneSignalDeferred.push(async function (OneSignal) {
         try {
-          // Sprawdź czy mamy zgodę na push
+          // OneSignal requires HTTPS (except for localhost)
+          const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+          if (!isSecure) {
+             console.warn("⚠️ OneSignal: Login skipped due to insecure origin (HTTP)");
+             return;
+          }
+
           const permission = await OneSignal.Notifications.permissionNative;
+          if (permission !== "granted") return;
 
-          if (permission !== "granted") {
-            return;
-          }
-
-          // Sprawdź czy jest subskrypcja
           const pushSubscription = await OneSignal.User.PushSubscription.id;
-
-          if (!pushSubscription) {
-            return;
-          }
+          if (!pushSubscription) return;
 
           const externalId = String(userId);
-
+          console.log("🔑 OneSignal: Attempting login for user", externalId);
+          
           await OneSignal.login(externalId);
 
           await OneSignal.User.addTags({
             role: role,
             user_id: externalId,
+            last_login: new Date().toISOString()
           });
+          
+          console.log("✅ OneSignal: Login successful");
         } catch (e) {
-          console.error("❌ OneSignal Login Error:", e);
+          // Silence the error if it's the known 'undefined' promise rejection from SDK
+          if (e !== undefined) {
+            console.error("❌ OneSignal Login Error:", e);
+          }
         }
       });
     },

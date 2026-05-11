@@ -1,10 +1,11 @@
 {
+    "id": "transport-tracker-hemarpol",
     "name": "Transport Tracker",
     "short_name": "Transport",
     "start_url": "/",
     "display": "standalone",
-    "background_color": "#000000",
-    "theme_color": "#000000",
+    "background_color": "#007AFF",
+    "theme_color": "#007AFF",
     "gcm_sender_id": "482941778795",
     "icons": [
         {
