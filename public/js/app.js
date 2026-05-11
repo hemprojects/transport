@@ -2794,57 +2794,55 @@
           // or we rely on exact name match which is robust for "Parking TIR".
       }
 
+      const getEffectiveStatus = (t) => {
+        const isTrue = (v) => v === 1 || v === "1" || v === true || v === "true";
+        if (isTrue(t.has_completed)) return "completed";
+        if (isTrue(t.has_paused)) return "paused";
+        return t.status;
+      };
+
       state.tasks.sort((a, b) => {
-        // 1. Zakończone ZAWSZE na dole
-        if (a.status === "completed" && b.status !== "completed") return 1;
-        if (b.status === "completed" && a.status !== "completed") return -1;
+        const statusA = getEffectiveStatus(a);
+        const statusB = getEffectiveStatus(b);
 
-        // 2. W trakcie ZAWSZE na górze
-        if (a.status === "in_progress" && b.status !== "in_progress") return -1;
-        if (b.status === "in_progress" && a.status !== "in_progress") return 1;
+        // 1. Zakończone ZAWSZE na samym dole
+        if (statusA === "completed" && statusB !== "completed") return 1;
+        if (statusB === "completed" && statusA !== "completed") return -1;
 
-        // Smart Suggestions Logic - oparte na bliskości geograficznej
+        // 2. MOJE zadania w trakcie na absolutną górę
+        const isMyWorkingA = statusA === "in_progress" && a.assigned_to == state.currentUser.id;
+        const isMyWorkingB = statusB === "in_progress" && b.assigned_to == state.currentUser.id;
         
-        // Use pre-calculated referenceLoc
-        let isASugg = false;
-        let isBSugg = false;
+        if (isMyWorkingA && !isMyWorkingB) return -1;
+        if (isMyWorkingB && !isMyWorkingA) return 1;
 
-        if (referenceLoc && a.status === "pending" && a.location_from) {
-          if (a.location_from === referenceLoc) {
-            isASugg = true;
-          } else if (hasCompletedTasksToday && !isNaN(referenceX) && !isNaN(referenceY)) {
-             // Only use coordinate check if we have valid coords AND it's not the forced "Parking TIR" morning state
-             // (unless we knew Parking TIR coords, but name match is safer for abstract locations)
-             isASugg = Utils.isNearby(a.location_from, referenceLoc);
-          }
-        }
+        // 3. INNE zadania w trakcie pod moimi
+        if (statusA === "in_progress" && statusB !== "in_progress") return -1;
+        if (statusB === "in_progress" && statusA !== "in_progress") return 1;
 
-        if (referenceLoc && b.status === "pending" && b.location_from) {
-          if (b.location_from === referenceLoc) {
-            isBSugg = true;
-          } else if (hasCompletedTasksToday && !isNaN(referenceX) && !isNaN(referenceY)) {
-             isBSugg = Utils.isNearby(b.location_from, referenceLoc);
-          }
-        }
-
-        // Priority Scores
+        // 4. Priorytety (Pilne na górę w swoich grupach)
         const pScore = { high: 300, normal: 200, low: 100 };
-
         let scoreA = pScore[a.priority] || 200;
         let scoreB = pScore[b.priority] || 200;
 
-        // Boost for suggestions (but don't override higher priority tier)
-        // High (300/350) > Normal (200/250) > Low (100/150).
-        if (isASugg) scoreA += 50;
-        if (isBSugg) scoreB += 50;
+        // Boost dla sugestii (ale nie przebijamy wyższego priorytetu)
+        if (referenceLoc && statusA === "pending" && a.location_from) {
+          if (a.location_from === referenceLoc || (hasCompletedTasksToday && !isNaN(referenceX) && Utils.isNearby(a.location_from, referenceLoc))) {
+            scoreA += 50;
+          }
+        }
+        if (referenceLoc && statusB === "pending" && b.location_from) {
+          if (b.location_from === referenceLoc || (hasCompletedTasksToday && !isNaN(referenceX) && Utils.isNearby(b.location_from, referenceLoc))) {
+            scoreB += 50;
+          }
+        }
 
-        // 3. Compare Scores
-        if (scoreA !== scoreB) return scoreB - scoreA; // Descending
+        if (scoreA !== scoreB) return scoreB - scoreA;
 
-        // 4. Fallback: Sort Order & Time
-        const orderDiff = a.sort_order - b.sort_order;
+        // 5. Fallback: Kolejność i czas
+        const orderDiff = (a.sort_order || 999) - (b.sort_order || 999);
         if (orderDiff !== 0) return orderDiff;
-        return a.scheduled_time.localeCompare(b.scheduled_time);
+        return (a.scheduled_time || "00:00").localeCompare(b.scheduled_time || "00:00");
       });
     },
 
@@ -3249,32 +3247,43 @@
 
     async startTask(taskId) {
       if (this._startingTask) return;
-      this._startingTask = true;
-      // Safety timeout
-      setTimeout(() => { this._startingTask = false; }, 2000);
+      
+      const task = state.tasks.find((t) => t.id == taskId);
+      
+      Modal.confirm(
+        "Rozpocząć zadanie?",
+        `Czy chcesz rozpocząć zadanie: "${task?.description || ""}"?`,
+        async () => {
+          this._startingTask = true;
+          // Safety timeout
+          setTimeout(() => {
+            this._startingTask = false;
+          }, 2000);
 
-      Notifications.markRelatedRead(taskId);
+          Notifications.markRelatedRead(taskId);
 
-      Sync.enqueue(
-        "updateTaskStatus",
-        { id: taskId, status: "in_progress", userId: state.currentUser.id },
-        () => {
-          const task = state.tasks.find((t) => t.id == taskId);
-          if (task) {
-            task.status = "in_progress";
-            task.assigned_to = state.currentUser.id;
-            task.assigned_name = state.currentUser.name;
-            task.has_paused = false;
-            task.has_completed = false;
-          }
-          this.sortTasks();
-          this.updateStats();
-          this.renderTasks();
-          this.setFilter("in_progress");
-          Toast.success("Zadanie rozpoczęte! 🚀");
+          Sync.enqueue(
+            "updateTaskStatus",
+            { id: taskId, status: "in_progress", userId: state.currentUser.id },
+            () => {
+              const taskObj = state.tasks.find((t) => t.id == taskId);
+              if (taskObj) {
+                taskObj.status = "in_progress";
+                taskObj.assigned_to = state.currentUser.id;
+                taskObj.assigned_name = state.currentUser.name;
+                taskObj.has_paused = false;
+                taskObj.has_completed = false;
+              }
+              this.sortTasks();
+              this.updateStats();
+              this.renderTasks();
+              this.setFilter("in_progress");
+              Toast.success("Zadanie rozpoczęte! 🚀");
+            },
+          );
         },
+        "Rozpocznij",
       );
-      // .finally(() => { this._startingTask = false; }); // Handled by timeout
     },
 
     async completeTask(taskId) {
@@ -3296,6 +3305,8 @@
               if (task) {
                 // Optymistycznie zakładamy sukces (zakończenie całości lub części)
                 task.status = "completed";
+                task.has_completed = true;
+                task.has_paused = false;
 
                 // SAVE LAST LOCATION for Smart Suggestions
                 let lastLocationName = null;
@@ -3357,6 +3368,8 @@
               const task = state.tasks.find((t) => t.id == taskId);
               if (task) {
                 task.status = "paused";
+                task.has_paused = true;
+                task.has_completed = false;
               }
               this.sortTasks();
               this.updateStats();
