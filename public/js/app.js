@@ -399,8 +399,8 @@
       if (children) {
         const childrenArr = Array.isArray(children) ? children : [children];
         for (const child of childrenArr) {
-          if (child === null || child === undefined || child === false) continue;
-          if (child instanceof HTMLElement) {
+          if (child === null || child === undefined || child === false || child === "null" || child === "") continue;
+          if (child instanceof Node) {
             element.appendChild(child);
           } else {
             element.appendChild(document.createTextNode(String(child)));
@@ -3006,6 +3006,37 @@
         Utils.show(emptyState);
         return;
       }
+
+      // Sortujemy zadania: W trakcie (własne) -> W trakcie (inne) -> Oczekujące -> Zakończone
+      filteredTasks.sort((a, b) => {
+        const statA = getEffectiveStatus(a);
+        const statB = getEffectiveStatus(b);
+        
+        // 1. Zakończone spadają na dół
+        if (statA === "completed" && statB !== "completed") return 1;
+        if (statB === "completed" && statA !== "completed") return -1;
+        
+        // 2. W trakcie lądują na górze, z priorytetem moich zadań!
+        const myId = state.currentUser.id;
+        const aIsMine = (a.assigned_to === myId) || (a.additional_drivers && a.additional_drivers.some(d => d.id === myId));
+        const bIsMine = (b.assigned_to === myId) || (b.additional_drivers && b.additional_drivers.some(d => d.id === myId));
+        
+        const aMyInProg = statA === "in_progress" && aIsMine;
+        const bMyInProg = statB === "in_progress" && bIsMine;
+        
+        if (aMyInProg && !bMyInProg) return -1;
+        if (bMyInProg && !aMyInProg) return 1;
+        
+        if (statA === "in_progress" && statB !== "in_progress") return -1;
+        if (statB === "in_progress" && statA !== "in_progress") return 1;
+        
+        // 3. Priorytety (high -> normal -> low)
+        const prioDiff = Utils.getPriorityOrder(a.priority) - Utils.getPriorityOrder(b.priority);
+        if (prioDiff !== 0) return prioDiff;
+        
+        // 4. Kolejność domyślna (wg posortowania z bazy)
+        return (a.sort_order || 999) - (b.sort_order || 999);
+      });
 
       // SUGGESTION LOGIC: Find last completed task today to suggest next nearby task
       let lastCompletedLoc = null;

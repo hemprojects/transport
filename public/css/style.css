@@ -2507,9 +2507,7 @@ ol {
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--transition-normal);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.7); /* Slightly darker to compensate for no blur, better performance */
   padding: var(--spacing-md);
 }
 
