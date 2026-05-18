@@ -1,6 +1,6 @@
 // =============================================
 // TransportTracker - Aplikacja JavaScript
-// Wersja 1.1.0 - beta
+// Wersja 1.2.0
 // =============================================
 
 (function () {
@@ -312,13 +312,33 @@
       return /Chrome/i.test(navigator.userAgent) && !this.isSamsungBrowser();
     },
 
-    getLoaderHtml() {
-      return `
-        <div class="loader-inline-wrapper">
-          <div class="loader-inline"></div>
-          <div>Ładowanie danych...</div>
-        </div>
-      `;
+    getLoaderEl() {
+      return this.el("div", { className: "loader-inline-wrapper" }, [
+        this.el("div", { className: "loader-inline" }),
+        this.el("div", {}, "Ładowanie danych...")
+      ]);
+    },
+
+    getReorderBtnContent() {
+      const fragment = document.createDocumentFragment();
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("width", "20");
+      svg.setAttribute("height", "20");
+      svg.setAttribute("viewBox", "0 0 24 24");
+      svg.setAttribute("fill", "none");
+      svg.setAttribute("stroke", "currentColor");
+      svg.setAttribute("stroke-width", "2");
+
+      const l1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      l1.setAttribute("x1", "3"); l1.setAttribute("y1", "6"); l1.setAttribute("x2", "21"); l1.setAttribute("y2", "6");
+      const l2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      l2.setAttribute("x1", "3"); l2.setAttribute("y1", "12"); l2.setAttribute("x2", "21"); l2.setAttribute("y2", "12");
+      const l3 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      l3.setAttribute("x1", "3"); l3.setAttribute("y1", "18"); l3.setAttribute("x2", "21"); l3.setAttribute("y2", "18");
+
+      svg.append(l1, l2, l3);
+      fragment.append(svg, " ", this.el("span", {}, "Zmień kolejność"));
+      return fragment;
     },
 
     // Oblicz odległość między dwoma punktami na mapie (w % mapy)
@@ -346,6 +366,49 @@
     isNearby(loc1Name, loc2Name) {
       const distance = this.getMapDistance(loc1Name, loc2Name);
       return distance <= this.NEARBY_THRESHOLD;
+    },
+
+    /**
+     * Tworzy element DOM z opcjonalnymi atrybutami, klasami i dziećmi.
+     * @param {string} tag - Nazwa tagu (np. 'div', 'span')
+     * @param {object} props - Właściwości i atrybuty
+     * @param {Array|HTMLElement|string} children - Elementy potomne lub tekst
+     * @returns {HTMLElement}
+     */
+    el(tag, props = {}, children = []) {
+      const element = document.createElement(tag);
+      
+      for (const [key, value] of Object.entries(props)) {
+        if (key === 'className') {
+          element.className = value;
+        } else if (key === 'dataset' && typeof value === 'object') {
+          for (const [dataKey, dataValue] of Object.entries(value)) {
+            element.dataset[dataKey] = dataValue;
+          }
+        } else if (key === 'style' && typeof value === 'object') {
+          Object.assign(element.style, value);
+        } else if (key.startsWith('on') && typeof value === 'function') {
+          element.addEventListener(key.substring(2).toLowerCase(), value);
+        } else if (['selected', 'checked', 'disabled', 'value'].includes(key)) {
+          element[key] = value;
+        } else {
+          element.setAttribute(key, value);
+        }
+      }
+      
+      if (children) {
+        const childrenArr = Array.isArray(children) ? children : [children];
+        for (const child of childrenArr) {
+          if (child === null || child === undefined || child === false) continue;
+          if (child instanceof HTMLElement) {
+            element.appendChild(child);
+          } else {
+            element.appendChild(document.createTextNode(String(child)));
+          }
+        }
+      }
+      
+      return element;
     },
   };
 
@@ -721,17 +784,15 @@
         info: "ℹ",
       };
 
-      const toast = document.createElement("div");
-      toast.className = `toast toast-${type}`;
-      toast.innerHTML = `
-                <span class="toast-icon">${icons[type] || icons.info}</span>
-                <span class="toast-message">${Utils.escapeHtml(message)}</span>
-                <button class="toast-close" aria-label="Zamknij">×</button>
-            `;
-
-      toast.querySelector(".toast-close").addEventListener("click", () => {
-        this.remove(toast);
-      });
+      const toast = Utils.el("div", { className: `toast toast-${type}` }, [
+        Utils.el("span", { className: "toast-icon" }, icons[type] || icons.info),
+        Utils.el("span", { className: "toast-message" }, message),
+        Utils.el("button", {
+          className: "toast-close",
+          "aria-label": "Zamknij",
+          onclick: () => this.remove(toast)
+        }, "×")
+      ]);
 
       this.container.appendChild(toast);
 
@@ -1210,81 +1271,69 @@
       const emptyState = Utils.$("#notifications-empty");
 
       if (state.notifications.length === 0) {
-        list.innerHTML = "";
+        list.replaceChildren();
         Utils.show(emptyState);
         return;
       }
 
       Utils.hide(emptyState);
-      list.innerHTML = state.notifications
-        .map(
-          (notif) => `
-            <div class="notification-item ${notif.is_read ? "" : "unread"}"
-                data-id="${notif.id}"
-                data-task-id="${notif.task_id || ""}">
-                <div class="notification-icon">${this.getIcon(notif.type)}</div>
-                <div class="notification-content">
-                    <div class="notification-title">${Utils.escapeHtml(
-                      notif.title,
-                    )}</div>
-                    <div class="notification-message">${Utils.escapeHtml(
-                      notif.message,
-                    )}</div>
-                    <div class="notification-time">${Utils.formatRelativeTime(
-                      notif.created_at,
-                    )}</div>
-                </div>
-                ${
-                  notif.is_read
-                    ? ""
-                    : '<div class="notification-unread-dot"></div>'
-                }
-            </div>
-        `,
-        )
-        .join("");
+      
+      list.replaceChildren();
+      state.notifications.forEach((notif) => {
+        const item = Utils.el("div", {
+          className: `notification-item ${notif.is_read ? "" : "unread"}`,
+          dataset: { id: notif.id, taskId: notif.task_id || "" },
+          onclick: async () => {
+            // Blokada wielokrotnego klikania
+            if (item.dataset.processing === "true") return;
+            item.dataset.processing = "true";
 
-      list.querySelectorAll(".notification-item").forEach((item) => {
-        item.addEventListener("click", async () => {
-          // Blokada wielokrotnego klikania
-          if (item.dataset.processing === "true") return;
-          item.dataset.processing = "true";
+            const id = item.dataset.id;
+            const taskId = item.dataset.taskId;
 
-          const id = item.dataset.id;
-          const taskId = item.dataset.taskId;
+            if (item.classList.contains("unread")) {
+              // Instant UI update
+              item.classList.remove("unread");
+              item.querySelector(".notification-unread-dot")?.remove();
+              state.unreadNotifications = Math.max(
+                0,
+                state.unreadNotifications - 1,
+              );
+              this.updateBadge();
 
-          if (item.classList.contains("unread")) {
-            // Instant UI update
-            item.classList.remove("unread");
-            item.querySelector(".notification-unread-dot")?.remove();
-            state.unreadNotifications = Math.max(
-              0,
-              state.unreadNotifications - 1,
-            );
-            this.updateBadge();
+              // Mark in state
+              const notifObj = state.notifications.find((n) => n.id == id);
+              if (notifObj) notifObj.is_read = 1;
 
-            // Mark in state
-            const notif = state.notifications.find((n) => n.id == id);
-            if (notif) notif.is_read = 1;
-
-            // Sync w tle (nie czekamy)
-            API.markNotificationRead(id).catch(() => {});
-          }
-
-          if (taskId) {
-            Modal.close("modal-notifications");
-            if (state.currentUser.role === "admin") {
-              AdminPanel.openTaskDetails(taskId);
-            } else {
-              DriverPanel.openTaskDetails(taskId);
+              // Sync w tle (nie czekamy)
+              API.markNotificationRead(id).catch(() => {});
             }
-          }
 
-          // Odblokuj po chwili
-          setTimeout(() => {
-            item.dataset.processing = "false";
-          }, 300);
-        });
+            if (taskId) {
+              Modal.close("modal-notifications");
+              if (state.currentUser.role === "admin") {
+                AdminPanel.openTaskDetails(taskId);
+              } else {
+                DriverPanel.openTaskDetails(taskId);
+              }
+            }
+
+            // Odblokuj po chwili
+            setTimeout(() => {
+              item.dataset.processing = "false";
+            }, 300);
+          }
+        }, [
+          Utils.el("div", { className: "notification-icon" }, this.getIcon(notif.type)),
+          Utils.el("div", { className: "notification-content" }, [
+            Utils.el("div", { className: "notification-title" }, notif.title),
+            Utils.el("div", { className: "notification-message" }, notif.message),
+            Utils.el("div", { className: "notification-time" }, Utils.formatRelativeTime(notif.created_at))
+          ]),
+          !notif.is_read ? Utils.el("div", { className: "notification-unread-dot" }) : null
+        ]);
+
+        list.appendChild(item);
       });
     },
 
@@ -1355,9 +1404,11 @@
       const datalist = Utils.$("#datalist-locations");
       if (!datalist) return;
 
-      datalist.innerHTML = [...state.locations, ...state.departments]
-        .map((loc) => `<option value="${Utils.escapeHtml(loc.name)}">`)
-        .join("");
+      datalist.replaceChildren();
+      [...state.locations, ...state.departments].forEach((loc) => {
+        const option = Utils.el("option", { value: loc.name });
+        datalist.appendChild(option);
+      });
     },
 
     updateDepartmentSelects() {
@@ -1370,16 +1421,14 @@
       selects.forEach((select) => {
         if (!select) return;
         const currentValue = select.value;
-        select.innerHTML =
-          '<option value="">Dział...</option>' +
-          state.departments
-            .map(
-              (dept) =>
-                `<option value="${Utils.escapeHtml(
-                  dept.name,
-                )}">${Utils.escapeHtml(dept.name)}</option>`,
-            )
-            .join("");
+        select.replaceChildren();
+        
+        select.appendChild(Utils.el("option", { value: "" }, "Dział..."));
+        
+        state.departments.forEach((dept) => {
+          select.appendChild(Utils.el("option", { value: dept.name }, dept.name));
+        });
+        
         select.value = currentValue;
       });
     },
@@ -1397,7 +1446,7 @@
         // Preserve current selections
         const selected = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
         
-        container.innerHTML = ""; // Clear existing
+        container.replaceChildren();
         
         state.departments.forEach((dept) => {
           const label = document.createElement("label");
@@ -1437,16 +1486,12 @@
         const currentValue = select.value;
         const isGlobal = select.id === "task-assigned";
 
-        select.innerHTML =
-          `<option value="">${isGlobal ? "Dowolny kierowca" : "Dowolny..."}</option>` +
-          drivers
-            .map(
-              (driver) =>
-                `<option value="${driver.id}">${Utils.escapeHtml(
-                  driver.name,
-                )}</option>`,
-            )
-            .join("");
+        select.replaceChildren();
+        select.appendChild(Utils.el("option", { value: "" }, isGlobal ? "Dowolny kierowca" : "Dowolny..."));
+        
+        drivers.forEach((driver) => {
+          select.appendChild(Utils.el("option", { value: driver.id }, driver.name));
+        });
 
         select.value = currentValue;
       });
@@ -1633,7 +1678,7 @@
         this.map.remove();
         this.map = null;
       }
-      container.innerHTML = "";
+      container.replaceChildren();
 
       // 2. Preload obrazka żeby znać wymiary
       console.log(`🖼️ Loading map image: ${mapUrl}`);
@@ -2185,11 +2230,20 @@
         wrapper.appendChild(controls);
       }
 
-      controls.innerHTML = `
-        <button class="btn-icon map-btn" onclick="TransportTracker.MapManager.map.zoomIn()">➕</button>
-        <button class="btn-icon map-btn" onclick="TransportTracker.MapManager.map.zoomOut()">➖</button>
-        <button class="btn-icon map-btn" onclick="TransportTracker.MapManager.resetView()">🔄</button>
-      `;
+      controls.replaceChildren(
+        Utils.el("button", {
+          className: "btn-icon map-btn",
+          onclick: () => this.map.zoomIn()
+        }, "➕"),
+        Utils.el("button", {
+          className: "btn-icon map-btn",
+          onclick: () => this.map.zoomOut()
+        }, "➖"),
+        Utils.el("button", {
+          className: "btn-icon map-btn",
+          onclick: () => this.resetView()
+        }, "🔄")
+      );
     },
 
     resetView() {
@@ -2324,24 +2378,31 @@
 
       toolbar.classList.remove("hidden");
 
+      toolbar.replaceChildren();
       if (this.mode === "view") {
-        toolbar.innerHTML = `
-            <button class="btn btn-primary btn-small" onclick="TransportTracker.MapManager.open('edit_network')">
-                🔧 Edytuj sieć dróg
-            </button>
-        `;
+        toolbar.appendChild(
+          Utils.el("button", {
+            className: "btn btn-primary btn-small",
+            onclick: () => MapManager.open('edit_network')
+          }, "🔧 Edytuj sieć dróg")
+        );
       } else {
-        toolbar.innerHTML = `
-            <button class="btn btn-success btn-small" onclick="TransportTracker.MapManager.saveNetwork()">
-                💾 Zapisz
-            </button>
-            <button class="btn btn-danger btn-small" onclick="TransportTracker.MapManager.clearNetwork()">
-                🗑️ Wyczyść
-            </button>
-            <button class="btn btn-secondary btn-small" onclick="TransportTracker.MapManager.open('view')">
-                ❌ Anuluj
-            </button>
-        `;
+        toolbar.append(
+          Utils.el("button", {
+            className: "btn btn-success btn-small",
+            onclick: () => MapManager.saveNetwork()
+          }, "💾 Zapisz"),
+          " ",
+          Utils.el("button", {
+            className: "btn btn-danger btn-small",
+            onclick: () => MapManager.clearNetwork()
+          }, "🗑️ Wyczyść"),
+          " ",
+          Utils.el("button", {
+            className: "btn btn-secondary btn-small",
+            onclick: () => MapManager.open('view')
+          }, "❌ Anuluj")
+        );
       }
     },
   };
@@ -2404,7 +2465,7 @@
 
     populateUserSelect() {
       const select = Utils.$("#login-user");
-      select.innerHTML = '<option value="">Wybierz użytkownika...</option>';
+      select.replaceChildren(Utils.el("option", { value: "" }, "Wybierz użytkownika..."));
 
       const admins = state.users.filter((u) => u.role === "admin");
       const drivers = state.users.filter((u) => u.role === "driver");
@@ -2755,7 +2816,7 @@
         this.updateStats(); // Dodano: przelicz statystyki przy ładowaniu z cache
       } else if (!silent && list) {
         // Jeśli nie ma w cache i nie jest to ciche odświeżanie - pokaż loader
-        list.innerHTML = Utils.getLoaderHtml();
+        list.replaceChildren(Utils.getLoaderEl());
       }
 
       try {
@@ -2941,7 +3002,7 @@
       }
 
       if (filteredTasks.length === 0) {
-        tasksList.innerHTML = "";
+        tasksList.replaceChildren();
         Utils.show(emptyState);
         return;
       }
@@ -3533,296 +3594,278 @@
         task.additional_drivers.some((d) => d.id === state.currentUser.id);
       const isParticipating = isMyTask || isJoined;
 
-      let locationInfo = "";
+      // 1. Nagłówek (Header)
+      const header = Utils.el("div", { className: "task-detail-header" }, [
+        Utils.el("span", { className: `task-type-badge type-${task.task_type}` }, [
+          Utils.getTaskTypeIcon(task.task_type),
+          " ",
+          Utils.getTaskTypeLabel(task.task_type)
+        ]),
+        Utils.el("span", { className: `task-priority-badge priority-${task.priority}` }, [
+          Utils.getPriorityIcon(task.priority),
+          " ",
+          Utils.getPriorityLabel(task.priority)
+        ]),
+        Utils.el("span", { className: `task-status-indicator status-${task.status}` }, [
+          Utils.getStatusIcon(task.status),
+          " ",
+          Utils.getStatusLabel(task.status)
+        ])
+      ]);
 
-      // Dla wszystkich typów zadań - pokaż dział jeśli istnieje
+      // 2. Tytuł (Title)
+      const title = Utils.el("h3", { className: "task-detail-title" }, task.description);
+
+      // 3. Szczegóły (Details rows)
+      const detailRows = [];
+
       if (task.department) {
-        locationInfo += `
-          <div class="task-detail-row">
-            <span class="task-detail-label">Dział</span>
-            <span class="task-detail-value">🏢 ${Utils.escapeHtml(task.department)}</span>
-          </div>
-        `;
+        detailRows.push(Utils.el("div", { className: "task-detail-row" }, [
+          Utils.el("span", { className: "task-detail-label" }, "Dział"),
+          Utils.el("span", { className: "task-detail-value" }, `🏢 ${task.department}`)
+        ]));
       }
 
-      // Pokaż skąd/dokąd jeśli istnieją (dla transport i other)
       if (task.location_from) {
-        locationInfo += `
-          <div class="task-detail-row">
-            <span class="task-detail-label">Skąd</span>
-            <span class="task-detail-value">📍 ${Utils.escapeHtml(task.location_from)}</span>
-          </div>
-        `;
+        detailRows.push(Utils.el("div", { className: "task-detail-row" }, [
+          Utils.el("span", { className: "task-detail-label" }, "Skąd"),
+          Utils.el("span", { className: "task-detail-value" }, `📍 ${task.location_from}`)
+        ]));
       }
 
       if (task.location_to) {
-        locationInfo += `
-          <div class="task-detail-row">
-            <span class="task-detail-label">Dokąd</span>
-            <span class="task-detail-value">📍 ${Utils.escapeHtml(task.location_to)}</span>
-          </div>
-        `;
+        detailRows.push(Utils.el("div", { className: "task-detail-row" }, [
+          Utils.el("span", { className: "task-detail-label" }, "Dokąd"),
+          Utils.el("span", { className: "task-detail-value" }, `📍 ${task.location_to}`)
+        ]));
       }
 
-      // MAP BUTTON - Wąski, wyśrodkowany przycisk podglądu trasy
-      // Określ punkty startowy i końcowy w zależności od typu zadania
+      // Przycisk mapy
       let routeFrom = null;
       let routeTo = null;
-      const PARKING_TIR = "Parking TIR"; // Centralny punkt dla rozładunku/załadunku
+      const PARKING_TIR = "Parking TIR";
 
       if (task.location_from && task.location_to) {
-        // Transport lub Inne zadanie z lokalizacjami
         routeFrom = task.location_from;
         routeTo = task.location_to;
       } else if (task.task_type === "unloading" && task.department) {
-        // Rozładunek: Parking TIR → Dział
         routeFrom = PARKING_TIR;
         routeTo = task.department;
       } else if (task.task_type === "loading" && task.department) {
-        // Załadunek: Dział → Parking TIR
         routeFrom = task.department;
         routeTo = PARKING_TIR;
       } else if (task.department && !task.location_from && !task.location_to) {
-        // Inne zadanie tylko z działem: Parking TIR → Dział
         routeFrom = PARKING_TIR;
         routeTo = task.department;
       }
 
-      // Pokaż przycisk jeśli mamy trasę do pokazania
       if (routeFrom && routeTo) {
-        locationInfo += `
-          <div style="text-align: center; margin: 15px 0;">
-            <button class="btn btn-secondary" 
-                    style="padding: 8px 20px; font-size: 14px; max-width: 200px; width: auto; display: inline-block;"
-                    onclick="TransportTracker.MapManager.open('show_route', { from: '${Utils.escapeHtml(routeFrom)}', to: '${Utils.escapeHtml(routeTo)}' })">
-              🗺️ Pokaż trasę
-            </button>
-          </div>
-        `;
+        detailRows.push(Utils.el("div", { style: { textAlign: "center", margin: "15px 0" } }, [
+          Utils.el("button", {
+            className: "btn btn-secondary",
+            style: { padding: "8px 20px", fontSize: "14px", maxWidth: "200px", width: "auto", display: "inline-block" },
+            onclick: () => TransportTracker.MapManager.open('show_route', { from: routeFrom, to: routeTo })
+          }, "🗺️ Pokaż trasę")
+        ]));
       }
 
-      let logsHtml = "";
+      if (task.material) {
+        detailRows.push(Utils.el("div", { className: "task-detail-row" }, [
+          Utils.el("span", { className: "task-detail-label" }, "Materiał"),
+          Utils.el("span", { className: "task-detail-value" }, `📦 ${task.material}`)
+        ]));
+      }
+
+      detailRows.push(Utils.el("div", { className: "task-detail-row" }, [
+        Utils.el("span", { className: "task-detail-label" }, "Data"),
+        Utils.el("span", { className: "task-detail-value" }, `📅 ${Utils.formatDate(task.scheduled_date)}`)
+      ]));
+
+      if (task.scheduled_time) {
+        detailRows.push(Utils.el("div", { className: "task-detail-row" }, [
+          Utils.el("span", { className: "task-detail-label" }, "Godzina"),
+          Utils.el("span", { className: "task-detail-value" }, `🕐 ${Utils.formatTime(task.scheduled_time)}`)
+        ]));
+      }
+
+      if (task.assigned_name) {
+        detailRows.push(Utils.el("div", { className: "task-detail-row" }, [
+          Utils.el("span", { className: "task-detail-label" }, "Przypisany"),
+          Utils.el("span", { className: "task-detail-value" }, `👤 ${task.assigned_name}`)
+        ]));
+      }
+
+      detailRows.push(Utils.el("div", { className: "task-detail-row" }, [
+        Utils.el("span", { className: "task-detail-label" }, "Zlecił"),
+        Utils.el("span", { className: "task-detail-value" }, `👔 ${task.creator_name || "System"}`)
+      ]));
+
+      const detailsSection = Utils.el("div", { className: "task-detail-section" }, [
+        Utils.el("h4", {}, "Szczegóły"),
+        ...detailRows
+      ]);
+
+      // 4. Uwagi dla kierowców
+      const notesSection = task.notes ? Utils.el("div", { className: "task-detail-section" }, [
+        Utils.el("h4", {}, "Uwagi dla kierowców"),
+        Utils.el("div", { className: "task-notes-preview" }, [
+          Utils.el("span", {}, "💬"),
+          Utils.el("span", {}, task.notes)
+        ])
+      ]) : null;
+
+      // 5. Historia i uwagi (Logs)
+      let logsSection = null;
       if (task.logs && task.logs.length > 0) {
-        logsHtml = `
-                    <div class="task-logs-section">
-                        <h4>Historia i uwagi</h4>
-                        ${task.logs
-                          .map(
-                            (log) => `
-                            <div class="task-log-item log-${log.log_type}">
-                                <span class="task-log-icon">${Utils.getLogTypeIcon(
-                                  log.log_type,
-                                )}</span>
-                                <div class="task-log-content">
-                                    <div class="task-log-message">
-                                        ${
-                                          log.log_type === "delay"
-                                            ? `<strong>${Utils.getDelayReasonLabel(
-                                                log.delay_reason,
-                                              )}</strong> (${
-                                                log.delay_minutes || 0
-                                              } min)<br>`
-                                            : ""
-                                        }
-                                        ${Utils.escapeHtml(log.message || "")}
-                                    </div>
-                                                                        <div class="task-log-meta">
-                                        ${Utils.escapeHtml(
-                                          log.user_name || "Nieznany",
-                                        )} • ${Utils.formatDate(log.created_at)} ${Utils.formatTime(log.created_at)}
-                                    </div>
-                                </div>
-                            </div>
-                        `,
-                          )
-                          .join("")}
-                    </div>
-                `;
+        logsSection = Utils.el("div", { className: "task-detail-section" }, [
+          Utils.el("h4", {}, "Historia i uwagi"),
+          Utils.el("div", { className: "task-logs-section" }, 
+            task.logs.map((log) => {
+              const delayLabel = log.log_type === "delay" ? [
+                Utils.el("strong", {}, Utils.getDelayReasonLabel(log.delay_reason)),
+                ` (${log.delay_minutes || 0} min)`,
+                document.createElement("br")
+              ] : [];
+
+              return Utils.el("div", { className: `task-log-item log-${log.log_type}` }, [
+                Utils.el("span", { className: "task-log-icon" }, Utils.getLogTypeIcon(log.log_type)),
+                Utils.el("div", { className: "task-log-content" }, [
+                  Utils.el("div", { className: "task-log-message" }, [
+                    ...delayLabel,
+                    log.message || ""
+                  ]),
+                  Utils.el("div", { className: "task-log-meta" }, [
+                    `${log.user_name || "Nieznany"} • ${Utils.formatDate(log.created_at)} ${Utils.formatTime(log.created_at)}`
+                  ])
+                ])
+              ]);
+            })
+          )
+        ]);
       }
 
-      let actionsHtml = "";
+      // 6. Kontenery (Containers)
+      let containersSection = null;
+      if (task.containers) {
+        const containerData = JSON.parse(task.containers);
+        if (containerData.length > 0) {
+          containersSection = Utils.el("div", { className: "task-detail-section", style: { marginBottom: "25px" } }, [
+            Utils.el("h4", {}, `📦 Kontenery / Części (${containerData.length})`),
+            Utils.el("div", {
+              className: "containers-list-detail",
+              style: { display: "grid", gridTemplateColumns: "1fr", gap: "12px", marginTop: "12px" }
+            }, containerData.map((c, i) => {
+              return Utils.el("div", {
+                className: "container-item-detail",
+                style: { padding: "12px", background: "var(--bg-tertiary)", borderRadius: "var(--border-radius-lg)", border: "1px solid var(--border-color)" }
+              }, [
+                Utils.el("div", {
+                  style: { fontSize: "11px", fontWeight: "700", color: "var(--text-secondary)", textTransform: "uppercase", marginBottom: "6px" }
+                }, `Kontener ${i + 1}`),
+                Utils.el("div", {
+                  style: { fontWeight: "600", fontSize: "15px", color: "var(--text-primary)", marginBottom: "8px" }
+                }, c.content),
+                Utils.el("div", {
+                  style: { display: "flex", gap: "15px", fontSize: "13px", color: "var(--text-secondary)" }
+                }, [
+                  Utils.el("span", { style: { display: "flex", alignItems: "center", gap: "5px" } }, `🏢 ${c.department || "Brak działu"}`),
+                  Utils.el("span", { style: { display: "flex", alignItems: "center", gap: "5px" } }, `👤 ${c.driverName || "Dowolny kierowca"}`)
+                ])
+              ]);
+            }))
+          ]);
+        }
+      }
+
+      // 7. Akcje (Actions)
+      let actionsSection = null;
       if (isDriver) {
         if (task.status === "pending") {
-          actionsHtml = `
-                        <div class="task-detail-actions">
-                            <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.startTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
-                                ▶️ Rozpocznij zadanie
-                            </button>
-                        </div>
-                    `;
+          actionsSection = Utils.el("div", { className: "task-detail-actions" }, [
+            Utils.el("button", {
+              className: "btn btn-primary btn-block",
+              onclick: () => {
+                DriverPanel.startTask(task.id);
+                Modal.close('modal-task-detail');
+              }
+            }, "▶️ Rozpocznij zadanie")
+          ]);
         } else if (task.status === "in_progress" && isParticipating) {
-          actionsHtml = `
-                        <div class="task-detail-actions">
-                            <button class="btn btn-warning" onclick="TransportTracker.DriverPanel.pauseTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
-                                ⏸️ Wstrzymaj
-                            </button>
-                            <button class="btn btn-secondary" onclick="TransportTracker.DriverPanel.openLogModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
-                                📝 Dodaj uwagę
-                            </button>
-                            <button class="btn btn-success" onclick="TransportTracker.DriverPanel.completeTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
-                                ✅ Zakończ
-                            </button>
-                        </div>
-                    `;
+          actionsSection = Utils.el("div", { className: "task-detail-actions" }, [
+            Utils.el("button", {
+              className: "btn btn-warning",
+              onclick: () => {
+                DriverPanel.pauseTask(task.id);
+                Modal.close('modal-task-detail');
+              }
+            }, "⏸️ Wstrzymaj"),
+            " ",
+            Utils.el("button", {
+              className: "btn btn-secondary",
+              onclick: () => {
+                DriverPanel.openLogModal(task.id);
+                Modal.close('modal-task-detail');
+              }
+            }, "📝 Dodaj uwagę"),
+            " ",
+            Utils.el("button", {
+              className: "btn btn-success",
+              onclick: () => {
+                DriverPanel.completeTask(task.id);
+                Modal.close('modal-task-detail');
+              }
+            }, "✅ Zakończ")
+          ]);
         } else if (task.status === "paused") {
-          actionsHtml = `
-                        <div class="task-detail-actions">
-                            <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.resumeTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
-                                ▶️ Wznów zadanie
-                            </button>
-                        </div>
-                    `;
-        } else if (
-          task.status === "in_progress" &&
-          (task.has_completed || !isParticipating)
-        ) {
-          actionsHtml = `
-                        <div class="task-detail-actions">
-                            <button class="btn btn-primary btn-block" onclick="TransportTracker.DriverPanel.openJoinModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
-                                👥 Dołącz do zadania
-                            </button>
-                        </div>
-                    `;
+          actionsSection = Utils.el("div", { className: "task-detail-actions" }, [
+            Utils.el("button", {
+              className: "btn btn-primary btn-block",
+              onclick: () => {
+                DriverPanel.resumeTask(task.id);
+                Modal.close('modal-task-detail');
+              }
+            }, "▶️ Wznów zadanie")
+          ]);
+        } else if (task.status === "in_progress" && (task.has_completed || !isParticipating)) {
+          actionsSection = Utils.el("div", { className: "task-detail-actions" }, [
+            Utils.el("button", {
+              className: "btn btn-primary btn-block",
+              onclick: () => {
+                DriverPanel.openJoinModal(task.id);
+                Modal.close('modal-task-detail');
+              }
+            }, "👥 Dołącz do zadania")
+          ]);
         }
       } else {
-        actionsHtml = `
-                    <div class="task-detail-actions">
-                        <button class="btn btn-secondary" onclick="TransportTracker.AdminPanel.openPriorityModal(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
-                            🎯 Zmień priorytet
-                        </button>
-                        <button class="btn btn-primary" onclick="TransportTracker.AdminPanel.editTask(${task.id}); TransportTracker.Modal.close('modal-task-detail');">
-                            ✏️ Edytuj
-                        </button>
-                    </div>
-                `;
+        actionsSection = Utils.el("div", { className: "task-detail-actions" }, [
+          Utils.el("button", {
+            className: "btn btn-secondary",
+            onclick: () => {
+              AdminPanel.openPriorityModal(task.id);
+              Modal.close('modal-task-detail');
+            }
+          }, "🎯 Zmień priorytet"),
+          " ",
+          Utils.el("button", {
+            className: "btn btn-primary",
+            onclick: () => {
+              AdminPanel.editTask(task.id);
+              Modal.close('modal-task-detail');
+            }
+          }, "✏️ Edytuj")
+        ]);
       }
 
-      content.innerHTML = `
-                <div class="task-detail-header">
-                    <span class="task-type-badge type-${task.task_type}">
-                        ${Utils.getTaskTypeIcon(
-                          task.task_type,
-                        )} ${Utils.getTaskTypeLabel(task.task_type)}
-                    </span>
-                    <span class="task-priority-badge priority-${task.priority}">
-                        ${Utils.getPriorityIcon(
-                          task.priority,
-                        )} ${Utils.getPriorityLabel(task.priority)}
-                    </span>
-                    <span class="task-status-indicator status-${task.status}">
-                        ${Utils.getStatusIcon(
-                          task.status,
-                        )} ${Utils.getStatusLabel(task.status)}
-                    </span>
-                </div>
-                
-                <h3 class="task-detail-title">${Utils.escapeHtml(
-                  task.description,
-                )}</h3>
-                
-                <div class="task-detail-section">
-                    <h4>Szczegóły</h4>
-                    ${locationInfo}
-                    ${
-                      task.material
-                        ? `
-                        <div class="task-detail-row">
-                            <span class="task-detail-label">Materiał</span>
-                            <span class="task-detail-value">📦 ${Utils.escapeHtml(
-                              task.material,
-                            )}</span>
-                        </div>
-                    `
-                        : ""
-                    }
-                    <div class="task-detail-row">
-                        <span class="task-detail-label">Data</span>
-                        <span class="task-detail-value">📅 ${Utils.formatDate(
-                          task.scheduled_date,
-                        )}</span>
-                    </div>
-                    ${
-                      task.scheduled_time
-                        ? `
-                        <div class="task-detail-row">
-                            <span class="task-detail-label">Godzina</span>
-                            <span class="task-detail-value">🕐 ${Utils.formatTime(
-                              task.scheduled_time,
-                            )}</span>
-                        </div>
-                    `
-                        : ""
-                    }
-                    ${
-                      task.assigned_name
-                        ? `
-                        <div class="task-detail-row">
-                            <span class="task-detail-label">Przypisany</span>
-                            <span class="task-detail-value">👤 ${Utils.escapeHtml(
-                              task.assigned_name,
-                            )}</span>
-                        </div>
-                    `
-                        : ""
-                    }
-                    <div class="task-detail-row">
-                        <span class="task-detail-label">Zlecił</span>
-                        <span class="task-detail-value">👔 ${Utils.escapeHtml(
-                          task.creator_name || "System",
-                        )}</span>
-                    </div>
-                </div>
-                
-                ${
-                  task.notes
-                    ? `
-                    <div class="task-detail-section">
-                        <h4>Uwagi dla kierowców</h4>
-                        <div class="task-notes-preview">
-                            <span>💬</span>
-                            <span>${Utils.escapeHtml(task.notes)}</span>
-                        </div>
-                    </div>
-                `
-                    : ""
-                }
-                
-                ${logsHtml}
-                
-                ${
-                  task.containers && JSON.parse(task.containers).length > 0
-                    ? `
-                    <div class="task-detail-section" style="margin-bottom: 25px;">
-                        <h4>📦 Kontenery / Części (${JSON.parse(task.containers).length})</h4>
-                        <div class="containers-list-detail" style="display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 12px;">
-                            ${JSON.parse(task.containers)
-                              .map(
-                                (c, i) => `
-                                <div class="container-item-detail" style="padding: 12px; background: var(--bg-tertiary); border-radius: var(--border-radius-lg); border: 1px solid var(--border-color);">
-                                    <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 6px;">
-                                        Kontener ${i + 1}
-                                    </div>
-                                    <div style="font-weight: 600; font-size: 15px; color: var(--text-primary); margin-bottom: 8px;">
-                                        ${Utils.escapeHtml(c.content)}
-                                    </div>
-                                    <div style="display: flex; gap: 15px; font-size: 13px; color: var(--text-secondary);">
-                                        <span style="display: flex; align-items: center; gap: 5px;">🏢 ${Utils.escapeHtml(c.department || "Brak działu")}</span>
-                                        <span style="display: flex; align-items: center; gap: 5px;">👤 ${Utils.escapeHtml(c.driverName || "Dowolny kierowca")}</span>
-                                    </div>
-                                </div>
-                            `,
-                              )
-                              .join("")}
-                        </div>
-                    </div>
-                `
-                    : ""
-                }
-
-                <div style="margin-top: 30px;">
-                    ${actionsHtml}
-                </div>
-            `;
+      content.replaceChildren(
+        header,
+        title,
+        detailsSection,
+        notesSection,
+        logsSection,
+        containersSection,
+        Utils.el("div", { style: { marginTop: "30px" } }, actionsSection)
+      );
     },
 
     openMapForTask(taskId) {
@@ -4045,7 +4088,7 @@
     initContainers(containers = []) {
       const list = Utils.$("#containers-list");
       if (!list) return; // Safety first
-      list.innerHTML = "";
+      list.replaceChildren();
       if (containers && containers.length > 0) {
         containers.forEach((c) => this.addContainerRow(c));
       }
@@ -4056,62 +4099,83 @@
       if (!list) return; // Safety first
       const count = list.querySelectorAll(".container-row").length + 1;
 
-      const div = document.createElement("div");
-      div.className = "container-row";
-      div.style.cssText =
-        "background: var(--bg-tertiary); padding: 12px; border-radius: var(--border-radius-lg); border: 1px solid var(--border-color); position: relative;";
-
       const contentVal = data ? data.content : "";
       const deptVal = data ? data.department : "";
       const driverVal = data ? data.driverId : "";
 
-      // Build department options (assuming state.departments is populated)
-      let deptOptions = '<option value="">Wybierz dział...</option>';
+      // Opcje dla działu
+      const deptOptions = [Utils.el("option", { value: "" }, "Wybierz dział...")];
       if (state.departments) {
         state.departments.forEach((d) => {
-          const sel = d.name === deptVal ? "selected" : "";
-          deptOptions += `<option value="${d.name}" ${sel}>${d.name}</option>`;
+          deptOptions.push(
+            Utils.el("option", { value: d.name, selected: d.name === deptVal }, d.name)
+          );
         });
       }
 
-      // Build driver options
-      let driverOptions = '<option value="">Dowolny kierowca...</option>';
+      // Opcje dla kierowcy
+      const driverOptions = [Utils.el("option", { value: "" }, "Dowolny kierowca...")];
       if (state.users) {
         state.users
           .filter((u) => u.role === "driver")
           .forEach((u) => {
-            const sel = String(u.id) === String(driverVal) ? "selected" : "";
-            driverOptions += `<option value="${u.id}" ${sel}>${u.name}</option>`;
+            driverOptions.push(
+              Utils.el("option", { value: u.id, selected: String(u.id) === String(driverVal) }, u.name)
+            );
           });
       }
 
-      div.innerHTML = `
-            <div style="font-size: 11px; font-weight: 700; color: var(--text-secondary); text-transform: uppercase; margin-bottom: 8px; display: flex; justify-content: space-between;">
-                <span>📦 Kontener ${count}</span>
-                <button type="button" class="remove-container-btn" style="color: var(--danger); font-size: 14px;">Usuń</button>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr; gap: 8px;">
-                <input type="text" class="container-content" placeholder="Nazwa / Opis / Numer..." value="${Utils.escapeHtml(contentVal)}" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary);">
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-                    <select class="container-department" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary);">
-                        ${deptOptions}
-                    </select>
-                    <select class="container-driver" style="width: 100%; padding: 10px; border-radius: 8px; border: 1px solid var(--border-color); background: var(--bg-secondary); color: var(--text-primary);">
-                        ${driverOptions}
-                    </select>
-                </div>
-            </div>
-        `;
-
-      div
-        .querySelector(".remove-container-btn")
-        .addEventListener("click", () => {
+      const removeBtn = Utils.el("button", {
+        type: "button",
+        className: "remove-container-btn",
+        style: { color: "var(--danger)", fontSize: "14px" },
+        onclick: () => {
           div.remove();
           // Renumber remaining containers
           list.querySelectorAll(".container-row").forEach((row, idx) => {
             row.querySelector("span").textContent = `📦 Kontener ${idx + 1}`;
           });
-        });
+        }
+      }, "Usuń");
+
+      const headerSpan = Utils.el("span", {}, `📦 Kontener ${count}`);
+
+      const div = Utils.el("div", {
+        className: "container-row",
+        style: {
+          background: "var(--bg-tertiary)",
+          padding: "12px",
+          borderRadius: "var(--border-radius-lg)",
+          border: "1px solid var(--border-color)",
+          position: "relative"
+        }
+      }, [
+        Utils.el("div", {
+          style: { fontSize: "11px", fontWeight: "700", color: "var(--text-secondary)", textTransform: "uppercase", marginBottom: "8px", display: "flex", justifyContent: "space-between" }
+        }, [
+          headerSpan,
+          removeBtn
+        ]),
+        Utils.el("div", { style: { display: "grid", gridTemplateColumns: "1fr", gap: "8px" } }, [
+          Utils.el("input", {
+            type: "text",
+            className: "container-content",
+            placeholder: "Nazwa / Opis / Numer...",
+            value: contentVal,
+            style: { width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-secondary)", color: "var(--text-primary)" }
+          }),
+          Utils.el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" } }, [
+            Utils.el("select", {
+              className: "container-department",
+              style: { width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-secondary)", color: "var(--text-primary)" }
+            }, deptOptions),
+            Utils.el("select", {
+              className: "container-driver",
+              style: { width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid var(--border-color)", background: "var(--bg-secondary)", color: "var(--text-primary)" }
+            }, driverOptions)
+          ])
+        ])
+      ]);
 
       list.appendChild(div);
     },
@@ -4420,7 +4484,7 @@
         this.updateDateDisplay();
         this.renderTasks();
       } else if (!silent && list) {
-        list.innerHTML = Utils.getLoaderHtml();
+        list.replaceChildren(Utils.getLoaderEl());
       }
 
       try {
@@ -4548,7 +4612,7 @@
 
       const btn = Utils.$("#admin-view-toggle-btn");
       if (btn) {
-        btn.innerHTML = state.viewMode === "list" ? "📱" : "📝";
+        btn.textContent = state.viewMode === "list" ? "📱" : "📝";
         btn.title =
           state.viewMode === "list" ? "Widok kafelkowy" : "Widok listy";
       }
@@ -4574,7 +4638,7 @@
       }
 
       if (filteredTasks.length === 0) {
-        tasksList.innerHTML = "";
+        tasksList.replaceChildren();
         Utils.show(emptyState);
         return;
       }
@@ -4586,20 +4650,23 @@
       if (state.viewMode === "list") {
         tasksList.classList.add("view-list");
         if (btn) {
-          btn.innerHTML = "📱";
+          btn.textContent = "📱";
           btn.title = "Widok kafelkowy";
         }
       } else {
         tasksList.classList.remove("view-list");
         if (btn) {
-          btn.innerHTML = "📝";
+          btn.textContent = "📝";
           btn.title = "Widok listy";
         }
       }
 
-      tasksList.innerHTML = filteredTasks
-        .map((task, index) => this.renderTaskCard(task, index + 1))
-        .join("");
+      tasksList.replaceChildren();
+      const fragment = document.createDocumentFragment();
+      filteredTasks.forEach((task, index) => {
+        fragment.appendChild(this.renderTaskCard(task, index + 1));
+      });
+      tasksList.appendChild(fragment);
 
       this.attachTaskEventListeners();
 
@@ -4613,28 +4680,29 @@
       const isInProgress = task.status === "in_progress";
 
       // Sprawdź czy użytkownik może edytować (admin główny lub twórca)
-      // Zakładamy że ID=1 to główny admin
       const isMainAdmin = state.currentUser.id === 1;
       const isCreator = task.creator_id === state.currentUser.id;
       const canEdit = isMainAdmin || isCreator;
 
-      let taskDescription = "";
+      // 1. Opis zadania (Route or Department)
+      const taskDescriptionKids = [];
       if (task.task_type === "transport") {
-        taskDescription = `
-                    <div class="task-route">
-                        <span>📍 ${Utils.escapeHtml(
-                          task.location_from || "?",
-                        )}</span>
-                        <span class="task-route-arrow">→</span>
-                        <span>📍 ${Utils.escapeHtml(
-                          task.location_to || "?",
-                        )}</span>
-                    </div>
-                `;
+        taskDescriptionKids.push(
+          Utils.el("div", { className: "task-route" }, [
+            Utils.el("span", {}, `📍 ${task.location_from || "?"}`),
+            Utils.el("span", { className: "task-route-arrow" }, "→"),
+            Utils.el("span", {}, `📍 ${task.location_to || "?"}`)
+          ])
+        );
       } else {
-        let deptsHtml = "";
         if (task.department) {
-          deptsHtml = `<div class="task-department"><span>🏢</span> <span>${Utils.escapeHtml(task.department)}</span></div>`;
+          taskDescriptionKids.push(
+            Utils.el("div", { className: "task-department" }, [
+              Utils.el("span", {}, "🏢"),
+              " ",
+              Utils.el("span", {}, task.department)
+            ])
+          );
         }
 
         if (task.containers) {
@@ -4647,49 +4715,44 @@
               depts.length > 0 &&
               (!task.department || !depts.includes(task.department))
             ) {
-              deptsHtml += `
-                        <div class="task-department">
-                            <span>🏢</span>
-                            <span style="font-weight: 500;">${depts.map((d) => Utils.escapeHtml(d)).join(", ")}</span>
-                        </div>
-                    `;
+              taskDescriptionKids.push(
+                Utils.el("div", { className: "task-department" }, [
+                  Utils.el("span", {}, "🏢"),
+                  " ",
+                  Utils.el("span", { style: { fontWeight: "500" } }, depts.join(", "))
+                ])
+              );
             }
           } catch (e) {}
         }
-        taskDescription = deptsHtml;
       }
 
-      const containerSummary = task.containers
-        ? (() => {
-            try {
-              const containers = JSON.parse(task.containers);
-              if (containers.length > 0) {
-                return `
-                    <div class="task-material" style="color: var(--primary);">
-                        <span>📦</span>
-                        <span>Kontenery: ${containers.length} szt.</span>
-                    </div>
-                  `;
-              }
-            } catch (e) {}
-            return "";
-          })()
-        : "";
+      // 2. Podsumowanie materiałów/kontenerów
+      let materialKid = null;
+      if (task.containers) {
+        try {
+          const containers = JSON.parse(task.containers);
+          if (containers.length > 0) {
+            materialKid = Utils.el("div", { className: "task-material", style: { color: "var(--primary)" } }, [
+              Utils.el("span", {}, "📦"),
+              " ",
+              Utils.el("span", {}, `Kontenery: ${containers.length} szt.`)
+            ]);
+          }
+        } catch (e) {}
+      }
 
-      const materialHtml =
-        task.material && !task.containers
-          ? `
-                <div class="task-material">
-                    <span>📦</span>
-                    <span>${Utils.escapeHtml(task.material)}</span>
-                </div>
-            `
-          : containerSummary;
+      if (!materialKid && task.material) {
+        materialKid = Utils.el("div", { className: "task-material" }, [
+          Utils.el("span", {}, "📦"),
+          " ",
+          Utils.el("span", {}, task.material)
+        ]);
+      }
 
-      // Obsługa wielu kierowców (DODANO DLA ADMINA)
-      let driversHtml = "";
+      // 3. Kierowcy
+      let driversKid = null;
       const allDrivers = [];
-
       if (task.assigned_name) allDrivers.push(task.assigned_name);
       if (task.additional_drivers) {
         task.additional_drivers.forEach((d) => allDrivers.push(d.name));
@@ -4700,149 +4763,125 @@
         const icon = allDrivers.length > 1 ? "👥" : "👤";
         const label = allDrivers.length > 1 ? "Współdzielone" : "";
 
-        driversHtml = `
-                    <span class="task-meta-item" title="${Utils.escapeHtml(
-                      driversList,
-                    )}">
-                        <span>${icon}</span>
-                        <span>${Utils.escapeHtml(driversList)}</span>
-                        ${
-                          label
-                            ? `<span class="task-drivers-badge">${label}</span>`
-                            : ""
-                        }
-                    </span>
-                `;
+        driversKid = Utils.el("span", { className: "task-meta-item", title: driversList }, [
+          Utils.el("span", {}, icon),
+          " ",
+          Utils.el("span", {}, driversList),
+          label ? Utils.el("span", { className: "task-drivers-badge" }, label) : null
+        ]);
       }
 
-      const creatorHtml = task.creator_name
-        ? `
-                <span class="task-meta-item" title="Utworzył">
-                    <span>✏️</span>
-                    <span>${Utils.escapeHtml(
-                      task.creator_name,
-                    )} (${Utils.formatTime(task.created_at)})</span>
-                </span>
-            `
-        : "";
+      // 4. Twórca
+      const creatorKid = task.creator_name ? Utils.el("span", { className: "task-meta-item", title: "Utworzył" }, [
+        Utils.el("span", {}, "✏️"),
+        " ",
+        Utils.el("span", {}, `${task.creator_name} (${Utils.formatTime(task.created_at)})`)
+      ]) : null;
 
-      // Przyciski akcji - tylko jeśli ma uprawnienia
-      let actionsHtml = "";
+      // 5. Akcje (Actions buttons)
+      let actionsSection = null;
       if (canEdit) {
-        actionsHtml = `
-                    <div class="task-actions">
-                        <button class="task-action-btn" data-action="edit" data-id="${task.id}" title="Edytuj">
-                            ✏️
-                        </button>
-                        <button class="task-action-btn btn-delete" data-action="delete" data-id="${task.id}" title="Usuń">
-                            🗑️
-                        </button>
-                    </div>
-                `;
+        actionsSection = Utils.el("div", { className: "task-actions" }, [
+          Utils.el("button", {
+            className: "task-action-btn",
+            dataset: { action: "edit", id: task.id },
+            title: "Edytuj"
+          }, "✏️"),
+          " ",
+          Utils.el("button", {
+            className: "task-action-btn btn-delete",
+            dataset: { action: "delete", id: task.id },
+            title: "Usuń"
+          }, "🗑️")
+        ]);
       } else {
-        actionsHtml = `
-                    <div class="task-actions">
-                        <span class="text-muted" style="font-size:12px">Brak uprawnień</span>
-                    </div>
-                `;
+        actionsSection = Utils.el("div", { className: "task-actions" }, [
+          Utils.el("span", { className: "text-muted", style: { fontSize: "12px" } }, "Brak uprawnień")
+        ]);
       }
 
-      return `
-                <div class="task-card priority-${task.priority} status-${
-                  task.status
-                }" 
-                     data-id="${task.id}" 
-                     draggable="${
-                       state.isReorderMode &&
-                       !isCompleted &&
-                       !isInProgress &&
-                       canEdit
-                     }">
-                    
-                    ${
-                      state.isReorderMode && canEdit
-                        ? `
-                    <div class="task-drag-handle">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <circle cx="9" cy="6" r="2"/>
-                            <circle cx="15" cy="6" r="2"/>
-                            <circle cx="9" cy="12" r="2"/>
-                            <circle cx="15" cy="12" r="2"/>
-                            <circle cx="9" cy="18" r="2"/>
-                            <circle cx="15" cy="18" r="2"/>
-                        </svg>
-                    </div>`
-                        : ""
-                    }
-                    
-                    <div class="task-status-indicator status-${task.status}">
-                        ${Utils.getStatusIcon(
-                          task.status,
-                        )} ${Utils.getStatusLabel(task.status)}
-                    </div>
-                    
-                    <div class="task-header">
-                        <div class="task-badges">
-                            <span class="task-order-badge">#${order}</span>
-                            <span class="task-type-badge type-${
-                              task.task_type
-                            }">
-                                ${Utils.getTaskTypeIcon(
-                                  task.task_type,
-                                )} ${Utils.getTaskTypeLabel(task.task_type)}
-                            </span>
-                            <span class="task-priority-badge priority-${
-                              task.priority
-                            }" 
-                                  data-action="${
-                                    canEdit ? "change-priority" : ""
-                                  }" data-id="${task.id}" 
-                                  title="Zmień priorytet" 
-                                  style="${
-                                    canEdit
-                                      ? "cursor:pointer"
-                                      : "cursor:default"
-                                  }">
-                                ${Utils.getPriorityIcon(
-                                  task.priority,
-                                )} ${Utils.getPriorityLabel(task.priority)}
-                            </span>
-                        </div>
-                    </div>
-                    
-                    <div class="task-body" data-action="details" data-id="${
-                      task.id
-                    }">
-                        <div class="task-title">${Utils.escapeHtml(
-                          task.description,
-                        )}</div>
-                        <div class="task-description">
-                            ${taskDescription}
-                            ${materialHtml}
-                        </div>
-                    </div>
-                    
-                    <div class="task-footer">
-                        <div class="task-meta">
-                            ${
-                              task.scheduled_time
-                                ? `
-                                <span class="task-meta-item">
-                                    <span>🕐</span>
-                                    <span>${Utils.formatTime(
-                                      task.scheduled_time,
-                                    )}</span>
-                                </span>
-                            `
-                                : ""
-                            }
-                            ${driversHtml}
-                            ${creatorHtml}
-                        </div>
-                        ${actionsHtml}
-                    </div>
-                </div>
-            `;
+      // Drag Handle
+      const dragHandle = (state.isReorderMode && canEdit) ? Utils.el("div", { className: "task-drag-handle" }, [
+        document.createRange().createContextualFragment(`
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="9" cy="6" r="2"/>
+              <circle cx="15" cy="6" r="2"/>
+              <circle cx="9" cy="12" r="2"/>
+              <circle cx="15" cy="12" r="2"/>
+              <circle cx="9" cy="18" r="2"/>
+              <circle cx="15" cy="18" r="2"/>
+          </svg>
+        `)
+      ]) : null;
+
+      // Status indicator
+      const statusIndicator = Utils.el("div", { className: `task-status-indicator status-${task.status}` }, [
+        `${Utils.getStatusIcon(task.status)} ${Utils.getStatusLabel(task.status)}`
+      ]);
+
+      // Order, Type & Priority Badges
+      const badges = Utils.el("div", { className: "task-badges" }, [
+        Utils.el("span", { className: "task-order-badge" }, `#${order}`),
+        " ",
+        Utils.el("span", { className: `task-type-badge type-${task.task_type}` }, [
+          `${Utils.getTaskTypeIcon(task.task_type)} ${Utils.getTaskTypeLabel(task.task_type)}`
+        ]),
+        " ",
+        Utils.el("span", {
+          className: `task-priority-badge priority-${task.priority}`,
+          dataset: { action: canEdit ? "change-priority" : "", id: task.id },
+          title: "Zmień priorytet",
+          style: { cursor: canEdit ? "pointer" : "default" }
+        }, [
+          `${Utils.getPriorityIcon(task.priority)} ${Utils.getPriorityLabel(task.priority)}`
+        ])
+      ]);
+
+      const header = Utils.el("div", { className: "task-header" }, badges);
+
+      // Body Section
+      const body = Utils.el("div", {
+        className: "task-body",
+        dataset: { action: "details", id: task.id }
+      }, [
+        Utils.el("div", { className: "task-title" }, task.description),
+        Utils.el("div", { className: "task-description" }, [
+          ...taskDescriptionKids,
+          materialKid
+        ])
+      ]);
+
+      // Footer Section
+      const metaKids = [];
+      if (task.scheduled_time) {
+        metaKids.push(Utils.el("span", { className: "task-meta-item" }, [
+          Utils.el("span", {}, "🕐"),
+          " ",
+          Utils.el("span", {}, Utils.formatTime(task.scheduled_time))
+        ]));
+      }
+      if (driversKid) metaKids.push(driversKid);
+      if (creatorKid) metaKids.push(creatorKid);
+
+      const footer = Utils.el("div", { className: "task-footer" }, [
+        Utils.el("div", { className: "task-meta" }, metaKids),
+        actionsSection
+      ]);
+
+      // Main Card Div
+      const card = Utils.el("div", {
+        className: `task-card priority-${task.priority} status-${task.status}`,
+        dataset: { id: task.id },
+        draggable: (state.isReorderMode && !isCompleted && !isInProgress && canEdit) ? "true" : "false"
+      }, [
+        dragHandle,
+        statusIndicator,
+        header,
+        body,
+        footer
+      ]);
+
+      return card;
     },
 
     attachTaskEventListeners() {
@@ -5003,19 +5042,12 @@
       Utils.toggle(reorderInfo, state.isReorderMode);
 
       if (state.isReorderMode) {
-        toggleBtn.innerHTML = "❌ Anuluj";
+        toggleBtn.textContent = "❌ Anuluj";
         // Filter to show only pending tasks
         state.currentFilter = "pending";
         this.updateFilterButtons();
       } else {
-        toggleBtn.innerHTML = `
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="3" y1="6" x2="21" y2="6"></line>
-                        <line x1="3" y1="12" x2="21" y2="12"></line>
-                        <line x1="3" y1="18" x2="21" y2="18"></line>
-                    </svg>
-                    <span>Zmień kolejność</span>
-                `;
+        toggleBtn.replaceChildren(Utils.getReorderBtnContent());
       }
 
       this.renderTasks();
@@ -5025,14 +5057,7 @@
       state.isReorderMode = false;
       Utils.$("#admin-tasks-list").classList.remove("reorder-mode");
       Utils.hide("#reorder-info");
-      Utils.$("#toggle-reorder-btn").innerHTML = `
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <line x1="3" y1="6" x2="21" y2="6"></line>
-                    <line x1="3" y1="12" x2="21" y2="12"></line>
-                    <line x1="3" y1="18" x2="21" y2="18"></line>
-                </svg>
-                <span>Zmień kolejność</span>
-            `;
+      Utils.$("#toggle-reorder-btn").replaceChildren(Utils.getReorderBtnContent());
       this.loadTasks();
     },
 
@@ -5086,14 +5111,7 @@
         state.isReorderMode = false;
         Utils.$("#admin-tasks-list").classList.remove("reorder-mode");
         Utils.hide("#reorder-info");
-        Utils.$("#toggle-reorder-btn").innerHTML = `
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <line x1="3" y1="6" x2="21" y2="6"></line>
-                        <line x1="3" y1="12" x2="21" y2="12"></line>
-                        <line x1="3" y1="18" x2="21" y2="18"></line>
-                    </svg>
-                    <span>Zmień kolejność</span>
-                `;
+        Utils.$("#toggle-reorder-btn").replaceChildren(Utils.getReorderBtnContent());
 
         Toast.success("Kolejność zapisana!");
         state.currentFilter = "all";
@@ -5188,7 +5206,7 @@
       const emptyState = Utils.$("#users-empty");
 
       if (state.users.length === 0) {
-        list.innerHTML = "";
+        list.replaceChildren();
         Utils.show(emptyState);
         return;
       }
@@ -5197,48 +5215,57 @@
 
       const canManageUsers =
         state.currentUser.id === 1 || state.currentUser.perm_users;
-      const renderActions = (userId) => {
-        if (!canManageUsers) return "";
-        return `
-                  <div class="user-actions">
-                      <button class="task-action-btn btn-edit" data-action="edit-user" data-id="${userId}">✏️</button>
-                      <button class="task-action-btn btn-delete" data-action="delete-user" data-id="${userId}">🗑️</button>
-                  </div>`;
-      };
 
-      list.innerHTML =
-        state.users
-          .map(
-            (user) => `
-              <div class="user-card" data-id="${user.id}">
-                  <div class="user-info">
-                      <div class="user-details">
-                          <h3>${Utils.escapeHtml(user.name)}</h3>
-                          <p class="user-role text-muted">
-                              ${
-                                user.role === "admin"
-                                  ? "👔 Kierownik"
-                                  : "🚗 Kierowca"
-                              }
-                              ${user.force_pin_change ? ' <span title="Wymuszona zmiana PIN" style="cursor:help">🔑</span>' : ""}
-                              ${
-                                user.role === "admin"
-                                  ? `<br><small style="font-size: 0.8em; opacity: 0.8;">
-                                  ${user.perm_reports ? "📊" : ""} 
-                                  ${user.perm_users ? "👥" : ""} 
-                                  ${user.perm_locations ? "📍" : ""}
-                              </small>`
-                                  : ""
-                              }
-                          </p>
-                      </div>
-                  </div>
-                  ${renderActions(user.id)}
-              </div>
-          `,
-          )
-          .join("") ||
-        '<p class="text-muted text-center">Brak użytkowników</p>';
+      list.replaceChildren();
+
+      state.users.forEach((user) => {
+        let userActionsKid = null;
+        if (canManageUsers) {
+          userActionsKid = Utils.el("div", { className: "user-actions" }, [
+            Utils.el("button", {
+              className: "task-action-btn btn-edit",
+              dataset: { action: "edit-user", id: user.id }
+            }, "✏️"),
+            " ",
+            Utils.el("button", {
+              className: "task-action-btn btn-delete",
+              dataset: { action: "delete-user", id: user.id }
+            }, "🗑️")
+          ]);
+        }
+
+        const roleTextKids = [
+          user.role === "admin" ? "👔 Kierownik" : "🚗 Kierowca",
+          user.force_pin_change ? " " : null,
+          user.force_pin_change ? Utils.el("span", { title: "Wymuszona zmiana PIN", style: { cursor: "help" } }, "🔑") : null
+        ];
+
+        if (user.role === "admin") {
+          roleTextKids.push(
+            Utils.el("br"),
+            Utils.el("small", { style: { fontSize: "0.8em", opacity: "0.8" } }, [
+              user.perm_reports ? "📊 " : "",
+              user.perm_users ? "👥 " : "",
+              user.perm_locations ? "📍" : ""
+            ])
+          );
+        }
+
+        const userCard = Utils.el("div", {
+          className: "user-card",
+          dataset: { id: user.id }
+        }, [
+          Utils.el("div", { className: "user-info" }, [
+            Utils.el("div", { className: "user-details" }, [
+              Utils.el("h3", {}, user.name),
+              Utils.el("p", { className: "user-role text-muted" }, roleTextKids)
+            ])
+          ]),
+          userActionsKid
+        ]);
+
+        list.appendChild(userCard);
+      });
 
       list.querySelectorAll("[data-action]").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -5521,47 +5548,57 @@
       const canManageLocations =
         state.currentUser.id === 1 || state.currentUser.perm_locations;
 
-      const renderDeleteBtn = (id) =>
-        canManageLocations
-          ? `
-                <div class="location-actions">
-                    <button class="task-action-btn btn-edit" data-action="edit-location" data-id="${id}">✏️</button>
-                    <button class="task-action-btn btn-delete" data-action="delete-location" data-id="${id}">🗑️</button>
-                </div>
-            `
-          : "";
+      locationsList.replaceChildren();
+      departmentsList.replaceChildren();
 
-      locationsList.innerHTML =
-        state.locations
-          .map(
-            (loc) => `
-                <div class="location-card" data-id="${loc.id}">
-                    <div class="location-info">
-                        <div class="location-details">
-                            <h3>📍 ${Utils.escapeHtml(loc.name)}</h3>
-                        </div>
-                    </div>
-                    ${renderDeleteBtn(loc.id)}
-                </div>
-            `,
-          )
-          .join("") || '<p class="text-muted text-center">Brak lokalizacji</p>';
+      const createActionButtons = (id) => {
+        if (!canManageLocations) return null;
+        return Utils.el("div", { className: "location-actions" }, [
+          Utils.el("button", {
+            className: "task-action-btn btn-edit",
+            dataset: { action: "edit-location", id: id }
+          }, "✏️"),
+          " ",
+          Utils.el("button", {
+            className: "task-action-btn btn-delete",
+            dataset: { action: "delete-location", id: id }
+          }, "🗑️")
+        ]);
+      };
 
-      departmentsList.innerHTML =
-        state.departments
-          .map(
-            (dept) => `
-                <div class="location-card" data-id="${dept.id}">
-                    <div class="location-info">
-                        <div class="location-details">
-                            <h3>🏢 ${Utils.escapeHtml(dept.name)}</h3>
-                        </div>
-                    </div>
-                    ${renderDeleteBtn(dept.id)}
-                </div>
-            `,
-          )
-          .join("") || '<p class="text-muted text-center">Brak działów</p>';
+      if (state.locations.length === 0) {
+        locationsList.appendChild(Utils.el("p", { className: "text-muted text-center" }, "Brak lokalizacji"));
+      } else {
+        state.locations.forEach((loc) => {
+          locationsList.appendChild(
+            Utils.el("div", { className: "location-card", dataset: { id: loc.id } }, [
+              Utils.el("div", { className: "location-info" }, [
+                Utils.el("div", { className: "location-details" }, [
+                  Utils.el("h3", {}, `📍 ${loc.name}`)
+                ])
+              ]),
+              createActionButtons(loc.id)
+            ])
+          );
+        });
+      }
+
+      if (state.departments.length === 0) {
+        departmentsList.appendChild(Utils.el("p", { className: "text-muted text-center" }, "Brak działów"));
+      } else {
+        state.departments.forEach((dept) => {
+          departmentsList.appendChild(
+            Utils.el("div", { className: "location-card", dataset: { id: dept.id } }, [
+              Utils.el("div", { className: "location-info" }, [
+                Utils.el("div", { className: "location-details" }, [
+                  Utils.el("h3", {}, `🏢 ${dept.name}`)
+                ])
+              ]),
+              createActionButtons(dept.id)
+            ])
+          );
+        });
+      }
 
       if (canManageLocations) {
         Utils.$$('[data-action="edit-location"]').forEach((btn) => {
@@ -5728,8 +5765,9 @@
         this.renderReports(data);
       } catch (error) {
         console.error("Failed to load reports:", error);
-        Utils.$("#report-stats").innerHTML =
-          '<p class="text-muted">Błąd ładowania</p>';
+        Utils.$("#report-stats").replaceChildren(
+          Utils.el("p", { className: "text-muted" }, "Błąd ładowania")
+        );
       }
     },
 
@@ -5738,8 +5776,9 @@
       const statsContainer = Utils.$("#report-stats");
 
       if (!data || !data.drivers) {
-        container.innerHTML =
-          '<p class="text-muted text-center">Brak danych</p>';
+        container.replaceChildren(
+          Utils.el("p", { className: "text-muted text-center" }, "Brak danych")
+        );
         return;
       }
 
@@ -5750,123 +5789,123 @@
           (data.drivers.length || 1),
       );
 
-      statsContainer.innerHTML = `
-                <div class="report-stat">
-                    <div class="report-stat-value">${totalTasks}</div>
-                    <div class="report-stat-label">Zadań</div>
-                </div>
-                <div class="report-stat">
-                    <div class="report-stat-value">${avgKpi}%</div>
-                    <div class="report-stat-label">Śr. KPI</div>
-                </div>
-                <div class="report-stat">
-                    <div class="report-stat-value">${data.drivers.length}</div>
-                    <div class="report-stat-label">Kierowców</div>
-                </div>
-            `;
+      statsContainer.replaceChildren(
+        Utils.el("div", { className: "report-stat" }, [
+          Utils.el("div", { className: "report-stat-value" }, totalTasks),
+          Utils.el("div", { className: "report-stat-label" }, "Zadań")
+        ]),
+        Utils.el("div", { className: "report-stat" }, [
+          Utils.el("div", { className: "report-stat-value" }, `${avgKpi}%`),
+          Utils.el("div", { className: "report-stat-label" }, "Śr. KPI")
+        ]),
+        Utils.el("div", { className: "report-stat" }, [
+          Utils.el("div", { className: "report-stat-value" }, data.drivers.length),
+          Utils.el("div", { className: "report-stat-label" }, "Kierowców")
+        ])
+      );
 
-      container.innerHTML = data.drivers
-        .map((driver, index) => {
-          const kpiColor =
-            driver.kpi >= 80 ? "high" : driver.kpi >= 50 ? "medium" : "low";
-          let chartHtml = "";
-          let labelsHtml = "";
-          let detailsHtml = "";
+      container.replaceChildren();
+      data.drivers.forEach((driver, index) => {
+        const kpiColor =
+          driver.kpi >= 80 ? "high" : driver.kpi >= 50 ? "medium" : "low";
 
-          if (driver.isSingleDay) {
-            chartHtml = this.generateTimeline(driver.timeline);
-            labelsHtml = `
-                        <div class="timeline-labels">
-                            <span>${driver.workStart || "07:00"}</span>
-                            <span>${driver.workEnd || "15:00"}</span>
-                        </div>
-                    `;
-          } else {
-            chartHtml = this.generateBarChart(driver.timeline);
+        // Generate timeline or bar chart
+        let chartKid = null;
+        if (driver.isSingleDay) {
+          chartKid = this.generateTimeline(driver.timeline);
+        } else {
+          chartKid = this.generateBarChart(driver.timeline);
+        }
+
+        // Details toggle section
+        let detailsSection = null;
+        if (driver.details && driver.details.length > 0) {
+          const detailsRows = driver.details.map((d) =>
+            Utils.el("div", { className: `details-row type-${d.type}` }, [
+              Utils.el("span", { className: "details-time" }, `${d.time} - ${d.endTime || "?"}`),
+              Utils.el("span", { className: "details-desc" }, d.desc),
+              Utils.el("span", { className: "details-duration" }, `${d.duration}m`)
+            ])
+          );
+
+          const detailsContainer = Utils.el("div", {
+            id: `details-${index}`,
+            className: "details-container"
+          }, detailsRows);
+
+          const toggleBtn = Utils.el("button", {
+            className: "btn btn-small btn-toggle-details",
+            onclick: () => this.toggleDetails(index)
+          }, "▼ Pokaż szczegóły");
+
+          detailsSection = document.createDocumentFragment();
+          detailsSection.append(toggleBtn, detailsContainer);
+        }
+
+        // Timeline labels (for single day view)
+        let labelsKid = null;
+        if (driver.isSingleDay) {
+          labelsKid = Utils.el("div", { className: "timeline-labels" }, [
+            Utils.el("span", {}, driver.workStart || "07:00"),
+            Utils.el("span", {}, driver.workEnd || "15:00")
+          ]);
+        }
+
+        // Timeline container element
+        const timelineContainer = Utils.el("div", {
+          className: `timeline-container ${driver.isSingleDay ? "" : "bar-chart"}`
+        });
+        if (!driver.isSingleDay) {
+          timelineContainer.style.height = "150px";
+          timelineContainer.style.overflowX = "auto";
+          timelineContainer.style.overflowY = "hidden";
+        }
+        
+        // Append chart elements
+        if (chartKid) {
+          if (chartKid instanceof DocumentFragment || chartKid instanceof HTMLElement) {
+            timelineContainer.appendChild(chartKid);
           }
+        }
 
-          // Generuj tabelę szczegółów (teraz również dla widoku tygodnia/miesiąca)
-          if (driver.details && driver.details.length > 0) {
-            detailsHtml = `
-                          <button class="btn btn-small btn-toggle-details" onclick="TransportTracker.AdminPanel.toggleDetails(${index})">
-                              ▼ Pokaż szczegóły
-                          </button>
-                          <div id="details-${index}" class="details-container">
-                              ${driver.details
-                                .map(
-                                  (d) => `
-                                  <div class="details-row type-${d.type}">
-                                      <span class="details-time">${
-                                        d.time
-                                      } - ${d.endTime || "?"}</span>
-                                      <span class="details-desc">${Utils.escapeHtml(
-                                        d.desc,
-                                      )}</span>
-                                      <span class="details-duration">${
-                                        d.duration
-                                      }m</span>
-                                  </div>
-                              `,
-                                )
-                                .join("")}
-                          </div>
-                      `;
-          }
+        // Construct Driver Card
+        const driverCard = Utils.el("div", { className: "report-driver-card" }, [
+          // Header
+          Utils.el("div", { className: "report-driver-header" }, [
+            Utils.el("div", { className: "report-driver-info" }, [
+              Utils.el("div", { className: "user-avatar" }, "🚗"),
+              Utils.el("div", {}, [
+                Utils.el("h3", {}, driver.name),
+                Utils.el("span", { className: "text-muted", style: { fontSize: "12px" } }, `KPI: ${driver.kpi}%`)
+              ])
+            ]),
+            Utils.el("div", { className: `report-driver-kpi ${kpiColor}` }, `${driver.kpi}%`)
+          ]),
 
-          return `
-                    <div class="report-driver-card">
-                        <div class="report-driver-header">
-                            <div class="report-driver-info">
-                                <div class="user-avatar">🚗</div>
-                                <div>
-                                    <h3>${Utils.escapeHtml(driver.name)}</h3>
-                                    <span class="text-muted" style="font-size:12px">KPI: ${
-                                      driver.kpi
-                                    }%</span>
-                                </div>
-                            </div>
-                            <div class="report-driver-kpi ${kpiColor}">${
-                              driver.kpi
-                            }%</div>
-                        </div>
+          // KPI grid
+          Utils.el("div", { className: "kpi-grid" }, [
+            Utils.el("div", { className: "kpi-box" }, [
+              Utils.el("div", { className: "kpi-value" }, this.formatDuration(driver.workTime)),
+              Utils.el("div", { className: "kpi-label" }, "Praca")
+            ]),
+            Utils.el("div", { className: "kpi-box" }, [
+              Utils.el("div", { className: "kpi-value", style: { color: "var(--danger)" } }, this.formatDuration(driver.delayTime)),
+              Utils.el("div", { className: "kpi-label" }, "Przestoje")
+            ]),
+            Utils.el("div", { className: "kpi-box" }, [
+              Utils.el("div", { className: "kpi-value" }, driver.tasksCount),
+              Utils.el("div", { className: "kpi-label" }, "Zadań")
+            ])
+          ]),
 
-                        <div class="kpi-grid">
-                            <div class="kpi-box">
-                                <div class="kpi-value">${this.formatDuration(
-                                  driver.workTime,
-                                )}</div>
-                                <div class="kpi-label">Praca</div>
-                            </div>
-                            <div class="kpi-box">
-                                <div class="kpi-value" style="color:var(--danger)">${this.formatDuration(
-                                  driver.delayTime,
-                                )}</div>
-                                <div class="kpi-label">Przestoje</div>
-                            </div>
-                            <div class="kpi-box">
-                                <div class="kpi-value">${
-                                  driver.tasksCount
-                                }</div>
-                                <div class="kpi-label">Zadań</div>
-                            </div>
-                        </div>
+          // Chart & Details
+          timelineContainer,
+          labelsKid,
+          detailsSection
+        ]);
 
-                        <div class="timeline-container ${
-                          driver.isSingleDay ? "" : "bar-chart"
-                        }" 
-                             style="${
-                               driver.isSingleDay
-                                 ? ""
-                                 : "height:150px; overflow-x:auto; overflow-y:hidden;"
-                             }">
-                            ${chartHtml}
-                        </div>
-                        ${labelsHtml}
-                        ${detailsHtml}
-                    </div>
-                `;
-        })
-        .join("");
+        container.appendChild(driverCard);
+      });
     },
 
     // Dodaj tę funkcję do obiektu AdminPanel:
@@ -5890,38 +5929,81 @@
     },
 
     generateBarChart(days) {
-      if (!days || days.length === 0)
-        return '<p class="text-center text-muted" style="padding:20px">Brak danych</p>';
+      if (!days || days.length === 0) {
+        return Utils.el("p", {
+          className: "text-center text-muted",
+          style: { padding: "20px" }
+        }, "Brak danych");
+      }
 
-      return `
-                <div style="display:flex; gap:10px; height:100%; align-items:flex-end; padding:10px;">
-                    ${days
-                      .map(
-                        (d) => `
-                        <div style="flex:1; display:flex; flex-direction:column; align-items:center; min-width:30px;">
-                            <div style="font-size:10px; margin-bottom:4px; font-weight:bold;">${this.formatDuration(
-                              d.minutes,
-                            )}</div>
-                            <div style="width:100%; background:var(--bg-tertiary); height:80px; border-radius:4px; position:relative; overflow:hidden;">
-                                <div style="position:absolute; bottom:0; left:0; right:0; height:${
-                                  d.percent
-                                }%; background:var(--primary); transition:height 0.3s;" title="${Utils.formatDateShort(
-                                  d.date,
-                                )}"></div>
-                            </div>
-                            <div style="font-size:9px; margin-top:4px; color:var(--text-secondary); text-align:center; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; width:100%;">${Utils.formatDateShort(
-                              d.date,
-                            )}</div>
-                        </div>
-                    `,
-                      )
-                      .join("")}
-                </div>
-            `;
+      const barElements = days.map((d) => {
+        return Utils.el("div", {
+          style: {
+            flex: "1",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            minWidth: "30px"
+          }
+        }, [
+          Utils.el("div", {
+            style: {
+              fontSize: "10px",
+              marginBottom: "4px",
+              fontWeight: "bold"
+            }
+          }, this.formatDuration(d.minutes)),
+          Utils.el("div", {
+            style: {
+              width: "100%",
+              background: "var(--bg-tertiary)",
+              height: "80px",
+              borderRadius: "4px",
+              position: "relative",
+              overflow: "hidden"
+            }
+          }, [
+            Utils.el("div", {
+              title: Utils.formatDateShort(d.date),
+              style: {
+                position: "absolute",
+                bottom: "0",
+                left: "0",
+                right: "0",
+                height: `${d.percent}%`,
+                background: "var(--primary)",
+                transition: "height 0.3s"
+              }
+            })
+          ]),
+          Utils.el("div", {
+            style: {
+              fontSize: "9px",
+              marginTop: "4px",
+              color: "var(--text-secondary)",
+              textAlign: "center",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              width: "100%"
+            }
+          }, Utils.formatDateShort(d.date))
+        ]);
+      });
+
+      return Utils.el("div", {
+        style: {
+          display: "flex",
+          gap: "10px",
+          height: "100%",
+          alignItems: "flex-end",
+          padding: "10px"
+        }
+      }, barElements);
     },
 
     generateTimeline(events) {
-      if (!events || events.length === 0) return "";
+      if (!events || events.length === 0) return null;
 
       // Znajdź zakres godzin dynamicznie (min 6:00 - 18:00, ale rozszerz jeśli są zadania poza)
       let minHour = 6;
@@ -5951,9 +6033,6 @@
         const start = new Date(event.start);
         const end = new Date(event.end);
 
-        // Fix: Jeśli zadanie jest z innego dnia (np. przeniesione), pokaż je od początku skali lub wcale
-        // Tutaj zakładamy że eventy są z jednego dnia (filtrowane wcześniej)
-
         // Znajdź pierwszy wolny rząd
         let rowIndex = -1;
         for (let i = 0; i < rows.length; i++) {
@@ -5971,69 +6050,72 @@
         }
       });
 
+      const fragment = document.createDocumentFragment();
+
       // Generowanie markerów godzin
-      let markersHtml = '<div class="timeline-markers">';
+      const markersContainer = Utils.el("div", { className: "timeline-markers" });
       for (let h = startHour; h <= endHour; h++) {
         const left = (((h - startHour) * 60) / totalMinutes) * 100;
-        markersHtml += `
-          <div class="timeline-marker" style="left: ${left}%">
-            ${
-              h % 2 === 0 || totalMinutes < 720
-                ? `<div class="timeline-time">${h}:00</div>`
-                : ""
-            }
-          </div>
-        `;
+        
+        let labelNode = null;
+        if (h % 2 === 0 || totalMinutes < 720) {
+          labelNode = Utils.el("div", { className: "timeline-time" }, `${h}:00`);
+        }
+
+        const marker = Utils.el("div", {
+          className: "timeline-marker",
+          style: { left: `${left}%` }
+        }, labelNode);
+
+        markersContainer.appendChild(marker);
       }
-      markersHtml += "</div>";
+      fragment.appendChild(markersContainer);
 
       // Renderowanie pasków
-      const barsHtml = rows
-        .map((row, rowIndex) => {
-          const height = 100 / Math.max(rows.length, 1);
-          const top = rowIndex * height;
+      rows.forEach((row, rowIndex) => {
+        const height = 100 / Math.max(rows.length, 1);
+        const top = rowIndex * height;
 
-          return row
-            .map((event) => {
-              const start = new Date(event.start);
-              const end = new Date(event.end);
+        row.forEach((event) => {
+          const start = new Date(event.start);
+          const end = new Date(event.end);
 
-              // Oblicz pozycję względem startHour
-              // Uważaj na daty - jeśli event.start ma inną datę niż dayStart, musimy normalizować
-              const startH = start.getHours();
-              const startM = start.getMinutes();
-              const eventStartMins = startH * 60 + startM;
-              const dayStartMins = startHour * 60;
+          const startH = start.getHours();
+          const startM = start.getMinutes();
+          const eventStartMins = startH * 60 + startM;
+          const dayStartMins = startHour * 60;
 
-              const startDiff = eventStartMins - dayStartMins;
-              const duration = (end - start) / 1000 / 60;
+          const startDiff = eventStartMins - dayStartMins;
+          const duration = (end - start) / 1000 / 60;
 
-              let left = (startDiff / totalMinutes) * 100;
-              let width = (duration / totalMinutes) * 100;
+          let left = (startDiff / totalMinutes) * 100;
+          let width = (duration / totalMinutes) * 100;
 
-              if (left < 0) {
-                width += left;
-                left = 0;
-              }
-              if (left + width > 100) width = 100 - left;
-              if (width <= 0) return "";
+          if (left < 0) {
+            width += left;
+            left = 0;
+          }
+          if (left + width > 100) width = 100 - left;
+          if (width <= 0) return;
 
-              return `
-                        <div class="timeline-bar ${event.type}" 
-                             style="left: ${left}%; width: ${width}%; height: ${
-                               height - 2
-                             }%; top: ${top}%;"
-                             data-title="${Utils.escapeHtml(
-                               event.desc,
-                             )} (${Math.round(duration)} min)">
-                        </div>
-                    `;
-            })
-            .join("");
-        })
-        .join("");
+          const bar = Utils.el("div", {
+            className: `timeline-bar ${event.type}`,
+            dataset: {
+              title: `${event.desc} (${Math.round(duration)} min)`
+            },
+            style: {
+              left: `${left}%`,
+              width: `${width}%`,
+              height: `${height - 2}%`,
+              top: `${top}%`
+            }
+          });
 
-      return markersHtml + barsHtml;
+          fragment.appendChild(bar);
+        });
+      });
+
+      return fragment;
     },
 
     // TABS
@@ -6092,105 +6174,113 @@
       const gAvgTrans = Math.round(tTrans / c);
       const gAvgUnload = Math.round(tUnload / c);
 
-      let html = `
-            <div class="report-print-header">
-                <div class="report-print-logo">
-                    <span>🚛</span>
-                    <span>Transport Tracker</span>
-                </div>
-                <div class="report-print-info">
-                    <strong>Data wygenerowania:</strong> ${new Date().toLocaleString("pl-PL")}<br>
-                    <strong>Okres:</strong> ${periodLabel} ${subPeriod}
-                </div>
-            </div>
+      printable.replaceChildren();
 
-            <h1 class="report-print-title">Raport Pracy Kierowców</h1>
+      // Logo and header
+      const printHeader = Utils.el("div", { className: "report-print-header" }, [
+        Utils.el("div", { className: "report-print-logo" }, [
+          Utils.el("span", {}, "🚛"),
+          " ",
+          Utils.el("span", {}, "Transport Tracker")
+        ]),
+        Utils.el("div", { className: "report-print-info" }, [
+          Utils.el("strong", {}, "Data wygenerowania:"),
+          ` ${new Date().toLocaleString("pl-PL")}`,
+          Utils.el("br"),
+          Utils.el("strong", {}, "Okres:"),
+          ` ${periodLabel} ${subPeriod}`
+        ])
+      ]);
 
-            <div class="print-stats-summary" style="margin-bottom: 20px;">
-                <div class="print-stat-box">
-                    <span class="print-stat-lab">Suma zadań</span>
-                    <span class="print-stat-val">${totalTasks}</span>
-                </div>
-                <div class="print-stat-box">
-                    <span class="print-stat-lab">Średnie KPI</span>
-                    <span class="print-stat-val">${avgKpi}%</span>
-                </div>
-                <div class="print-stat-box">
-                    <span class="print-stat-lab">Kierowcy</span>
-                    <span class="print-stat-val">${data.drivers.length}</span>
-                </div>
-            </div>
-            
-            <div class="print-stats-summary">
-                 <div class="print-stat-box">
-                    <span class="print-stat-lab">Śr. Załadunek</span>
-                    <span class="print-stat-val">${gAvgLoad} min</span>
-                </div>
-                <div class="print-stat-box">
-                    <span class="print-stat-lab">Śr. Transport</span>
-                    <span class="print-stat-val">${gAvgTrans} min</span>
-                </div>
-                <div class="print-stat-box">
-                    <span class="print-stat-lab">Śr. Rozładunek</span>
-                    <span class="print-stat-val">${gAvgUnload} min</span>
-                </div>
-            </div>
-        `;
+      const titleNode = Utils.el("h1", { className: "report-print-title" }, "Raport Pracy Kierowców");
 
+      // Stats summaries
+      const statsSummary1 = Utils.el("div", { className: "print-stats-summary", style: { marginBottom: "20px" } }, [
+        Utils.el("div", { className: "print-stat-box" }, [
+          Utils.el("span", { className: "print-stat-lab" }, "Suma zadań"),
+          Utils.el("span", { className: "print-stat-val" }, totalTasks)
+        ]),
+        Utils.el("div", { className: "print-stat-box" }, [
+          Utils.el("span", { className: "print-stat-lab" }, "Średnie KPI"),
+          Utils.el("span", { className: "print-stat-val" }, `${avgKpi}%`)
+        ]),
+        Utils.el("div", { className: "print-stat-box" }, [
+          Utils.el("span", { className: "print-stat-lab" }, "Kierowcy"),
+          Utils.el("span", { className: "print-stat-val" }, data.drivers.length)
+        ])
+      ]);
+
+      const statsSummary2 = Utils.el("div", { className: "print-stats-summary" }, [
+        Utils.el("div", { className: "print-stat-box" }, [
+          Utils.el("span", { className: "print-stat-lab" }, "Śr. Załadunek"),
+          Utils.el("span", { className: "print-stat-val" }, `${gAvgLoad} min`)
+        ]),
+        Utils.el("div", { className: "print-stat-box" }, [
+          Utils.el("span", { className: "print-stat-lab" }, "Śr. Transport"),
+          Utils.el("span", { className: "print-stat-val" }, `${gAvgTrans} min`)
+        ]),
+        Utils.el("div", { className: "print-stat-box" }, [
+          Utils.el("span", { className: "print-stat-lab" }, "Śr. Rozładunek"),
+          Utils.el("span", { className: "print-stat-val" }, `${gAvgUnload} min`)
+        ])
+      ]);
+
+      printable.append(printHeader, titleNode, statsSummary1, statsSummary2);
+
+      // Drivers sections
       data.drivers.forEach((driver) => {
-        html += `
-                <div class="print-driver-section">
-                    <div class="print-driver-header">
-                        <span>👤 ${Utils.escapeHtml(driver.name)}</span>
-                        <span>KPI: ${driver.kpi}% | Zadania: ${driver.tasksCount}</span>
-                        <span style="font-size: 0.8em; margin-left: 10px; opacity: 0.8;">(Z: ${driver.avgLoad || 0}m, T: ${driver.avgTransport || 0}m, R: ${driver.avgUnload || 0}m)</span>
-                    </div>
-                    <table class="print-table">
-                        <thead>
-                            <tr>
-                                <th style="width: 120px;">Czas</th>
-                                <th>Opis zadania / aktywności</th>
-                                <th style="width: 80px;">Czas trwania</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-            `;
-
+        const rows = [];
         if (driver.details && driver.details.length > 0) {
           driver.details.forEach((d) => {
-            html += `
-                        <tr>
-                            <td>${d.time} - ${d.endTime || "?"}</td>
-                            <td>${Utils.escapeHtml(d.desc)}</td>
-                            <td>${d.duration} min</td>
-                        </tr>
-                    `;
+            rows.push(
+              Utils.el("tr", {}, [
+                Utils.el("td", {}, `${d.time} - ${d.endTime || "?"}`),
+                Utils.el("td", {}, d.desc),
+                Utils.el("td", {}, `${d.duration} min`)
+              ])
+            );
           });
         } else {
-          html += `<tr><td colspan="3" style="text-align:center;">Brak szczegółowych wpisów</td></tr>`;
+          rows.push(
+            Utils.el("tr", {}, [
+              Utils.el("td", { colSpan: 3, style: { textAlign: "center" } }, "Brak szczegółowych wpisów")
+            ])
+          );
         }
 
-        html += `
-                        </tbody>
-                    </table>
-                </div>
-            `;
+        const driverSection = Utils.el("div", { className: "print-driver-section" }, [
+          Utils.el("div", { className: "print-driver-header" }, [
+            Utils.el("span", {}, `👤 ${driver.name}`),
+            " ",
+            Utils.el("span", {}, `KPI: ${driver.kpi}% | Zadania: ${driver.tasksCount}`),
+            " ",
+            Utils.el("span", { style: { fontSize: "0.8em", marginLeft: "10px", opacity: "0.8" } }, `(Z: ${driver.avgLoad || 0}m, T: ${driver.avgTransport || 0}m, R: ${driver.avgUnload || 0}m)`)
+          ]),
+          Utils.el("table", { className: "print-table" }, [
+            Utils.el("thead", {}, [
+              Utils.el("tr", {}, [
+                Utils.el("th", { style: { width: "120px" } }, "Czas"),
+                Utils.el("th", {}, "Opis zadania / aktywności"),
+                Utils.el("th", { style: { width: "80px" } }, "Czas trwania")
+              ])
+            ]),
+            Utils.el("tbody", {}, rows)
+          ])
+        ]);
+
+        printable.appendChild(driverSection);
       });
 
-      html += `
-            <div class="print-footer">
-                © ${new Date().getFullYear()} Hemarpol Transport Tracker - Raport automatyczny
-            </div>
-        `;
-
-      printable.innerHTML = html;
+      // Footer
+      const printFooter = Utils.el("div", { className: "print-footer" }, `© ${new Date().getFullYear()} Hemarpol Transport Tracker - Raport automatyczny`);
+      printable.appendChild(printFooter);
 
       // Trigger print
       window.print();
 
       // Optional: clear after print to keep DOM lean
       setTimeout(() => {
-        printable.innerHTML = "";
+        printable.replaceChildren();
       }, 1000);
     },
 

@@ -794,54 +794,87 @@ ol {
   box-shadow: var(--shadow-xl);
 }
 
-/* Multi-select for Departments */
+/* Multi-select for Departments (Modern Pills / Chips UI) */
 .multi-select-container {
   display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-  max-height: 200px;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  max-height: 250px;
   overflow-y: auto;
-  padding: var(--spacing-sm);
-  background: var(--bg-tertiary);
+  padding: var(--spacing-md) var(--spacing-sm);
+  background: transparent;
   border-radius: var(--border-radius-md);
-  border: 1px solid var(--border-color);
+  border: 1px dashed var(--border-color);
 }
 
 .multi-select-container.small {
-  max-height: 120px;
+  max-height: 150px;
 }
 
 .multi-select-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm);
-  background: var(--bg-secondary);
-  border-radius: var(--border-radius-sm);
+  justify-content: center;
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-radius: 30px; /* Fully rounded Pill */
   cursor: pointer;
-  transition: var(--transition-fast);
-  border: 1px solid transparent;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 2px solid transparent;
+  user-select: none;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
+  box-shadow: 0 2px 5px rgba(0,0,0,0.02);
 }
 
 .multi-select-item:hover {
-  background: var(--bg-tertiary);
-}
-
-.multi-select-item input[type="checkbox"] {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-
-.multi-select-item span {
-  font-size: var(--font-size-md);
+  transform: translateY(-1px);
+  background: var(--bg-secondary);
+  box-shadow: 0 4px 8px rgba(0,0,0,0.06);
   color: var(--text-primary);
 }
 
+.multi-select-item:active {
+  transform: translateY(1px);
+}
+
+/* Hide original checkbox but keep accessible */
+.multi-select-item input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.multi-select-item span {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Selected state with beautiful glow and checkmark */
 .multi-select-item.selected {
   border-color: var(--primary);
   background: var(--primary-bg);
+  color: var(--primary);
+  box-shadow: 0 4px 12px var(--primary-bg);
+}
+
+.multi-select-item.selected::before {
+  content: "✓";
+  margin-right: 6px;
+  font-weight: bold;
+  font-size: 14px;
+  animation: pop-in 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes pop-in {
+  0% { transform: scale(0); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
 
