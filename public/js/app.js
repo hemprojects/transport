@@ -3888,15 +3888,17 @@
         ]);
       }
 
-      content.replaceChildren(
+      const childrenToAppend = [
         header,
         title,
         detailsSection,
         notesSection,
         logsSection,
         containersSection,
-        Utils.el("div", { style: { marginTop: "30px" } }, actionsSection)
-      );
+        actionsSection ? Utils.el("div", { style: { marginTop: "30px" } }, actionsSection) : null
+      ].filter(Boolean);
+
+      content.replaceChildren(...childrenToAppend);
     },
 
     openMapForTask(taskId) {
